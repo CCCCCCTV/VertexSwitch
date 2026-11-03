@@ -17,13 +17,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from . import __version__
 from .backends.claude_vertex import ClaudeVertexBackend
 from .backends.gemini_native import GeminiNativeBackend
+from .backends.openai_compat import OllamaBackend, VertexOpenAIBackend
 from .core.auth import AuthError, ServiceAccountTokenProvider, TokenProvider
 from .core.context import AppContext
 from .core.errors import ProxyError, error_body, protocol_for_path
 from .core.registry import ModelRegistry
 from .core.settings import Settings
 from .core.transport import Transport
-from .frontends import anthropic_api, gemini_api, models_api
+from .frontends import anthropic_api, gemini_api, models_api, openai_api
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,20 @@ async def require_api_key(request: Request) -> None:
         raise ProxyError(401, "API key 无效或缺失")
 
 
+async def refresh_ollama_models(ctx: AppContext) -> set[str]:
+    """从 Ollama ``/api/tags`` 发现本地模型；Ollama 没运行时只记日志。"""
+    try:
+        resp = await ctx.transport.client.get(ctx.ollama.tags_url, timeout=5)
+        resp.raise_for_status()
+        models = ctx.ollama.parse_tags(resp.json())
+    except (httpx.HTTPError, ValueError) as e:
+        logger.warning("Ollama 模型发现失败：%r", e)
+        return ctx.registry.ollama_models
+    ctx.registry.ollama_models = models
+    logger.info("发现 %d 个 Ollama 模型", len(models))
+    return models
+
+
 def create_app(
     settings: Settings,
     *,
@@ -76,6 +91,11 @@ def create_app(
         transport=Transport(client, settings.timeouts, settings.retry),
         claude=ClaudeVertexBackend(settings.google, settings.claude),
         gemini=GeminiNativeBackend(settings),
+        gemini_openai=VertexOpenAIBackend(
+            "gemini", settings.gemini_region(), settings.gemini.openai_api_version, "google/"
+        ),
+        maas=VertexOpenAIBackend("maas", settings.maas_region(), settings.maas.api_version),
+        ollama=OllamaBackend(settings.ollama.base_url),
     )
 
     @contextlib.asynccontextmanager
@@ -85,6 +105,8 @@ def create_app(
             refresher = asyncio.create_task(
                 tokens.run_background_refresh(settings.google.token_refresh_minutes)
             )
+        if settings.ollama.enabled:
+            await refresh_ollama_models(ctx)
         try:
             yield
         finally:
@@ -136,5 +158,6 @@ def create_app(
     protected = [Depends(require_api_key)]
     app.include_router(anthropic_api.build_router(), dependencies=protected)
     app.include_router(gemini_api.build_router(), dependencies=protected)
+    app.include_router(openai_api.build_router(), dependencies=protected)
     app.include_router(models_api.build_router(), dependencies=protected)
     return app

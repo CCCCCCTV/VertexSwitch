@@ -41,3 +41,8 @@ gemini:
   gemini-3-pro: gemini-3.1-pro-preview          # gemini-3-pro-preview 已下线，指向 3.1
   gemini-3-flash-preview: gemini-3-flash-preview
   gemini-3-flash: gemini-3-flash-preview
+
+# MaaS 开放模型（Vertex AI endpoints/openapi/chat/completions）。别名 → publisher/model。
+# publisher/model 形式的名字（如 deepseek-ai/deepseek-v3.1-maas）无需登记，原样转发。
+# 具体模型 ID 以 Model Garden 为准，核实后再加到这里。
+maas: {}

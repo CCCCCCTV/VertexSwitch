@@ -16,6 +16,8 @@ from .settings import app_dir
 
 CLAUDE = "claude"
 GEMINI = "gemini"
+MAAS = "maas"
+OLLAMA = "ollama"
 
 # claude-haiku-4-5-20251001 → claude-haiku-4-5@20251001
 _DATED_CLAUDE = re.compile(r"^(claude-[a-z0-9-]+?)-(\d{8})$")
@@ -31,6 +33,8 @@ class Route:
 class ModelRegistry:
     # 后端名 → {别名: 上游 ID}
     tables: dict[str, dict[str, str]] = field(default_factory=dict)
+    # 运行时从 Ollama /api/tags 发现的模型名
+    ollama_models: set[str] = field(default_factory=set)
 
     @classmethod
     def from_mapping(cls, data: dict) -> ModelRegistry:
@@ -54,7 +58,12 @@ class ModelRegistry:
         return cls.from_mapping(yaml.safe_load(text) or {})
 
     def resolve(self, model: str) -> Route | None:
+        """解析顺序：显式前缀 → Gemini → Claude → MaaS → 已发现的 Ollama 模型。"""
         model = model.strip().removeprefix("models/")
+        if model.startswith("ollama/"):
+            return Route(OLLAMA, model.removeprefix("ollama/"))
+        # OpenAI 兼容写法 google/gemini-x、anthropic/claude-x
+        model = model.removeprefix("google/").removeprefix("anthropic/")
         gemini = self.tables.get(GEMINI, {})
         if model in gemini:
             return Route(GEMINI, gemini[model])
@@ -68,6 +77,14 @@ class ModelRegistry:
             if m:
                 return Route(CLAUDE, "{}@{}".format(*m.groups()))
             return Route(CLAUDE, model)
+        maas = self.tables.get(MAAS, {})
+        if model in maas:
+            return Route(MAAS, maas[model])
+        if "/" in model:
+            # publisher/model 形式（如 deepseek-ai/deepseek-v3.1-maas）原样交给 MaaS
+            return Route(MAAS, model)
+        if model in self.ollama_models:
+            return Route(OLLAMA, model)
         return None
 
     def aliases(self, backend: str) -> list[str]:

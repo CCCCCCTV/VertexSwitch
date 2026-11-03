@@ -83,6 +83,25 @@ class GeminiSettings(BaseModel):
     flex_server_timeout: int = 1800
     # 官方文档注明不支持 Flex 的模型，请求 Flex 时降级为 Standard
     flex_unsupported_models: list[str] = Field(default_factory=lambda: ["gemini-4-argon"])
+    # OpenAI 兼容接口（/endpoints/openapi/chat/completions）的 API 版本，官方示例为 v1beta1。
+    # 该接口不支持服务档位头。
+    openai_api_version: str = "v1beta1"
+
+
+class MaaSSettings(BaseModel):
+    # 开放模型（DeepSeek、Qwen、GLM 等）所在区域；为空时用 google.region
+    region: str = ""
+    api_version: str = "v1"
+
+
+class OllamaSettings(BaseModel):
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:11434"
+
+
+class OpenAISettings(BaseModel):
+    # OpenAI 请求转 Claude 时，客户端没给 max_tokens 用这个值（Anthropic 要求必填）
+    default_max_tokens: int = 8192
 
 
 class Settings(BaseModel):
@@ -92,9 +111,15 @@ class Settings(BaseModel):
     retry: RetrySettings = Field(default_factory=RetrySettings)
     claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
     gemini: GeminiSettings = Field(default_factory=GeminiSettings)
+    maas: MaaSSettings = Field(default_factory=MaaSSettings)
+    ollama: OllamaSettings = Field(default_factory=OllamaSettings)
+    openai: OpenAISettings = Field(default_factory=OpenAISettings)
 
     def gemini_region(self) -> str:
         return self.gemini.region or self.google.region
+
+    def maas_region(self) -> str:
+        return self.maas.region or self.google.region
 
     def resolved_credentials_file(self) -> str:
         return self.google.credentials_file or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")

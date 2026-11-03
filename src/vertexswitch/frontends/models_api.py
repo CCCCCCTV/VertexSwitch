@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 
 from ..core.context import AppContext
 from ..core.errors import ProxyError
-from ..core.registry import CLAUDE, GEMINI
+from ..core.registry import CLAUDE, GEMINI, MAAS
 
 _EPOCH = "1970-01-01T00:00:00Z"
 
@@ -32,7 +32,11 @@ def _gemini_model(model_id: str) -> dict:
 
 
 def _ids(ctx: AppContext) -> list[str]:
-    return ctx.registry.aliases(CLAUDE) + ctx.registry.aliases(GEMINI)
+    reg = ctx.registry
+    ollama = (
+        [f"ollama/{m}" for m in sorted(reg.ollama_models)] if ctx.settings.ollama.enabled else []
+    )
+    return reg.aliases(CLAUDE) + reg.aliases(GEMINI) + reg.aliases(MAAS) + ollama
 
 
 def _wants_anthropic(request: Request) -> bool:
