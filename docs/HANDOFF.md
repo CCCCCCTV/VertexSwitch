@@ -4,7 +4,7 @@
 
 ## 1. 一句话
 
-VertexSwitch 是一个**只支持 Windows 10/11 的桌面程序**：在本机提供 Anthropic / Gemini / OpenAI 三种 API，用 Google Cloud 服务账号把请求转发到 Vertex AI，带托盘和图形界面。**依据官方文档从零实现**，不复用旧代码。
+VertexSwitch 是一个**以 Windows 10/11 为主的桌面程序**（Rust + Tauri，macOS / Linux 可顺带支持）：在本机提供 Anthropic / Gemini / OpenAI 三种 API，用 Google Cloud 服务账号把请求转发到 Vertex AI，带托盘和图形界面。**依据官方文档从零实现**，不复用旧代码。
 
 ## 2. 背景与决定
 
@@ -14,7 +14,7 @@ VertexSwitch 是一个**只支持 Windows 10/11 的桌面程序**：在本机提
 | 旧项目状态 | **正在运行，不要停、不要改它的文件**。新项目开发期间用别的端口（建议 8788）并行 |
 | 为什么重写 | main.py 1,352 行包办一切、多处重复、几处路由边界缺陷；用户要加 GUI；不想背旧代码的包袱 |
 | 重写原则 | 从 Google / Anthropic 官方文档出发写代码，**不要把旧代码复制进本仓库**。旧代码只用来了解"需要哪些行为" |
-| 平台 | 只做 Windows。其他平台已有 new-api 等成熟聚合工具，不竞争 |
+| 平台 | 以 Windows 为主。改用 Tauri 后 macOS / Linux 可顺带支持；Android 不作为目标 |
 | 主要用法 | 用户日常主要用 **Claude 走 `/v1/messages`**（Claude Code 等 Anthropic 客户端）。这条路径优先级最高 |
 | 旧项目分析报告 | https://claude.ai/artifact/CCmhVoUzyeAWb3ifYSEceP （14 条缺陷 + 结构问题） |
 | 旧代码快照 | 需要对照行为时，读上面的 site-packages 路径（只读），或用户手里的 `vertex_proxy-0.4.0-snapshot-20261103.zip` |
@@ -117,78 +117,70 @@ VertexSwitch 是一个**只支持 Windows 10/11 的桌面程序**：在本机提
 
 ## 7. 目标架构
 
+> **2026-11-03 变更**：技术栈由 Python（FastAPI + pywebview）改为 **Rust + Tauri 2 + TypeScript**。
+> 原因：后台常驻一个 Python 进程不方便（Alt+Tab 常显、打包 40–60 MB、启动慢、易被杀毒误报）；
+> Tauri 单个 exe 约 10 MB，内存小，且 Windows / macOS / Linux 桌面可同一套代码（Android 不作为目标）。
+> Python 原型（M0–M3）保留在仓库里作为参考实现，Rust 版达到同等功能后删除。
+> 行为规格见 `docs/SPEC.md`；Python 原型的 `tests/` 是它的可执行版本。
+
 ### 7.1 进程结构
 
 ```text
-VertexSwitch.exe（GUI 外壳：pywebview 窗口 + pystray 托盘）
-   │  启动 / 监控 / 重启（子进程）
-   ▼
-代理核心（FastAPI + uvicorn，可单独命令行运行）
-   ├── 业务路由：/v1/messages、/v1beta/models/...、/v1/chat/completions ...
-   ├── /admin/api/*  管理接口（只绑 127.0.0.1，独立管理 token）
-   │      状态、配置读写、模型表、日志流（SSE）、指标、发测试请求
-   └── /admin/       管理界面静态页面
+VertexSwitch.exe（Tauri 2，单进程，Windows 下无控制台窗口）
+   ├── 托盘图标、单实例、开机自启（Tauri 插件）
+   ├── 主窗口（WebView2 显示 TypeScript 前端；关窗口=隐藏到托盘，不退出）
+   └── 代理核心（同进程内的 tokio 任务，axum 服务）
+          ├── 业务路由：/v1/messages、/v1beta/models/...、/v1/chat/completions ...
+          └── 管理：Tauri command 直接调用核心；另提供 /admin/api/*（只绑 127.0.0.1，独立 token）供 curl
+vertexswitch-core.exe（同一核心库的命令行版，无界面运行，便于服务器/调试）
 ```
 
-- GUI 和代理分两个进程：GUI 崩溃不影响转发，改端口时由外壳重启子进程
-- 界面用网页（Vue/React 或 HTML + htmx），pywebview 调 Windows 自带 WebView2 显示成原生窗口；浏览器打开同样可用
-- Windows 专属：命名 Mutex 单实例；开机自启写当前用户启动项（不做 Windows 服务）；密钥路径和管理 token 存 Windows 凭据管理器（`keyring`）；配置与日志放 `%APPDATA%\VertexSwitch\`
-- 打包：PyInstaller → exe，Inno Setup 做安装包
+- 核心与界面同进程：界面（WebView）崩溃不影响 Rust 主进程；改端口时只重启 axum 服务任务
+- 配置与日志在 `%APPDATA%\VertexSwitch\`（其他平台用对应的配置目录）；密钥路径和管理 token 存系统凭据库（`keyring` crate）
+- 打包：Tauri bundler（Windows 用 NSIS 安装包）
 
-### 7.2 代码结构（建议）
+### 7.2 代码结构
 
 ```text
-src/vertexswitch/
-  core/
-    settings.py        # 配置模型，读写 %APPDATA%\VertexSwitch\config.toml
-    models.py          # 模型表加载与热重载（models.yaml）
-    registry.py        # 模型名 → (后端, 上游模型 ID)
-    auth.py            # 服务账号 token 管理（加锁、后台刷新）
-    transport.py       # 上游 POST / 流式：重试、配额识别、超时
-    tiers.py           # 服务档位头与 trafficType 核对（纯函数）
-    errors.py          # 按入口协议渲染错误（流式 / 非流式）
-    metrics.py
-  backends/            # 每个后端声明 url()、headers()、needs_google_token、supports_tier
-    claude_vertex.py
-    gemini_native.py
-    gemini_openai.py
-    maas.py
-    ollama.py
-  frontends/           # 入口协议
-    anthropic_api.py
-    gemini_api.py
-    openai_api.py
-  translate/
-    openai_to_anthropic.py   # 工具、图片、流式工具调用
-  admin/
-    api.py             # /admin/api
-    logs.py            # 内存环形缓冲 + SSE
-  app.py               # 组装 FastAPI
-  cli.py               # vertexswitch-core 命令行入口
-gui/
-  shell.py             # pywebview + pystray + 子进程监管 + 单实例
-  web/                 # 管理界面前端
-tests/                 # pytest + httpx.MockTransport，不连真实 Vertex
-installer/             # Inno Setup 脚本
+Cargo.toml                    # workspace
+crates/vertexswitch-core/     # 核心库 + 命令行 bin
+  src/config.rs               # 配置（TOML）
+  src/auth.rs                 # 服务账号 JWT(RS256) → access token，加锁刷新
+  src/transport.rs            # 上游请求：超时、重试、配额识别
+  src/errors.rs               # 按入口协议渲染错误
+  src/registry.rs             # 模型表与路由（models.yaml）
+  src/tiers.rs                # 服务档位与 trafficType 核对（纯函数）
+  src/backends/               # vertex.rs、claude.rs、gemini.rs、openai_compat.rs
+  src/frontends/              # anthropic.rs、gemini.rs、openai.rs、models.rs、health
+  src/translate/              # openai_to_anthropic.rs（纯函数 + 流式状态机）
+  tests/                      # 用 wiremock 起本地假上游，不连真实 Vertex
+src-tauri/                    # Tauri 外壳：托盘、窗口、command、单实例、自启
+ui/                           # TypeScript + Vite 前端
+src/vertexswitch/ , tests/    # Python 原型（参考实现，达到同等功能后删除）
 ```
+
+主要依赖：tokio、axum、reqwest（rustls、stream）、serde / serde_json / serde_yaml / toml、jsonwebtoken（RS256）、tracing、wiremock（测试）、tauri 2 及其 tray / single-instance / autostart 插件。
+测试时通过配置里隐藏的上游地址覆盖项把 Vertex / OAuth 指向 wiremock。
 
 ## 8. 里程碑
 
 | # | 内容 | 完成标准 |
 | --- | --- | --- |
-| M0 | 项目骨架：pyproject（src 布局）、虚拟环境、ruff、pytest | `pytest` 跑通空测试 |
-| M1 | 核心 + Claude：settings、auth、transport、errors、registry、Claude 后端、`/v1/messages`（流式/非流式） | Mock 测试覆盖：请求体改写、URL、重试、配额识别、错误格式；用真实密钥在 8788 端口跑通 Claude Code |
-| M2 | Gemini 原生 + 服务档位 + trafficType 核对 | 档位头规则全部有测试 |
-| M3 | OpenAI 入口：Gemini 兼容、MaaS（按官方路径）、Ollama、OpenAI→Claude 完整转换 | 工具调用（含流式）测试通过 |
-| M4 | 管理接口、日志流、指标、模型表热加载 | 用 curl 能完成所有管理操作 |
-| M5 | GUI 外壳与管理界面 | 托盘启动、改配置、看日志、切档位 |
-| M6 | 打包与安装包 | 干净 Windows 上安装即用 |
-| M7 | 迁移 | 客户端逐个切到 VertexSwitch，确认稳定后再停旧 vertex-proxy |
+| M0–M3 | Python 原型（已完成，作为参考） | 125 个 Mock 测试；Gemini 原生与档位已实测 |
+| R0 | Rust 工具链、Cargo workspace、fmt / clippy / test | `cargo test` 跑通 |
+| R1 | 核心基础 + Gemini 原生 + 档位（用户密钥只能调 Gemini，先做这条） | SPEC §1–7、§8.2、§9 的测试移植通过；真实验收同 Python 版 |
+| R2 | Anthropic `/v1/messages`、count_tokens | SPEC §8.1 测试移植通过 |
+| R3 | OpenAI 入口与 OpenAI→Claude 转换、模型列表、Ollama | SPEC §8.3–8.4、§10 测试移植通过；删除 Python 原型 |
+| R4 | 管理接口、日志流、指标、模型表热加载 | 用 curl 能完成所有管理操作 |
+| R5 | Tauri 外壳与界面 | 托盘启动、改配置、看日志、切档位 |
+| R6 | 安装包、开机自启、单实例 | 干净 Windows 上安装即用 |
+| R7 | 迁移 | 客户端逐个切到 VertexSwitch，确认稳定后再停旧 vertex-proxy |
 
 ## 9. 工作约定
 
 - 不停、不改正在运行的旧 vertex-proxy（8787）；新程序开发期间用 8788
 - 不复制旧代码；行为以官方文档为准，本报告第 4 节是需求清单不是实现
 - 密钥、`.env`、真实请求日志不入库
-- 测试默认用 MockTransport，不消耗 Vertex 配额；需要真实调用时先告诉用户
+- 测试默认用假上游（Python: MockTransport；Rust: wiremock），不消耗 Vertex 配额；需要真实调用时先告诉用户
+- 用户的服务账号目前只能调用 Gemini；Claude 路径只能用假上游测试
 - 小步提交，提交信息说明"做了什么、为什么"

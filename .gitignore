@@ -16,8 +16,13 @@ dist/
 *.spec
 installer/Output/
 
+# Rust / Tauri
+target/
+src-tauri/gen/
+
 # Frontend
 node_modules/
+ui/dist/
 
 # Secrets and local config: never commit
 .env
