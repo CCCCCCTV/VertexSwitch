@@ -85,11 +85,18 @@ impl AppState {
     pub fn vertex_base(&self, region: &str) -> String {
         vertex::base_url(region, self.settings.google.api_base_override.as_deref())
     }
+
+    /// 不含 API 版本的 Vertex 主机地址。
+    pub fn vertex_host(&self, region: &str) -> String {
+        vertex::host(region, self.settings.google.api_base_override.as_deref())
+    }
 }
 
 pub fn router(state: SharedState) -> Router {
     let protected = frontends::anthropic::routes()
         .merge(frontends::gemini::routes())
+        .merge(frontends::openai::routes())
+        .merge(frontends::models::routes())
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_api_key,
@@ -110,6 +117,9 @@ pub async fn serve(listener: TcpListener, state: SharedState) -> std::io::Result
         let interval = Duration::from_secs(state.settings.google.token_refresh_minutes.max(1) * 60);
         tokio::spawn(async move { state.tokens.run_background_refresh(interval).await })
     };
+    if state.settings.ollama.enabled {
+        frontends::openai::refresh_ollama_models(&state).await;
+    }
     let result = axum::serve(listener, router(state)).await;
     refresher.abort();
     result

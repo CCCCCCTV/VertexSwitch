@@ -2,6 +2,8 @@
 
 pub mod anthropic;
 pub mod gemini;
+pub mod models;
+pub mod openai;
 
 use axum::{
     body::Body,

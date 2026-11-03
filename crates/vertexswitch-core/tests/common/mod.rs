@@ -36,9 +36,14 @@ pub fn settings() -> Settings {
     s
 }
 
-pub async fn start(mut settings: Settings) -> Harness {
-    let upstream = MockServer::start().await;
+pub async fn start(settings: Settings) -> Harness {
+    start_on(settings, MockServer::start().await).await
+}
+
+/// 在调用方事先准备好（已挂载部分 mock）的假上游上启动；Vertex 与 Ollama 都指向它。
+pub async fn start_on(mut settings: Settings, upstream: MockServer) -> Harness {
     settings.google.api_base_override = Some(upstream.uri());
+    settings.ollama.base_url = upstream.uri();
     launch(settings, upstream).await
 }
 

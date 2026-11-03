@@ -10,6 +10,7 @@ pub mod errors;
 pub mod frontends;
 pub mod registry;
 pub mod tiers;
+pub mod translate;
 pub mod transport;
 
 pub use app::{AppState, SharedState, router, serve};

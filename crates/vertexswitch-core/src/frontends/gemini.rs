@@ -12,7 +12,7 @@ use axum::{
     extract::{Path, RawQuery, State},
     http::{HeaderMap, HeaderValue, header},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
 };
 use serde_json::{Value, json};
 
@@ -38,8 +38,9 @@ pub fn routes() -> Router<SharedState> {
                 get(get_model).post(model_action),
             );
     }
-    // 部分客户端走 v1 路径
-    router.route("/v1/models/{*target}", post(model_action))
+    // 部分客户端走 v1 路径：POST /v1/models/{model}:{action}。该路径的 GET 是 OpenAI / Anthropic
+    // 格式的模型查询，两者在 frontends::models 里注册到同一条路由上。
+    router
 }
 
 fn split_target(target: &str) -> ProxyResult<(&str, &str)> {
@@ -86,7 +87,7 @@ impl TrafficCheck {
     }
 }
 
-async fn model_action(
+pub async fn model_action(
     State(state): State<SharedState>,
     Path(target): Path<String>,
     RawQuery(query): RawQuery,

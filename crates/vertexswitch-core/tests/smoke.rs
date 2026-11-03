@@ -32,15 +32,21 @@ async fn unknown_route_uses_protocol_error_format() {
 #[tokio::test]
 async fn wrong_method_is_json_too() {
     let h = common::start(common::settings()).await;
+    // 只接受 POST 的路径用 GET 访问
     let r = h
         .client
-        .get(h.url("/v1/models/x:generateContent"))
+        .get(h.url("/v1/chat/completions"))
         .send()
         .await
         .unwrap();
     assert_eq!(r.status(), 405);
     let body: Value = r.json().await.unwrap();
     assert_eq!(body["error"]["code"], 405);
+
+    let r = h.client.get(h.url("/v1/messages")).send().await.unwrap();
+    assert_eq!(r.status(), 405);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["type"], "error");
 }
 
 #[tokio::test]
