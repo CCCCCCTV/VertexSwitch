@@ -1,0 +1,24 @@
+# VertexSwitch 默认模型表。
+# 用户可把本文件复制到 %APPDATA%\VertexSwitch\models.yaml 后修改，用户文件优先。
+#
+# 每个后端下：别名 → Vertex 上游模型 ID。
+# 来源：https://platform.claude.com/docs/en/build-with-claude/claude-models-on-google-cloud/google-managed
+#   - Claude 4.6 及以后的模型 ID 不带日期
+#   - 更早的模型用 "@日期"；客户端发来的 "-日期" 形式会自动改写为 "@日期"
+#   - 未列出的 claude-* 名字原样转发
+
+claude:
+  claude-fable-5-1: claude-fable-5-1
+  claude-fable-5: claude-fable-5
+  claude-opus-5-5: claude-opus-5-5
+  claude-opus-5: claude-opus-5
+  claude-opus-4-8: claude-opus-4-8
+  claude-opus-4-7: claude-opus-4-7
+  claude-opus-4-6: claude-opus-4-6
+  claude-opus-4-5: claude-opus-4-5@20251101
+  claude-sonnet-5-5: claude-sonnet-5-5
+  claude-sonnet-5: claude-sonnet-5
+  claude-sonnet-4-6: claude-sonnet-4-6
+  claude-sonnet-4-5: claude-sonnet-4-5@20250929
+  claude-haiku-5-5: claude-haiku-5-5
+  claude-haiku-4-5: claude-haiku-4-5@20251001
