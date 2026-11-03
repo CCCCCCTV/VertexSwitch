@@ -23,7 +23,7 @@ VertexSwitch 是一个**以 Windows 10/11 为主的桌面程序**（Rust + Tauri
 
 - 仓库：`D:\Admin\Documents\VertexSwitch`，分支 `main`，首个提交 `53d0399`（只有 README、.gitignore、.gitattributes）
 - Git 身份已配置：`CCCCCCTV <2091449962@qq.com>`
-- 机器上有 Python 3.14（pythoncore-3.14-64）、scoop、Node/bun。建议项目用独立虚拟环境（`uv` 或 `python -m venv .venv`），**不要装到全局 site-packages**
+- 机器上有 Rust（stable，MSVC 目标）与 VS 2022 生成工具、Node/bun、scoop；WebView2 已安装
 - `.gitignore` 已忽略 `.env`、`*service-account*.json`、`*credentials*.json`、`*-key.json`。服务账号密钥绝不入库
 - 提交时 Git 提示 LF→CRLF 是正常现象（`.gitattributes` 已为 .py/.md/.toml 等固定 LF）
 
@@ -120,8 +120,8 @@ VertexSwitch 是一个**以 Windows 10/11 为主的桌面程序**（Rust + Tauri
 > **2026-11-03 变更**：技术栈由 Python（FastAPI + pywebview）改为 **Rust + Tauri 2 + TypeScript**。
 > 原因：后台常驻一个 Python 进程不方便（Alt+Tab 常显、打包 40–60 MB、启动慢、易被杀毒误报）；
 > Tauri 单个 exe 约 10 MB，内存小，且 Windows / macOS / Linux 桌面可同一套代码（Android 不作为目标）。
-> Python 原型（M0–M3）保留在仓库里作为参考实现，Rust 版达到同等功能后删除。
-> 行为规格见 `docs/SPEC.md`；Python 原型的 `tests/` 是它的可执行版本。
+> Python 原型（M0–M3）在 R3 达到同等功能后已删除（最后一版见提交 `8114716`）。
+> 行为规格见 `docs/SPEC.md`；`crates/vertexswitch-core` 的测试是它的可执行版本。
 
 ### 7.1 进程结构
 
@@ -156,7 +156,6 @@ crates/vertexswitch-core/     # 核心库 + 命令行 bin
   tests/                      # 用 wiremock 起本地假上游，不连真实 Vertex
 src-tauri/                    # Tauri 外壳：托盘、窗口、command、单实例、自启
 ui/                           # TypeScript + Vite 前端
-src/vertexswitch/ , tests/    # Python 原型（参考实现，达到同等功能后删除）
 ```
 
 主要依赖：tokio、axum、reqwest（rustls、stream）、serde / serde_json / serde_yaml / toml、jsonwebtoken（RS256）、tracing、wiremock（测试）、tauri 2 及其 tray / single-instance / autostart 插件。
@@ -166,11 +165,11 @@ src/vertexswitch/ , tests/    # Python 原型（参考实现，达到同等功�
 
 | # | 内容 | 完成标准 |
 | --- | --- | --- |
-| M0–M3 | Python 原型（已完成，作为参考） | 125 个 Mock 测试；Gemini 原生与档位已实测 |
+| M0–M3 | Python 原型（已完成，R3 后删除） | 125 个 Mock 测试；Gemini 原生与档位已实测 |
 | R0 ✅ | Rust 工具链、Cargo workspace、fmt / clippy / test | `cargo test` 跑通 |
 | R1 ✅ | 核心基础 + Gemini 原生 + 档位（用户密钥只能调 Gemini，先做这条） | SPEC §1–7、§8.2、§9 的测试移植通过；真实验收同 Python 版 |
 | R2 ✅ | Anthropic `/v1/messages`、count_tokens | SPEC §8.1 测试移植通过 |
-| R3 | OpenAI 入口与 OpenAI→Claude 转换、模型列表、Ollama | SPEC §8.3–8.4、§10 测试移植通过；删除 Python 原型 |
+| R3 ✅ | OpenAI 入口与 OpenAI→Claude 转换、模型列表、Ollama | SPEC §8.3–8.4、§10 测试移植通过；删除 Python 原型 |
 | R4 | 管理接口、日志流、指标、模型表热加载 | 用 curl 能完成所有管理操作 |
 | R5 | Tauri 外壳与界面 | 托盘启动、改配置、看日志、切档位 |
 | R6 | 安装包、开机自启、单实例 | 干净 Windows 上安装即用 |
@@ -181,6 +180,6 @@ src/vertexswitch/ , tests/    # Python 原型（参考实现，达到同等功�
 - 不停、不改正在运行的旧 vertex-proxy（8787）；新程序开发期间用 8788
 - 不复制旧代码；行为以官方文档为准，本报告第 4 节是需求清单不是实现
 - 密钥、`.env`、真实请求日志不入库
-- 测试默认用假上游（Python: MockTransport；Rust: wiremock），不消耗 Vertex 配额；需要真实调用时先告诉用户
+- 测试默认用本地假上游（wiremock、原始 TCP 服务），不消耗 Vertex 配额；需要真实调用时先告诉用户
 - 用户的服务账号目前只能调用 Gemini；Claude 路径只能用假上游测试
 - 小步提交，提交信息说明"做了什么、为什么"
