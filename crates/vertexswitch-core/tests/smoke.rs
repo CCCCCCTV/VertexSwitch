@@ -1,48 +1,94 @@
-//! R0 冒烟测试：核心能起服务；wiremock 假上游可用（后续所有上游测试都基于它，不连真实 Vertex）。
+//! 冒烟测试：健康检查、未知路由、鉴权。
 
-use serde_json::{Value, json};
-use tokio::net::TcpListener;
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, ResponseTemplate};
+mod common;
 
-async fn spawn_core() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    tokio::spawn(vertexswitch_core::serve(listener));
-    format!("http://{addr}")
-}
+use serde_json::Value;
 
 #[tokio::test]
-async fn health_reports_version() {
-    let base = spawn_core().await;
-    let body: Value = reqwest::get(format!("{base}/health"))
-        .await
-        .unwrap()
-        .json()
-        .await
-        .unwrap();
+async fn health_reports_token_and_project() {
+    let h = common::start(common::settings()).await;
+    let r = h.client.get(h.url("/health")).send().await.unwrap();
+    assert_eq!(r.status(), 200);
+    let body: Value = r.json().await.unwrap();
     assert_eq!(body["status"], "ok");
     assert_eq!(body["version"], vertexswitch_core::VERSION);
+    assert_eq!(body["project_id"], "proj");
+    assert_eq!(body["gemini_tier"], "standard");
 }
 
 #[tokio::test]
-async fn wiremock_fake_upstream_works() {
-    let upstream = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/x:generateContent"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "ok": true })))
-        .expect(1)
-        .mount(&upstream)
-        .await;
+async fn unknown_route_uses_protocol_error_format() {
+    let h = common::start(common::settings()).await;
+    let r = h.client.get(h.url("/v1/nope")).send().await.unwrap();
+    assert_eq!(r.status(), 404);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error"]["type"], "not_found_error");
 
-    let body: Value = reqwest::Client::new()
-        .post(format!("{}/v1/x:generateContent", upstream.uri()))
-        .json(&json!({}))
+    let r = h.client.get(h.url("/v1beta/nope")).send().await.unwrap();
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error"]["status"], "NOT_FOUND");
+}
+
+#[tokio::test]
+async fn wrong_method_is_json_too() {
+    let h = common::start(common::settings()).await;
+    let r = h
+        .client
+        .get(h.url("/v1/models/x:generateContent"))
         .send()
         .await
-        .unwrap()
-        .json()
+        .unwrap();
+    assert_eq!(r.status(), 405);
+    let body: Value = r.json().await.unwrap();
+    assert_eq!(body["error"]["code"], 405);
+}
+
+#[tokio::test]
+async fn api_key_variants() {
+    let mut s = common::settings();
+    s.server.api_key = "secret".into();
+    let h = common::start(s).await;
+    let list = h.url("/v1beta/models");
+    assert_eq!(h.client.get(&list).send().await.unwrap().status(), 401);
+    assert_eq!(
+        h.client
+            .get(&list)
+            .header("x-api-key", "wrong")
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    for (name, value) in [
+        ("x-api-key", "secret"),
+        ("x-goog-api-key", "secret"),
+        ("authorization", "Bearer secret"),
+    ] {
+        let r = h
+            .client
+            .get(&list)
+            .header(name, value)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(r.status(), 200, "{name}");
+    }
+    let r = h
+        .client
+        .get(format!("{list}?key=secret"))
+        .send()
         .await
         .unwrap();
-    assert_eq!(body, json!({ "ok": true }));
+    assert_eq!(r.status(), 200);
+    // /health 不鉴权
+    assert_eq!(
+        h.client
+            .get(h.url("/health"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
 }

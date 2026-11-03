@@ -18,3 +18,7 @@ all = { level = "warn", priority = -1 }
 lto = true
 codegen-units = 1
 strip = true
+
+# 测试里现生成 RSA 密钥：大数运算在 debug 下太慢，单独优化
+[profile.dev.package.num-bigint-dig]
+opt-level = 3
