@@ -16,13 +16,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import __version__
 from .backends.claude_vertex import ClaudeVertexBackend
+from .backends.gemini_native import GeminiNativeBackend
 from .core.auth import AuthError, ServiceAccountTokenProvider, TokenProvider
 from .core.context import AppContext
 from .core.errors import ProxyError, error_body, protocol_for_path
 from .core.registry import ModelRegistry
 from .core.settings import Settings
 from .core.transport import Transport
-from .frontends import anthropic_api, models_api
+from .frontends import anthropic_api, gemini_api, models_api
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,16 @@ def _render(request: Request, err: ProxyError) -> JSONResponse:
 
 
 def _extract_key(request: Request) -> str:
+    """Anthropic 客户端用 x-api-key，OpenAI 用 Bearer，Gemini 用 x-goog-api-key 或 ?key=。"""
     auth = request.headers.get("authorization", "")
     if auth[:7].lower() == "bearer ":
         return auth[7:].strip()
-    return request.headers.get("x-api-key", "")
+    return (
+        request.headers.get("x-api-key")
+        or request.headers.get("x-goog-api-key")
+        or request.query_params.get("key")
+        or ""
+    )
 
 
 async def require_api_key(request: Request) -> None:
@@ -68,6 +75,7 @@ def create_app(
         tokens=tokens,
         transport=Transport(client, settings.timeouts, settings.retry),
         claude=ClaudeVertexBackend(settings.google, settings.claude),
+        gemini=GeminiNativeBackend(settings),
     )
 
     @contextlib.asynccontextmanager
@@ -109,7 +117,13 @@ def create_app(
 
     @app.get("/health")
     async def health() -> JSONResponse:
-        info: dict = {"status": "ok", "version": __version__, "region": settings.google.region}
+        info: dict = {
+            "status": "ok",
+            "version": __version__,
+            "region": settings.google.region,
+            "gemini_region": settings.gemini_region(),
+            "gemini_tier": settings.gemini.tier,
+        }
         try:
             await tokens.get_token()
             info["google_token"] = "ok"
@@ -121,5 +135,6 @@ def create_app(
 
     protected = [Depends(require_api_key)]
     app.include_router(anthropic_api.build_router(), dependencies=protected)
+    app.include_router(gemini_api.build_router(), dependencies=protected)
     app.include_router(models_api.build_router(), dependencies=protected)
     return app

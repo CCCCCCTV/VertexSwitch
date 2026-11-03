@@ -13,16 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.settings import ClaudeSettings, GoogleSettings
-
-
-def vertex_base_url(region: str) -> str:
-    """按区域选择 Vertex AI 主机。"""
-    if region == "global":
-        return "https://aiplatform.googleapis.com/v1"
-    if region in ("us", "eu"):
-        # 多区域端点：主机名和路径里都带 us / eu
-        return f"https://aiplatform.{region}.rep.googleapis.com/v1"
-    return f"https://{region}-aiplatform.googleapis.com/v1"
+from .vertex import publisher_models_url
 
 
 class ClaudeVertexBackend:
@@ -35,11 +26,7 @@ class ClaudeVertexBackend:
         self.claude = claude
 
     def _publisher_url(self, project_id: str) -> str:
-        region = self.google.region
-        return (
-            f"{vertex_base_url(region)}/projects/{project_id}"
-            f"/locations/{region}/publishers/anthropic/models"
-        )
+        return publisher_models_url(project_id, self.google.region, "anthropic")
 
     def messages_url(self, project_id: str, model: str, stream: bool) -> str:
         specifier = "streamRawPredict" if stream else "rawPredict"

@@ -72,12 +72,29 @@ class ClaudeSettings(BaseModel):
     drop_body_fields: list[str] = Field(default_factory=lambda: ["context_management"])
 
 
+class GeminiSettings(BaseModel):
+    # 为空时用 google.region；Flex 只支持 global，所以 Gemini 常需要单独设区域
+    region: str = ""
+    # standard / flex / priority；请求头 X-VertexSwitch-Tier 可按请求覆盖
+    tier: str = "standard"
+    # 加 X-Vertex-AI-LLM-Request-Type: shared，只走 PayGo（绕过预配吞吐量）
+    shared_only: bool = False
+    # Flex 排队超时（秒，X-Server-Timeout），上限 1800
+    flex_server_timeout: int = 1800
+    # 官方文档注明不支持 Flex 的模型，请求 Flex 时降级为 Standard
+    flex_unsupported_models: list[str] = Field(default_factory=lambda: ["gemini-4-argon"])
+
+
 class Settings(BaseModel):
     server: ServerSettings = Field(default_factory=ServerSettings)
     google: GoogleSettings = Field(default_factory=GoogleSettings)
     timeouts: TimeoutSettings = Field(default_factory=TimeoutSettings)
     retry: RetrySettings = Field(default_factory=RetrySettings)
     claude: ClaudeSettings = Field(default_factory=ClaudeSettings)
+    gemini: GeminiSettings = Field(default_factory=GeminiSettings)
+
+    def gemini_region(self) -> str:
+        return self.gemini.region or self.google.region
 
     def resolved_credentials_file(self) -> str:
         return self.google.credentials_file or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")

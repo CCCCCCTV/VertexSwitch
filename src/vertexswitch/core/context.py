@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..backends.claude_vertex import ClaudeVertexBackend
+from ..backends.gemini_native import GeminiNativeBackend
 from .auth import AuthError, TokenProvider
 from .errors import ProxyError
 from .registry import ModelRegistry
@@ -19,6 +20,7 @@ class AppContext:
     tokens: TokenProvider
     transport: Transport
     claude: ClaudeVertexBackend
+    gemini: GeminiNativeBackend
 
     async def google_token(self) -> str:
         try:

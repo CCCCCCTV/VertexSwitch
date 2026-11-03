@@ -78,7 +78,9 @@ def protocol_for_path(path: str) -> Protocol:
     """根据请求路径判断入口协议（用于 app 层兜底的错误渲染）。"""
     if path.startswith("/anthropic/") or path.startswith("/v1/messages"):
         return Protocol.ANTHROPIC
-    if path.startswith("/gemini/") or path.startswith("/v1beta/"):
+    if path.startswith(("/gemini/", "/v1beta/")) or (
+        "/models/" in path and ":" in path.rsplit("/", 1)[-1]
+    ):
         return Protocol.GEMINI
     return Protocol.OPENAI
 
@@ -108,6 +110,17 @@ def _is_anthropic_error(body: Any) -> bool:
     )
 
 
+def _google_error(body: Any) -> dict[str, Any] | None:
+    """Vertex 的 Google 格式错误体（可能包在单元素数组里）。"""
+    if isinstance(body, list) and len(body) == 1:
+        body = body[0]
+    if isinstance(body, dict) and isinstance(body.get("error"), dict):
+        err = body["error"]
+        if "code" in err and "message" in err:
+            return {"error": err}
+    return None
+
+
 def error_body(protocol: Protocol, err: ProxyError) -> dict[str, Any]:
     if protocol is Protocol.ANTHROPIC:
         if _is_anthropic_error(err.upstream_body):
@@ -117,6 +130,9 @@ def error_body(protocol: Protocol, err: ProxyError) -> dict[str, Any]:
             "error": {"type": anthropic_error_type(err.status), "message": err.message},
         }
     if protocol is Protocol.GEMINI:
+        upstream = _google_error(err.upstream_body)
+        if upstream is not None:
+            return upstream
         return {
             "error": {
                 "code": err.status,

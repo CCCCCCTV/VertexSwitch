@@ -54,11 +54,14 @@ class Transport:
         self._sleep = sleep
         self._clock = clock
 
-    def _timeout(self, stream: bool) -> httpx.Timeout:
+    def _timeout(self, stream: bool, min_read: float | None) -> httpx.Timeout:
         t = self.timeouts
+        read = t.stream_idle if stream else t.read
+        if min_read is not None:
+            read = max(read, min_read)
         return httpx.Timeout(
             connect=t.connect,
-            read=t.stream_idle if stream else t.read,
+            read=read,
             write=t.write,
             pool=t.pool,
         )
@@ -71,12 +74,18 @@ class Transport:
         headers: dict[str, str],
         content: bytes,
         stream: bool,
+        min_read_timeout: float | None = None,
     ) -> httpx.Response:
-        """发出请求并返回已收到响应头、尚未读取正文的响应。调用方负责 ``aclose()``。"""
+        """发出请求并返回已收到响应头、尚未读取正文的响应。调用方负责 ``aclose()``。
+
+        ``min_read_timeout``：上游可能合法地排队这么久（如 Flex 的 X-Server-Timeout），
+        本地读超时不得小于它。
+        """
         attempts = self.retry.attempts + 1
         for attempt in range(1, attempts + 1):
+            timeout = self._timeout(stream, min_read_timeout)
             request = self.client.build_request(
-                method, url, headers=headers, content=content, timeout=self._timeout(stream)
+                method, url, headers=headers, content=content, timeout=timeout
             )
             started = self._clock()
             try:

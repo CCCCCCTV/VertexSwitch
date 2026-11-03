@@ -15,6 +15,7 @@ import yaml
 from .settings import app_dir
 
 CLAUDE = "claude"
+GEMINI = "gemini"
 
 # claude-haiku-4-5-20251001 → claude-haiku-4-5@20251001
 _DATED_CLAUDE = re.compile(r"^(claude-[a-z0-9-]+?)-(\d{8})$")
@@ -53,7 +54,12 @@ class ModelRegistry:
         return cls.from_mapping(yaml.safe_load(text) or {})
 
     def resolve(self, model: str) -> Route | None:
-        model = model.strip()
+        model = model.strip().removeprefix("models/")
+        gemini = self.tables.get(GEMINI, {})
+        if model in gemini:
+            return Route(GEMINI, gemini[model])
+        if model.startswith("gemini-"):
+            return Route(GEMINI, model)
         claude = self.tables.get(CLAUDE, {})
         if model in claude:
             return Route(CLAUDE, claude[model])

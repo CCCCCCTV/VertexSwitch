@@ -1,4 +1,5 @@
-from vertexswitch.backends.claude_vertex import ClaudeVertexBackend, vertex_base_url
+from vertexswitch.backends.claude_vertex import ClaudeVertexBackend
+from vertexswitch.backends.vertex import vertex_base_url
 from vertexswitch.core.registry import CLAUDE, ModelRegistry, Route
 from vertexswitch.core.settings import ClaudeSettings, GoogleSettings
 

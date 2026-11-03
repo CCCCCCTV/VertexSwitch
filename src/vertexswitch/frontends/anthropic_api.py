@@ -8,32 +8,21 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 
 from ..core.context import AppContext
-from ..core.errors import Protocol, ProxyError, from_upstream, stream_error_event
+from ..core.errors import Protocol, ProxyError, from_upstream
 from ..core.registry import CLAUDE
+from .common import read_json_object, relay
 
 logger = logging.getLogger(__name__)
 
 PREFIXES = ("", "/anthropic")
 # 透传给 Vertex 的客户端请求头
 _FORWARD_HEADERS = ("anthropic-beta",)
-
-
-async def read_json_object(request: Request) -> dict[str, Any]:
-    try:
-        body = await request.json()
-    except (ValueError, UnicodeDecodeError) as e:
-        raise ProxyError(400, f"请求体不是合法的 JSON：{e}") from e
-    if not isinstance(body, dict):
-        raise ProxyError(400, "请求体必须是 JSON 对象")
-    return body
 
 
 def _require_model(ctx: AppContext, body: dict[str, Any]) -> str:
@@ -58,22 +47,6 @@ async def _upstream_headers(ctx: AppContext, request: Request) -> dict[str, str]
     return headers
 
 
-async def _relay(response: httpx.Response) -> AsyncIterator[bytes]:
-    try:
-        async for chunk in response.aiter_bytes():
-            yield chunk
-    except httpx.ReadTimeout:
-        logger.warning("上游流式响应空闲超时")
-        yield stream_error_event(Protocol.ANTHROPIC, ProxyError(504, "Vertex AI 流式响应空闲超时"))
-    except httpx.HTTPError as e:
-        logger.warning("上游流式响应中断：%r", e)
-        yield stream_error_event(
-            Protocol.ANTHROPIC, ProxyError(502, f"Vertex AI 流式响应中断：{type(e).__name__}")
-        )
-    finally:
-        await response.aclose()
-
-
 async def messages(request: Request) -> Response:
     ctx: AppContext = request.app.state.ctx
     body = await read_json_object(request)
@@ -96,7 +69,7 @@ async def messages(request: Request) -> Response:
             media_type=response.headers.get("content-type", "application/json"),
         )
     return StreamingResponse(
-        _relay(response),
+        relay(response, Protocol.ANTHROPIC),
         status_code=response.status_code,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
