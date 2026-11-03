@@ -13,9 +13,10 @@ use axum::{
 use serde_json::{Value, json};
 
 use super::gemini::model_action;
-use crate::app::{AppState, SharedState};
+use crate::app::SharedState;
 use crate::errors::{ProxyError, ProxyResult};
 use crate::registry::Backend;
+use crate::runtime::Runtime;
 
 const EPOCH: &str = "1970-01-01T00:00:00Z";
 
@@ -41,7 +42,7 @@ fn wants_anthropic(uri: &Uri, headers: &HeaderMap) -> bool {
 }
 
 /// OpenAI 格式列出的全部模型：Claude、Gemini、MaaS 别名，以及启用时发现的 Ollama 模型。
-fn all_ids(state: &AppState) -> Vec<String> {
+fn all_ids(state: &Runtime) -> Vec<String> {
     let registry = state.registry();
     let mut ids = registry.aliases(Backend::Claude);
     ids.extend(registry.aliases(Backend::Gemini));
@@ -57,11 +58,8 @@ fn all_ids(state: &AppState) -> Vec<String> {
     ids
 }
 
-async fn list_models(
-    State(state): State<SharedState>,
-    uri: Uri,
-    headers: HeaderMap,
-) -> Json<Value> {
+async fn list_models(State(app): State<SharedState>, uri: Uri, headers: HeaderMap) -> Json<Value> {
+    let state = app.runtime();
     if wants_anthropic(&uri, &headers) {
         let ids = state.registry().aliases(Backend::Claude);
         return Json(json!({
@@ -76,11 +74,12 @@ async fn list_models(
 }
 
 async fn get_model(
-    State(state): State<SharedState>,
+    State(app): State<SharedState>,
     Path(id): Path<String>,
     uri: Uri,
     headers: HeaderMap,
 ) -> ProxyResult<Json<Value>> {
+    let state = app.runtime();
     if !all_ids(&state).contains(&id) {
         return Err(ProxyError::new(404, format!("未知模型 {id:?}")));
     }

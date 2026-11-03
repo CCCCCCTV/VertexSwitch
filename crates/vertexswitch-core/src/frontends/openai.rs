@@ -23,7 +23,9 @@ use super::{parse_json_object, relay};
 use crate::app::{AppState, SharedState};
 use crate::backends::{claude, vertex};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
+use crate::metrics;
 use crate::registry::{Backend, Route};
+use crate::runtime::Runtime;
 use crate::translate::openai_to_anthropic::{
     SseParser, StreamTranslator, request_to_anthropic, response_to_openai,
 };
@@ -43,7 +45,8 @@ pub fn routes() -> Router<SharedState> {
     })
 }
 
-async fn chat_completions(State(state): State<SharedState>, body: Bytes) -> ProxyResult<Response> {
+async fn chat_completions(State(app): State<SharedState>, body: Bytes) -> ProxyResult<Response> {
+    let state = app.runtime();
     let body = parse_json_object(&body)?;
     let model = body
         .get("model")
@@ -56,6 +59,12 @@ async fn chat_completions(State(state): State<SharedState>, body: Bytes) -> Prox
         .registry()
         .resolve(&model)
         .ok_or_else(|| ProxyError::new(404, format!("未知模型 {model:?}")))?;
+    let stream = body.get("stream").and_then(Value::as_bool) == Some(true);
+    metrics::note(|i| {
+        i.model = Some(route.upstream_model.clone());
+        i.backend = Some(route.backend.as_str());
+        i.stream = stream;
+    });
     match route.backend {
         Backend::Claude => via_claude(&state, &body, &route, &model).await,
         _ => passthrough(&state, body, &route).await,
@@ -66,7 +75,7 @@ fn sse_data(payload: &str) -> Bytes {
     format!("data: {payload}\n\n").into()
 }
 
-async fn passthrough(state: &AppState, mut body: Value, route: &Route) -> ProxyResult<Response> {
+async fn passthrough(state: &Runtime, mut body: Value, route: &Route) -> ProxyResult<Response> {
     let settings = &state.settings;
     let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
     let (url, upstream_model, upstream, detect_quota) = match route.backend {
@@ -154,7 +163,7 @@ async fn passthrough(state: &AppState, mut body: Value, route: &Route) -> ProxyR
 }
 
 async fn via_claude(
-    state: &AppState,
+    state: &Runtime,
     body: &Value,
     route: &Route,
     client_model: &str,
@@ -254,7 +263,8 @@ async fn via_claude(
 }
 
 /// 从 Ollama `/api/tags` 发现本地模型；Ollama 没运行时只记日志，保留原有列表。
-pub async fn refresh_ollama_models(state: &AppState) -> usize {
+pub async fn refresh_ollama_models(app: &AppState) -> usize {
+    let state = app.runtime();
     let url = format!(
         "{}/api/tags",
         state.settings.ollama.base_url.trim_end_matches('/')
@@ -281,7 +291,7 @@ pub async fn refresh_ollama_models(state: &AppState) -> usize {
                 .filter_map(|m| m.get("name").and_then(Value::as_str).map(str::to_owned))
                 .collect();
             let count = models.len();
-            state.registry.write().expect("锁未中毒").ollama_models = models;
+            app.set_ollama_models(models);
             tracing::info!("发现 {count} 个 Ollama 模型");
             count
         }

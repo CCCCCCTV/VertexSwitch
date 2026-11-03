@@ -14,10 +14,12 @@ use axum::{
 use serde_json::Value;
 
 use super::{parse_json_object, relay};
-use crate::app::{AppState, SharedState};
+use crate::app::SharedState;
 use crate::backends::{claude, vertex};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
+use crate::metrics;
 use crate::registry::Backend;
+use crate::runtime::Runtime;
 use crate::transport::{UpstreamRequest, VERTEX};
 
 /// 透传给 Vertex 的客户端请求头。客户端的 anthropic-version 不转发（版本在请求体里）。
@@ -36,7 +38,7 @@ pub fn routes() -> Router<SharedState> {
     router
 }
 
-fn require_claude(state: &AppState, body: &Value) -> ProxyResult<String> {
+fn require_claude(state: &Runtime, body: &Value) -> ProxyResult<String> {
     let model = body
         .get("model")
         .and_then(Value::as_str)
@@ -51,9 +53,17 @@ fn require_claude(state: &AppState, body: &Value) -> ProxyResult<String> {
         .ok_or_else(|| ProxyError::new(404, format!("model: 未知的 Claude 模型 {model:?}")))
 }
 
+fn note_claude(model: &str, stream: bool) {
+    metrics::note(|i| {
+        i.model = Some(model.to_owned());
+        i.backend = Some(Backend::Claude.as_str());
+        i.stream = stream;
+    });
+}
+
 /// 先取 token（项目 ID 可能要从密钥文件里读出来），再拼上游请求头。
 async fn upstream_headers(
-    state: &AppState,
+    state: &Runtime,
     client_headers: &HeaderMap,
 ) -> ProxyResult<Vec<(String, String)>> {
     let mut headers = vec![
@@ -71,7 +81,7 @@ async fn upstream_headers(
     Ok(headers)
 }
 
-fn publisher_models(state: &AppState) -> ProxyResult<String> {
+fn publisher_models(state: &Runtime) -> ProxyResult<String> {
     let region = &state.settings.google.region;
     Ok(vertex::publisher_models_url(
         &state.vertex_base(region),
@@ -90,13 +100,15 @@ fn content_type_of(response: &reqwest::Response) -> HeaderValue {
 }
 
 async fn messages(
-    State(state): State<SharedState>,
+    State(app): State<SharedState>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ProxyResult<Response> {
+    let state = app.runtime();
     let mut body = parse_json_object(&body)?;
     let upstream_model = require_claude(&state, &body)?;
     let stream = body.get("stream").and_then(Value::as_bool) == Some(true);
+    note_claude(&upstream_model, stream);
     let upstream_headers = upstream_headers(&state, &headers).await?;
     let url = claude::messages_url(&publisher_models(&state)?, &upstream_model, stream);
     claude::messages_body(&mut body, &state.settings.claude);
@@ -137,12 +149,14 @@ async fn messages(
 }
 
 async fn count_tokens(
-    State(state): State<SharedState>,
+    State(app): State<SharedState>,
     headers: HeaderMap,
     body: Bytes,
 ) -> ProxyResult<Response> {
+    let state = app.runtime();
     let mut body = parse_json_object(&body)?;
     let upstream_model = require_claude(&state, &body)?;
+    note_claude(&upstream_model, false);
     let upstream_headers = upstream_headers(&state, &headers).await?;
     let url = claude::count_tokens_url(&publisher_models(&state)?);
     claude::count_tokens_body(&mut body, &state.settings.claude, &upstream_model);

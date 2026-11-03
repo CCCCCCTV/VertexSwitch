@@ -23,6 +23,13 @@ impl Harness {
         format!("{}{path}", self.base)
     }
 
+    /// 带管理 token 的请求构造器。
+    pub fn admin(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
+        self.client
+            .request(method, self.url(path))
+            .bearer_auth(&self.state.admin_token)
+    }
+
     /// 假上游上发往 publisher 模型的路径前缀（global 区域、项目 proj）。
     pub fn publisher_path(publisher: &str, region: &str) -> String {
         format!("/v1/projects/proj/locations/{region}/publishers/{publisher}/models")
@@ -53,11 +60,31 @@ pub async fn start_with_override(settings: Settings) -> Harness {
 }
 
 async fn launch(settings: Settings, upstream: MockServer) -> Harness {
-    let state = Arc::new(AppState::new(
+    launch_with(settings, upstream, |s| s).await
+}
+
+/// 带配置文件 / 模型表路径启动（管理接口与热加载测试用）；Vertex 与 Ollama 指向假上游。
+pub async fn start_with_paths(
+    mut settings: Settings,
+    config: Option<std::path::PathBuf>,
+    models: Option<std::path::PathBuf>,
+) -> Harness {
+    let upstream = MockServer::start().await;
+    settings.google.api_base_override = Some(upstream.uri());
+    settings.ollama.base_url = upstream.uri();
+    launch_with(settings, upstream, |s| s.with_paths(config, models)).await
+}
+
+async fn launch_with(
+    settings: Settings,
+    upstream: MockServer,
+    customize: impl FnOnce(AppState) -> AppState,
+) -> Harness {
+    let state = Arc::new(customize(AppState::new(
         settings,
         ModelRegistry::builtin(),
         TokenSource::fixed("tok", "proj"),
-    ));
+    )));
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(vertexswitch_core::serve(listener, state.clone()));

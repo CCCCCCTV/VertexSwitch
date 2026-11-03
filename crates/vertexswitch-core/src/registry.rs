@@ -19,6 +19,10 @@ pub enum Backend {
 }
 
 impl Backend {
+    pub fn as_str(self) -> &'static str {
+        self.table_key()
+    }
+
     fn table_key(self) -> &'static str {
         match self {
             Backend::Claude => "claude",
@@ -120,6 +124,23 @@ impl ModelRegistry {
             .iter()
             .find(|(k, _)| k == alias)
             .map(|(_, v)| Route::new(backend, v.clone()))
+    }
+
+    /// 某个后端的 (别名, 上游 ID) 表（按声明顺序；Ollama 没有表）。
+    pub fn entries(&self, backend: Backend) -> &[(String, String)] {
+        match backend {
+            Backend::Ollama => &[],
+            other => self.table(other),
+        }
+    }
+
+    /// 所有后端的别名总数。
+    pub fn len(&self) -> usize {
+        self.claude.len() + self.gemini.len() + self.maas.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// 别名列表（按声明顺序）。

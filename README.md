@@ -20,8 +20,10 @@
 - Gemini 服务档位：Standard / Flex / Priority，并用 `usageMetadata.trafficType` 核对实际档位
 - OpenAI Chat Completions：Gemini 兼容接口、MaaS 开放模型、本地 Ollama、OpenAI→Claude 转换（含工具调用与流式）
 - 模型列表：`/v1/models`（Anthropic / OpenAI 格式）、`/v1beta/models`（Gemini 格式）
+- 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
+- `/metrics`：Prometheus 指标
 
-管理接口、图形界面、安装包尚在开发。
+图形界面、安装包尚在开发。
 
 ## 命令行运行代理核心
 
@@ -56,6 +58,25 @@ api_key = ""           # 非空时客户端须携带此 key
 
 单个请求可用请求头 `X-VertexSwitch-Tier: flex|priority|standard` 覆盖档位，
 响应头 `X-VertexSwitch-Tier` 给出实际使用的档位。
+
+## 管理接口
+
+只接受本机连接，需要管理 token（首次启动时生成在 `%APPDATA%\VertexSwitch\admin_token`）：
+
+```powershell
+$h = @{ Authorization = "Bearer " + (Get-Content "$env:APPDATA\VertexSwitch\admin_token") }
+$api = "http://127.0.0.1:8788/admin/api"
+
+Invoke-RestMethod "$api/status" -Headers $h
+# 改档位：立即生效并写回配置文件
+Invoke-RestMethod "$api/config" -Method Patch -Headers $h -ContentType "application/json" `
+  -Body '{"gemini":{"tier":"flex"}}'
+Invoke-RestMethod "$api/requests?limit=20" -Headers $h
+# 实时日志（SSE）
+curl.exe -N -H "Authorization: $($h.Authorization)" "$api/logs/stream"
+```
+
+全部接口见 `docs/SPEC.md` 第 12 节。
 
 ## 开发
 

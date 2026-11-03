@@ -2,13 +2,17 @@
 //!
 //! 行为规格见仓库根目录的 `docs/SPEC.md`。
 
+pub mod admin;
 pub mod app;
 pub mod auth;
 pub mod backends;
 pub mod config;
 pub mod errors;
 pub mod frontends;
+pub mod logs;
+pub mod metrics;
 pub mod registry;
+pub mod runtime;
 pub mod tiers;
 pub mod translate;
 pub mod transport;

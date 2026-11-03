@@ -199,3 +199,39 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - 命令行模式输出 UTF-8（实测：Windows 重定向时默认 ANSI 代码页导致中文乱码）
 - 档位降级、trafficType 不符、配额耗尽、上游断流 → WARNING
 - 不记录请求/响应正文（含真实对话）
+
+## 12. 管理接口（R4）
+
+- 前缀 `/admin/api/`；**只接受本机连接**（非回环地址 403），并要求 `Authorization: Bearer <管理 token>`（401）。管理 token 与代理的 `server.api_key` 相互独立。
+- 管理 token 存在 `%APPDATA%\VertexSwitch\admin_token`，首次启动时随机生成（48 位十六进制）。后续计划改存系统凭据库。
+- 管理接口、`/health`、`/metrics` 自身不计入请求记录。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `status` | `/health` 的内容 + 监听地址、运行时长、进行中请求数、各后端模型数、配置文件路径 |
+| GET | `config` | 当前完整配置 |
+| PATCH | `config` | JSON Merge Patch（RFC 7396），`null` 恢复默认；校验 → 写盘 → 立即生效 |
+| PUT | `config` | 整体替换，同上 |
+| POST | `config/reload` | 从配置文件重新读取并应用 |
+| GET | `models` | 三张表（保持声明顺序）+ 已发现的 Ollama 模型 + 来源（用户文件 / builtin） |
+| POST | `models/reload` | 重新读取模型表；有误返回 400 并保留原表 |
+| POST | `ollama/refresh` | 重新发现 Ollama 模型 |
+| GET | `logs?since=&limit=` | 最近日志（环形缓冲 1000 条，INFO 及以上）；`since` 为序号，用于增量拉取 |
+| GET | `logs/stream` | 日志 SSE 实时流（`data:` 为一条 JSON 日志） |
+| GET | `requests?since=&limit=` | 最近请求记录（环形缓冲 500 条） |
+| GET | `requests/stream` | 请求记录 SSE 实时流 |
+| GET | `metrics` | JSON 汇总：按 (协议, 后端, 状态码) 的请求数、耗时、token 用量 |
+| POST | `test` | `{"model", "prompt"?, "max_tokens"?=32}` 经 OpenAI 入口在进程内发一个最小请求，返回 `ok / status / latency_ms / reply / error`；**会真实调用上游** |
+
+配置修改：
+- 认证信息（`credentials_file`、`project_id`）不变时沿用原 token 来源与缓存的 token，否则新建并重启后台刷新；超时 / 重试不变时沿用连接池。
+- `server.host` / `server.port` 变化时返回 `restart_required: true`，由外壳重启监听。
+- 每个请求开始时取一份运行时快照（配置、token 来源、传输、模型表），改配置不影响进行中的请求。
+
+热加载：每 2 秒检查配置文件与用户模型表的修改时间；内容变化则重新加载，内容有误时保留当前配置并告警。
+
+请求记录（每条）：`seq, ts_ms, method, path, protocol, model(上游 ID), backend, tier, stream, status, duration_ms, input_tokens, output_tokens, outcome, error`。
+- 在**响应体结束时**落定：`ok`；`error`（状态码 ≥ 400）；`stream_error`（流中由代理补发了错误事件）；`cancelled`（响应体未读完就被丢弃，如客户端断开）。
+- 用量从响应字节流里取各协议字段的最后一次出现值：Anthropic `input_tokens`(+缓存读写) / `output_tokens`；Gemini `promptTokenCount` / `candidatesTokenCount`(+`thoughtsTokenCount`)；OpenAI `prompt_tokens` / `completion_tokens`。OpenAI→Claude 的流式请求只有客户端开了 `stream_options.include_usage` 才有用量。
+
+`/metrics`（Prometheus 文本，**需要代理 API key**）：`vertexswitch_requests_total{protocol,backend,status}`、`vertexswitch_request_duration_seconds_{sum,count}{protocol,backend}`、`vertexswitch_tokens_total{protocol,backend,kind}`、`vertexswitch_requests_in_flight`、`vertexswitch_uptime_seconds`。

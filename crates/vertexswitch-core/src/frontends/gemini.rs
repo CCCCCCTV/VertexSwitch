@@ -20,6 +20,7 @@ use super::{parse_json_object, relay};
 use crate::app::SharedState;
 use crate::backends::{gemini, vertex};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
+use crate::metrics;
 use crate::registry::Backend;
 use crate::tiers::{TierPlan, TrafficTypeWatcher, check_traffic_type};
 use crate::transport::{UpstreamRequest, VERTEX};
@@ -88,12 +89,13 @@ impl TrafficCheck {
 }
 
 pub async fn model_action(
-    State(state): State<SharedState>,
+    State(app): State<SharedState>,
     Path(target): Path<String>,
     RawQuery(query): RawQuery,
     headers: HeaderMap,
     body: Bytes,
 ) -> ProxyResult<Response> {
+    let state = app.runtime();
     let (model, action) = split_target(&target)?;
     let route = state
         .registry()
@@ -139,6 +141,12 @@ pub async fn model_action(
         url = format!("{url}?{query}");
     }
     let stream = action == "streamGenerateContent";
+    metrics::note(|i| {
+        i.model = Some(route.upstream_model.clone());
+        i.backend = Some(Backend::Gemini.as_str());
+        i.tier = plan.as_ref().map(|p| p.effective.as_str());
+        i.stream = stream;
+    });
     let mut request = UpstreamRequest::post_json(
         url,
         upstream_headers,
@@ -195,7 +203,8 @@ fn gemini_model(id: &str) -> Value {
     })
 }
 
-async fn list_models(State(state): State<SharedState>) -> Json<Value> {
+async fn list_models(State(app): State<SharedState>) -> Json<Value> {
+    let state = app.runtime();
     let models: Vec<Value> = state
         .registry()
         .aliases(Backend::Gemini)
@@ -206,9 +215,10 @@ async fn list_models(State(state): State<SharedState>) -> Json<Value> {
 }
 
 async fn get_model(
-    State(state): State<SharedState>,
+    State(app): State<SharedState>,
     Path(target): Path<String>,
 ) -> ProxyResult<impl IntoResponse> {
+    let state = app.runtime();
     let id = target.strip_prefix("models/").unwrap_or(&target);
     if !state
         .registry()
