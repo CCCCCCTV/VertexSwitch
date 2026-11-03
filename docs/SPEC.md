@@ -143,6 +143,7 @@ Ollama：启用时启动即调 `/api/tags` 发现（失败只告警），也应�
 - `POST /v1/chat/completions`、`/chat/completions`、`/openai/v1/chat/completions`、`/api/v1/chat/completions`
 - 按 `model` 分流：Gemini / MaaS / Ollama 原样转发（见 §3），流式转发时 `text/event-stream`，中途出错按 OpenAI 格式发错误；Claude 走 §10 转换。
 - Ollama 未启用 → 400。Gemini 兼容接口**绝不能**带档位头（Vertex 返回 400 "Flex API is not supported with chatCompletions API"）。
+- **实测**（2026-11-03，Rust，global）：Gemini 兼容接口用 `v1beta1` 可用；非流式、流式、工具调用（含流式）、`/openai/v1`、`/chat/completions` 别名均正常。配置为 Flex 时该接口不带档位头，上游按 `ON_DEMAND` 处理；同一配置下 Gemini 原生接口仍为 `ON_DEMAND_FLEX`。兼容接口的响应里用量档位在 `usage.extra_properties.google.traffic_type`。
 
 ### 8.4 模型列表
 
