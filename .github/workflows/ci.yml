@@ -6,14 +6,22 @@ on:
   pull_request:
 
 jobs:
-  rust:
+  build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      # 前端：类型检查与构建（Tauri 外壳编译时内嵌 ui/dist）
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
-      - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace

@@ -22,8 +22,22 @@
 - 模型列表：`/v1/models`（Anthropic / OpenAI 格式）、`/v1beta/models`（Gemini 格式）
 - 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
 - `/metrics`：Prometheus 指标
+- 桌面程序（`src-tauri` + `ui`）：托盘常驻（关窗口即隐藏，托盘菜单可切换 Gemini 档位）、
+  概览 / 请求 / 日志 / 模型 / 设置五个页面，代理核心在同一进程内运行
 
-图形界面、安装包尚在开发。
+安装包、开机自启、单实例尚在开发。
+
+## 桌面程序
+
+需要 Node.js 与 Rust（MSVC）工具链：
+
+```powershell
+npm install
+npx tauri dev                 # 开发：界面热更新
+npx tauri build --no-bundle   # 发布版：target\release\VertexSwitch.exe
+```
+
+`VertexSwitch.exe --minimized` 启动时不显示窗口，只在托盘。只预览界面（示例数据，不连接核心）：`npm run dev`。
 
 ## 命令行运行代理核心
 
@@ -81,8 +95,10 @@ curl.exe -N -H "Authorization: $($h.Authorization)" "$api/logs/stream"
 ## 开发
 
 ```powershell
-cargo test
-cargo clippy --all-targets -- -D warnings
+npm run check                 # 界面类型检查
+npm run build                 # 构建界面（Tauri 外壳编译时内嵌）
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 ```
 

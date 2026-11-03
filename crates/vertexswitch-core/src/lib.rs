@@ -17,6 +17,6 @@ pub mod tiers;
 pub mod translate;
 pub mod transport;
 
-pub use app::{AppState, SharedState, router, serve};
+pub use app::{AppState, SharedState, router, serve, serve_until, start_background};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

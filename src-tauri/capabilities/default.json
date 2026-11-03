@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "主窗口：调用内置核心的命令、接收事件、选择密钥文件",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:allow-open"]
+}

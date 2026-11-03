@@ -220,15 +220,42 @@ pub fn router(state: SharedState) -> Router {
 
 /// 运行代理直到出错；后台刷新 Google token、监视配置与模型表文件。
 pub async fn serve(listener: TcpListener, state: SharedState) -> std::io::Result<()> {
-    state.start_refresher();
-    let watcher = tokio::spawn(watch_files(Arc::downgrade(&state)));
-    if state.runtime().settings.ollama.enabled {
-        frontends::openai::refresh_ollama_models(&state).await;
+    let _background = start_background(&state).await;
+    serve_until(listener, state, std::future::pending()).await
+}
+
+/// 后台任务（token 刷新、文件监视）；丢弃时停止文件监视。
+pub struct Background {
+    watcher: JoinHandle<()>,
+}
+
+impl Drop for Background {
+    fn drop(&mut self) {
+        self.watcher.abort();
     }
+}
+
+/// 启动后台任务：token 刷新、配置与模型表文件监视；启用 Ollama 时先发现一次模型。
+/// 与监听无关，换端口重启监听时不需要重来。
+pub async fn start_background(state: &SharedState) -> Background {
+    state.start_refresher();
+    let watcher = tokio::spawn(watch_files(Arc::downgrade(state)));
+    if state.runtime().settings.ollama.enabled {
+        frontends::openai::refresh_ollama_models(state).await;
+    }
+    Background { watcher }
+}
+
+/// 只运行 HTTP 服务，`shutdown` 完成时优雅停止（等进行中的请求结束）。
+pub async fn serve_until(
+    listener: TcpListener,
+    state: SharedState,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> std::io::Result<()> {
     let app = router(state).into_make_service_with_connect_info::<SocketAddr>();
-    let result = axum::serve(listener, app).await;
-    watcher.abort();
-    result
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await
 }
 
 fn mtime(path: &Option<PathBuf>) -> Option<SystemTime> {

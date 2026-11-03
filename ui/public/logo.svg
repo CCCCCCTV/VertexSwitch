@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3B5BDB"/>
+      <stop offset="1" stop-color="#0CA678"/>
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bg)"/>
+  <!-- V：两条线在底部汇合，代表多协议汇入 Vertex -->
+  <path d="M272 300 L512 740 L752 300" fill="none" stroke="#fff" stroke-width="96"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 开关圆点 -->
+  <circle cx="512" cy="300" r="72" fill="#fff"/>
+</svg>

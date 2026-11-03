@@ -13,5 +13,6 @@
 - 测试默认用本地假上游（wiremock、原始 TCP 服务），不调用真实 Vertex；需要真实调用时先问用户。
 - 用户的服务账号目前只能调用 Gemini；真实验收优先用便宜的 `gemini-3.5-flash-lite`，探测模型是否可用用 countTokens。
 - 用户主要通过 `/v1/messages` 使用 Claude，这条路径优先（但只能用假上游测试）。
-- 提交前跑 `cargo fmt --all`、`cargo clippy --all-targets -- -D warnings`、`cargo test`（CI 同样检查）。
+- 提交前跑 `npm run check`、`npm run build`、`cargo fmt --all`、`cargo clippy --workspace --all-targets -- -D warnings`、`cargo test --workspace`（CI 同样检查；Tauri 外壳编译需要先有 `ui/dist`）。
+- 界面预览：`npm run dev` 在浏览器里用示例数据渲染，不连接核心。
 - 与用户交流用中文。

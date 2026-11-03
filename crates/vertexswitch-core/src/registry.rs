@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::config::app_dir;
 
-const DEFAULT_MODELS: &str = include_str!("../data/models.toml");
+pub const DEFAULT_MODELS: &str = include_str!("../data/models.toml");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Backend {

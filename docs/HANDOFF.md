@@ -158,6 +158,11 @@ src-tauri/                    # Tauri 外壳：托盘、窗口、command、单�
 ui/                           # TypeScript + Vite 前端
 ```
 
+界面实现（R5）：Svelte 5 + Vite + TypeScript。界面通过 Tauri command 直接调用核心的管理操作
+（`vertexswitch_core::admin` 里的公开函数，与 `/admin/api` 共用同一实现），日志与请求记录以 Tauri
+事件实时推送；在普通浏览器里打开时退回内置示例数据，只用于界面预览。端口变更时外壳优雅停止旧监听、
+在新地址重新监听，统计与日志不中断。
+
 主要依赖：tokio、axum、reqwest（rustls、stream）、serde / serde_json / serde_yaml / toml、jsonwebtoken（RS256）、tracing、wiremock（测试）、tauri 2 及其 tray / single-instance / autostart 插件。
 测试时通过配置里隐藏的上游地址覆盖项把 Vertex / OAuth 指向 wiremock。
 
@@ -171,7 +176,7 @@ ui/                           # TypeScript + Vite 前端
 | R2 ✅ | Anthropic `/v1/messages`、count_tokens | SPEC §8.1 测试移植通过 |
 | R3 ✅ | OpenAI 入口与 OpenAI→Claude 转换、模型列表、Ollama | SPEC §8.3–8.4、§10 测试移植通过；删除 Python 原型 |
 | R4 ✅ | 管理接口、日志流、指标、模型表热加载 | 用 curl 能完成所有管理操作 |
-| R5 | Tauri 外壳与界面 | 托盘启动、改配置、看日志、切档位 |
+| R5 ✅ | Tauri 外壳与界面 | 托盘启动、改配置、看日志、切档位 |
 | R6 | 安装包、开机自启、单实例 | 干净 Windows 上安装即用 |
 | R7 | 迁移 | 客户端逐个切到 VertexSwitch，确认稳定后再停旧 vertex-proxy |
 
