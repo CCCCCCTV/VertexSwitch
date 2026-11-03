@@ -167,8 +167,8 @@ src/vertexswitch/ , tests/    # Python 原型（参考实现，达到同等功�
 | # | 内容 | 完成标准 |
 | --- | --- | --- |
 | M0–M3 | Python 原型（已完成，作为参考） | 125 个 Mock 测试；Gemini 原生与档位已实测 |
-| R0 | Rust 工具链、Cargo workspace、fmt / clippy / test | `cargo test` 跑通 |
-| R1 | 核心基础 + Gemini 原生 + 档位（用户密钥只能调 Gemini，先做这条） | SPEC §1–7、§8.2、§9 的测试移植通过；真实验收同 Python 版 |
+| R0 ✅ | Rust 工具链、Cargo workspace、fmt / clippy / test | `cargo test` 跑通 |
+| R1 ✅ | 核心基础 + Gemini 原生 + 档位（用户密钥只能调 Gemini，先做这条） | SPEC §1–7、§8.2、§9 的测试移植通过；真实验收同 Python 版 |
 | R2 | Anthropic `/v1/messages`、count_tokens | SPEC §8.1 测试移植通过 |
 | R3 | OpenAI 入口与 OpenAI→Claude 转换、模型列表、Ollama | SPEC §8.3–8.4、§10 测试移植通过；删除 Python 原型 |
 | R4 | 管理接口、日志流、指标、模型表热加载 | 用 curl 能完成所有管理操作 |

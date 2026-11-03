@@ -13,7 +13,7 @@
 | --- | --- | --- | --- |
 | server | host / port | `127.0.0.1` / `8788` | 开发期用 8788（旧代理占用 8787） |
 | server | api_key | `""` | 非空时除 `/health` 外都要鉴权 |
-| server | keep_alive_seconds | 75 | 服务端 keep-alive，避免和客户端连接池竞争 |
+| server | keep_alive_seconds | 75 | 服务端 keep-alive，避免和客户端连接池竞争（Python/uvicorn 需要；Rust 版 hyper 默认不主动关闭空闲连接，该项暂不使用） |
 | google | credentials_file | `""` | 为空时退回 `GOOGLE_APPLICATION_CREDENTIALS` |
 | google | project_id | `""` | 为空时从密钥文件读 |
 | google | region | `global` | Claude 默认区域，也是其他后端的兜底区域 |
@@ -97,7 +97,7 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 
 ## 7. 模型表与路由
 
-模型表 `models.yaml`：包内默认 + `%APPDATA%\VertexSwitch\models.yaml`（存在则整体优先）。结构：`{backend: {alias: upstream_id}}`，backend ∈ claude / gemini / maas。
+模型表 `models.toml`（Rust 版；Python 原型为 models.yaml）：包内默认 + `%APPDATA%\VertexSwitch\models.toml`（存在则整体优先）。结构：`[backend]` 段下 `"alias" = "upstream_id"`，backend ∈ claude / gemini / maas；保持声明顺序。
 
 解析顺序（`resolve(name)`）：
 1. 去掉首尾空白和 `models/` 前缀
@@ -156,7 +156,8 @@ Ollama：启用时启动即调 `/api/tags` 发现（失败只告警），也应�
 
 ## 9. 服务档位（仅 Gemini 原生生成请求）
 
-依据：Flex PayGo、Priority PayGo 官方文档。**全部实测通过**（2026-11-03，global）。
+依据：Flex PayGo、Priority PayGo 官方文档。**全部实测通过**（2026-11-03，global；Python 原型与 Rust R1 各测一次）。
+Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所述的无空余容量情形），告警按设计触发。
 
 - 头：`X-Vertex-AI-LLM-Shared-Request-Type: flex|priority`；`shared_only` 时再加 `X-Vertex-AI-LLM-Request-Type: shared`；Flex 加 `X-Server-Timeout: <秒>`（1..1800）。
 - Flex：只支持 `global`；不支持 flex_unsupported_models 里的模型（gemini-4-argon）。
