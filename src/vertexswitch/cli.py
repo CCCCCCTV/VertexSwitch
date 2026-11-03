@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -20,6 +21,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--log-level", default="info")
     args = parser.parse_args(argv)
 
+    # 输出被重定向到文件或管道时，Windows 默认用 ANSI 代码页（如 GBK），中文日志会乱码
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     logging.basicConfig(
         level=args.log_level.upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s"
     )
