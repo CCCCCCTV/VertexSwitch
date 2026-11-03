@@ -88,10 +88,12 @@ impl AppState {
 }
 
 pub fn router(state: SharedState) -> Router {
-    let protected = frontends::gemini::routes().route_layer(middleware::from_fn_with_state(
-        state.clone(),
-        require_api_key,
-    ));
+    let protected = frontends::anthropic::routes()
+        .merge(frontends::gemini::routes())
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            require_api_key,
+        ));
     Router::new()
         .route("/health", get(health))
         .merge(protected)

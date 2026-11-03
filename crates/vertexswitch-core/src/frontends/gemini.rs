@@ -14,9 +14,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use futures_util::StreamExt;
 use serde_json::{Value, json};
 
+use super::{parse_json_object, relay};
 use crate::app::SharedState;
 use crate::backends::{gemini, vertex};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
@@ -40,15 +40,6 @@ pub fn routes() -> Router<SharedState> {
     }
     // 部分客户端走 v1 路径
     router.route("/v1/models/{*target}", post(model_action))
-}
-
-pub fn parse_json_object(body: &[u8]) -> ProxyResult<Value> {
-    let value: Value = serde_json::from_slice(body)
-        .map_err(|e| ProxyError::new(400, format!("请求体不是合法的 JSON：{e}")))?;
-    if !value.is_object() {
-        return Err(ProxyError::new(400, "请求体必须是 JSON 对象"));
-    }
-    Ok(value)
 }
 
 fn split_target(target: &str) -> ProxyResult<(&str, &str)> {
@@ -181,25 +172,7 @@ async fn model_action(
 
     let mut out = if stream {
         let chunks = state.transport.chunks(response, VERTEX);
-        let body = async_stream::stream! {
-            futures_util::pin_mut!(chunks);
-            while let Some(item) = chunks.next().await {
-                match item {
-                    Ok(chunk) => {
-                        check.feed(&chunk);
-                        yield Ok::<_, std::convert::Infallible>(chunk);
-                    }
-                    Err(e) => {
-                        yield Ok(e.stream_event(Protocol::Gemini));
-                        break;
-                    }
-                }
-            }
-        };
-        let mut r = Response::new(Body::from_stream(body));
-        r.headers_mut()
-            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-        r
+        relay(chunks, Protocol::Gemini, move |chunk| check.feed(chunk))
     } else {
         let data = state.transport.read_body(response).await?;
         check.feed(&data);
