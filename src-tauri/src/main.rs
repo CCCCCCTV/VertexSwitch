@@ -53,6 +53,15 @@ fn main() {
     let start_minimized = std::env::args().any(|a| a == "--minimized");
 
     tauri::Builder::default()
+        // 必须最先注册：已有实例在运行时，新启动的进程把参数转给它后立即退出
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            tray::show_main(app);
+        }))
+        // 开机自启时只在托盘运行
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(host.clone())
@@ -72,6 +81,9 @@ fn main() {
             commands::send_test,
             commands::get_app_info,
             commands::open_config_dir,
+            commands::get_autostart,
+            commands::set_autostart,
+            commands::get_admin_token,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

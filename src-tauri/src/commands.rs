@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use serde_json::{Value, json};
 use tauri::{AppHandle, State};
+use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_opener::OpenerExt;
 use vertexswitch_core::admin;
 use vertexswitch_core::config::app_dir;
@@ -107,7 +108,7 @@ pub fn get_app_info(host: Host<'_>) -> CmdResult {
         "version": vertexswitch_core::VERSION,
         "config_dir": app_dir().display().to_string(),
         "config_path": host.state.config_path.as_ref().map(|p| p.display().to_string()),
-        "admin_token_path": host.admin_token_path.display().to_string(),
+        "admin_token_location": host.admin_token_location,
     }))
 }
 
@@ -119,4 +120,30 @@ pub fn open_config_dir(app: AppHandle) -> CmdResult {
         .open_path(dir.display().to_string(), None::<&str>)
         .map_err(|e| e.to_string())?;
     Ok(Value::Null)
+}
+
+#[tauri::command]
+pub fn get_autostart(app: AppHandle) -> CmdResult {
+    let enabled = app.autolaunch().is_enabled().map_err(|e| e.to_string())?;
+    Ok(json!({ "enabled": enabled }))
+}
+
+/// 开机自启（写当前用户的启动项，启动时带 --minimized 只在托盘运行）。
+#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> CmdResult {
+    let launcher = app.autolaunch();
+    if enabled {
+        launcher.enable()
+    } else {
+        launcher.disable()
+    }
+    .map_err(|e| e.to_string())?;
+    tracing::info!("开机自启已{}", if enabled { "开启" } else { "关闭" });
+    get_autostart(app)
+}
+
+/// 管理 token（供用户复制给 curl 等工具使用）。
+#[tauri::command]
+pub fn get_admin_token(host: Host<'_>) -> CmdResult {
+    Ok(json!({ "token": host.state.admin_token }))
 }

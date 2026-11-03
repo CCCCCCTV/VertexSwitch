@@ -11,6 +11,8 @@
   let message = $state<{ tone: "ok" | "bad" | "warn"; text: string } | null>(null);
   let showKey = $state(false);
   let dropFields = $state("");
+  let autostart = $state<boolean | null>(null);
+  let systemMessage = $state<{ tone: "ok" | "bad"; text: string } | null>(null);
 
   /** 只包含改动字段的合并补丁（RFC 7396）。数组整体替换。 */
   function diff(a: any, b: any): any {
@@ -46,6 +48,7 @@
   onMount(() => {
     void load();
     void api.appInfo().then((i) => (info = i));
+    void api.getAutostart().then((a) => (autostart = a.enabled)).catch(() => (autostart = null));
     return api.onSettingsChanged(() => {
       if (!dirty) void load();
     });
@@ -85,6 +88,27 @@
   async function pickKey() {
     const path = await api.pickKeyFile();
     if (path && draft) draft.google.credentials_file = path;
+  }
+
+  // 开机自启与配置文件无关，切换后立即生效
+  async function toggleAutostart(enabled: boolean) {
+    systemMessage = null;
+    try {
+      autostart = (await api.setAutostart(enabled)).enabled;
+      systemMessage = { tone: "ok", text: enabled ? "已开启开机自启（启动后只在托盘运行）" : "已关闭开机自启" };
+    } catch (e) {
+      systemMessage = { tone: "bad", text: errorText(e) };
+    }
+  }
+
+  async function copyAdminToken() {
+    systemMessage = null;
+    try {
+      await navigator.clipboard.writeText((await api.adminToken()).token);
+      systemMessage = { tone: "ok", text: "管理 token 已复制到剪贴板" };
+    } catch (e) {
+      systemMessage = { tone: "bad", text: errorText(e) };
+    }
   }
 
   function generateKey() {
@@ -223,12 +247,31 @@
       </label>
     </details>
 
-    {#if info}
-      <p class="faint paths">
-        配置文件 <span class="mono">{info.config_path}</span> · 管理 token <span class="mono">{info.admin_token_path}</span>
-        <button class="link" onclick={() => api.openConfigDir()}>打开配置目录</button>
-      </p>
-    {/if}
+    <section class="card">
+      <div class="row-title">
+        <h2>系统</h2>
+        {#if systemMessage}<span class="msg {systemMessage.tone}">{systemMessage.text}</span>{/if}
+      </div>
+      <label class="check inline">
+        <input
+          type="checkbox"
+          checked={autostart ?? false}
+          disabled={autostart === null}
+          onchange={(e) => toggleAutostart(e.currentTarget.checked)}
+        />
+        <span>开机时自动启动<small>登录 Windows 后在托盘里运行，不弹出窗口；立即生效，不需要点保存</small></span>
+      </label>
+      {#if info}
+        <dl class="facts">
+          <dt>配置文件</dt>
+          <dd><span class="mono">{info.config_path}</span> <button class="link" onclick={() => api.openConfigDir()}>打开目录</button></dd>
+          <dt>管理 token</dt>
+          <dd>{info.admin_token_location} <button class="link" onclick={copyAdminToken}>复制</button></dd>
+          <dt>版本</dt>
+          <dd>{info.version}</dd>
+        </dl>
+      {/if}
+    </section>
   </div>
 {:else}
   <div class="empty">正在加载…</div>
@@ -357,8 +400,34 @@
     content: "▾";
   }
 
-  .paths {
-    font-size: 12px;
+  .row-title {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .row-title h2 {
+    font-size: 15px;
+  }
+
+  .check.inline {
+    padding-top: 0;
+  }
+
+  .facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 16px;
+    margin: 4px 0 0;
+    font-size: 13px;
+  }
+
+  .facts dt {
+    color: var(--text-2);
+  }
+
+  .facts dd {
     margin: 0;
   }
 </style>

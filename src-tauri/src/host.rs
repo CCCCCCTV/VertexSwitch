@@ -1,16 +1,16 @@
 //! 在本进程里运行代理核心：启动后台任务、监听端口，监听地址变化时重启监听。
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
-use vertexswitch_core::app::{Background, load_or_create_admin_token};
+use vertexswitch_core::app::Background;
 use vertexswitch_core::config::{Settings, app_dir, config_path};
 use vertexswitch_core::logs::LogHub;
 use vertexswitch_core::registry::ModelRegistry;
+use vertexswitch_core::secrets::load_admin_token;
 use vertexswitch_core::{AppState, SharedState, serve_until, start_background};
 
 struct Running {
@@ -20,7 +20,8 @@ struct Running {
 
 pub struct CoreHost {
     pub state: SharedState,
-    pub admin_token_path: PathBuf,
+    /// 管理 token 存在哪里（显示给用户）
+    pub admin_token_location: String,
     running: tokio::sync::Mutex<Option<Running>>,
     background: tokio::sync::Mutex<Option<Background>>,
     last_error: Mutex<Option<String>>,
@@ -38,17 +39,14 @@ impl CoreHost {
             tracing::warn!("{e}；暂用内置模型表");
             ModelRegistry::builtin()
         });
-        let admin_token_path = app_dir().join("admin_token");
-        let mut state = AppState::from_settings(settings, registry)
+        let (token, location) = load_admin_token();
+        let state = AppState::from_settings(settings, registry)
             .with_logs(logs)
+            .with_admin_token(token)
             .with_paths(Some(config_file), Some(app_dir().join("models.toml")));
-        match load_or_create_admin_token(&admin_token_path) {
-            Ok(token) => state = state.with_admin_token(token),
-            Err(e) => tracing::warn!("无法读写管理 token 文件：{e}；本次使用临时 token"),
-        }
         Arc::new(Self {
             state: Arc::new(state),
-            admin_token_path,
+            admin_token_location: location.describe(),
             running: tokio::sync::Mutex::new(None),
             background: tokio::sync::Mutex::new(None),
             last_error: Mutex::new(None),

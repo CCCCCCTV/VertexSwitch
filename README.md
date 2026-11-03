@@ -25,9 +25,16 @@
 - 桌面程序（`src-tauri` + `ui`）：托盘常驻（关窗口即隐藏，托盘菜单可切换 Gemini 档位）、
   概览 / 请求 / 日志 / 模型 / 设置五个页面，代理核心在同一进程内运行
 
-安装包、开机自启、单实例尚在开发。
+- 安装包（当前用户安装，不需要管理员）、单实例、开机自启（只在托盘运行）
 
-## 桌面程序
+## 安装
+
+从 GitHub Release 下载 `VertexSwitch_x.y.z_x64-setup.exe` 运行即可，安装到当前用户目录，不需要管理员权限。
+安装包暂未签名，首次运行时 SmartScreen 可能提示，选择“仍要运行”。卸载时保留配置目录 `%APPDATA%\VertexSwitch`。
+
+首次启动后在“设置”里选择服务账号密钥文件即可使用。
+
+## 从源码构建桌面程序
 
 需要 Node.js 与 Rust（MSVC）工具链：
 
@@ -35,6 +42,7 @@
 npm install
 npx tauri dev                 # 开发：界面热更新
 npx tauri build --no-bundle   # 发布版：target\release\VertexSwitch.exe
+npx tauri build               # 另外生成安装包：target\release\bundle\nsis
 ```
 
 `VertexSwitch.exe --minimized` 启动时不显示窗口，只在托盘。只预览界面（示例数据，不连接核心）：`npm run dev`。
@@ -75,10 +83,11 @@ api_key = ""           # 非空时客户端须携带此 key
 
 ## 管理接口
 
-只接受本机连接，需要管理 token（首次启动时生成在 `%APPDATA%\VertexSwitch\admin_token`）：
+只接受本机连接，需要管理 token。token 存在 Windows 凭据管理器里，可在界面“设置 → 系统”复制，或用 `vertexswitch-core admin-token` 打印：
 
 ```powershell
-$h = @{ Authorization = "Bearer " + (Get-Content "$env:APPDATA\VertexSwitch\admin_token") }
+# 先在界面“设置 → 系统”点“复制”（或用源码构建的 vertexswitch-core admin-token）
+$h = @{ Authorization = "Bearer " + (Get-Clipboard) }
 $api = "http://127.0.0.1:8788/admin/api"
 
 Invoke-RestMethod "$api/status" -Headers $h

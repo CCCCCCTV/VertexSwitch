@@ -53,6 +53,7 @@ const models: Models = {
   user_file: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch\\models.toml",
 };
 
+let autostart = false;
 const started = Date.now() - 3 * 3600_000 - 12 * 60_000;
 let seq = 0;
 const logs: LogEntry[] = [];
@@ -181,9 +182,15 @@ export const mockApi: Api = {
       version: "0.1.0",
       config_dir: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch",
       config_path: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch\\config.toml",
-      admin_token_path: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch\\admin_token",
+      admin_token_location: "系统凭据库（VertexSwitch / admin-token）",
     }),
   openConfigDir: () => delay(undefined),
+  getAutostart: () => delay({ enabled: autostart }),
+  setAutostart: (enabled) => {
+    autostart = enabled;
+    return delay({ enabled });
+  },
+  adminToken: () => delay({ token: "0123456789abcdef0123456789abcdef0123456789abcdef" }),
   pickKeyFile: () => delay("C:\\Users\\me\\keys\\service-account.json"),
   onLog: (cb) => (logListeners.add(cb), () => logListeners.delete(cb)),
   onRequest: (cb) => (requestListeners.add(cb), () => requestListeners.delete(cb)),

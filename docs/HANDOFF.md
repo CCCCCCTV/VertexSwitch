@@ -136,8 +136,9 @@ vertexswitch-core.exe（同一核心库的命令行版，无界面运行，便�
 ```
 
 - 核心与界面同进程：界面（WebView）崩溃不影响 Rust 主进程；改端口时只重启 axum 服务任务
-- 配置与日志在 `%APPDATA%\VertexSwitch\`（其他平台用对应的配置目录）；密钥路径和管理 token 存系统凭据库（`keyring` crate）
-- 打包：Tauri bundler（Windows 用 NSIS 安装包）
+- 配置与日志在 `%APPDATA%\VertexSwitch\`（其他平台用对应的配置目录）；管理 token 存系统凭据库（`keyring` crate，Windows 凭据管理器条目 `admin-token.VertexSwitch`），凭据库不可用时退回文件。服务账号密钥的**路径**仍在 config.toml 里（路径本身不是秘密，密钥内容从不复制）
+- 打包：Tauri bundler，NSIS 安装包，**当前用户安装**（`%LOCALAPPDATA%\VertexSwitch`，不需要管理员）；推送 `v*` 标签时 GitHub Actions 构建并附到草稿 Release。安装包未签名
+- 单实例（再次启动唤出已有窗口）；开机自启写当前用户启动项，带 `--minimized` 只在托盘运行
 
 ### 7.2 代码结构
 
@@ -177,7 +178,7 @@ ui/                           # TypeScript + Vite 前端
 | R3 ✅ | OpenAI 入口与 OpenAI→Claude 转换、模型列表、Ollama | SPEC §8.3–8.4、§10 测试移植通过；删除 Python 原型 |
 | R4 ✅ | 管理接口、日志流、指标、模型表热加载 | 用 curl 能完成所有管理操作 |
 | R5 ✅ | Tauri 外壳与界面 | 托盘启动、改配置、看日志、切档位 |
-| R6 | 安装包、开机自启、单实例 | 干净 Windows 上安装即用 |
+| R6 ✅ | 安装包、开机自启、单实例 | 干净 Windows 上安装即用 |
 | R7 | 迁移 | 客户端逐个切到 VertexSwitch，确认稳定后再停旧 vertex-proxy |
 
 ## 9. 工作约定

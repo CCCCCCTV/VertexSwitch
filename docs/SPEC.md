@@ -203,7 +203,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 ## 12. 管理接口（R4）
 
 - 前缀 `/admin/api/`；**只接受本机连接**（非回环地址 403），并要求 `Authorization: Bearer <管理 token>`（401）。管理 token 与代理的 `server.api_key` 相互独立。
-- 管理 token 存在 `%APPDATA%\VertexSwitch\admin_token`，首次启动时随机生成（48 位十六进制）。后续计划改存系统凭据库。
+- 管理 token 首次启动时随机生成（48 位十六进制），存系统凭据库（Windows 凭据管理器：`admin-token.VertexSwitch`）；凭据库不可用时退回 `%APPDATA%\VertexSwitch\admin_token` 文件。旧版本留下的该文件会迁入凭据库后删除。获取方式：界面 设置 → 系统 → 复制；或命令行 `vertexswitch-core admin-token`。
 - 管理接口、`/health`、`/metrics` 自身不计入请求记录。
 
 | 方法 | 路径 | 说明 |

@@ -120,5 +120,5 @@ export interface AppInfo {
   version: string;
   config_dir: string;
   config_path: string | null;
-  admin_token_path: string;
+  admin_token_location: string;
 }

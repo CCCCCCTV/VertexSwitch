@@ -168,7 +168,7 @@ impl Drop for AppState {
     }
 }
 
-fn random_token() -> String {
+pub fn random_token() -> String {
     let mut bytes = [0u8; 24];
     getrandom::fill(&mut bytes).expect("系统随机数可用");
     bytes.iter().map(|b| format!("{b:02x}")).collect()

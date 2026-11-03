@@ -28,13 +28,35 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "CCCCCCTV",
+    "copyright": "MIT License",
+    "category": "DeveloperTool",
+    "shortDescription": "Vertex AI 多协议代理",
+    "longDescription": "在本机提供 Anthropic / Gemini / OpenAI 接口，用 Google Cloud 服务账号转发到 Vertex AI。",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "SimpChinese",
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
   }
 }

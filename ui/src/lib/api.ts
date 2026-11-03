@@ -33,6 +33,9 @@ export interface Api {
   sendTest(model: string): Promise<TestResult>;
   appInfo(): Promise<AppInfo>;
   openConfigDir(): Promise<void>;
+  getAutostart(): Promise<{ enabled: boolean }>;
+  setAutostart(enabled: boolean): Promise<{ enabled: boolean }>;
+  adminToken(): Promise<{ token: string }>;
   pickKeyFile(): Promise<string | null>;
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
@@ -67,6 +70,9 @@ async function tauriApi(): Promise<Api> {
     sendTest: (model) => invoke("send_test", { model }),
     appInfo: () => invoke("get_app_info"),
     openConfigDir: () => invoke("open_config_dir"),
+    getAutostart: () => invoke("get_autostart"),
+    setAutostart: (enabled) => invoke("set_autostart", { enabled }),
+    adminToken: () => invoke("get_admin_token"),
     pickKeyFile: async () => {
       const picked = await open({
         title: "选择服务账号密钥文件",
