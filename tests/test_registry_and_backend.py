@@ -54,3 +54,27 @@ def test_count_tokens_body_keeps_model():
     out = _backend().count_tokens_body({"model": "alias", "messages": []}, "claude-x@1")
     assert out["model"] == "claude-x@1"
     assert out["anthropic_version"] == "vertex-2023-10-16"
+
+
+# 官方已宣布下线的模型，默认模型表不应再列出（避免出现在 /v1beta/models 里误导客户端）
+RETIRED_GEMINI = {
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-001",
+    "gemini-3-pro-preview",
+}
+
+
+def test_default_table_has_no_retired_gemini():
+    table = ModelRegistry.load().tables["gemini"]
+    assert not RETIRED_GEMINI & (set(table) | set(table.values()))
+
+
+def test_gemini_aliases():
+    reg = ModelRegistry.load()
+    assert reg.resolve("gemini-3-flash") == Route("gemini", "gemini-3-flash-preview")
+    assert reg.resolve("models/gemini-3.1-pro") == Route("gemini", "gemini-3.1-pro-preview")
+    # 未列出的照样转发，由上游决定是否存在
+    assert reg.resolve("gemini-9-future") == Route("gemini", "gemini-9-future")

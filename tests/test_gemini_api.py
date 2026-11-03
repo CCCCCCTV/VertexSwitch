@@ -48,9 +48,9 @@ def test_generate_content_url_and_standard_headers(capture):
 
 def test_gemini_prefix_and_models_prefix(capture):
     client, seen = capture()
-    r = client.post("/gemini/v1beta/models/models/gemini-2.5-pro:generateContent", json=BODY)
+    r = client.post("/gemini/v1beta/models/models/gemini-3.8-flash:generateContent", json=BODY)
     assert r.status_code == 200
-    assert str(seen[0].url).endswith("/gemini-2.5-pro:generateContent")
+    assert str(seen[0].url).endswith("/gemini-3.8-flash:generateContent")
 
 
 def test_stream_passes_query_but_not_key(capture, settings):
@@ -60,7 +60,7 @@ def test_stream_passes_query_but_not_key(capture, settings):
         httpx.Response(200, content=sse, headers={"content-type": "text/event-stream"})
     )
     r = client.post(
-        "/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=k", json=BODY
+        "/v1beta/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse&key=k", json=BODY
     )
     assert r.status_code == 200
     assert r.content == sse
@@ -72,7 +72,7 @@ def test_stream_passes_query_but_not_key(capture, settings):
 def test_goog_api_key_header_accepted(capture, settings):
     settings.server.api_key = "k"
     client, _ = capture()
-    url = "/v1beta/models/gemini-2.5-flash:generateContent"
+    url = "/v1beta/models/gemini-3.5-flash-lite:generateContent"
     assert client.post(url, json=BODY).status_code == 401
     assert client.post(url, json=BODY, headers={"x-goog-api-key": "k"}).status_code == 200
 
@@ -160,7 +160,7 @@ def test_traffic_match_no_warning(capture, settings, caplog):
 def test_missing_role_filled_with_user(capture):
     client, seen = capture()
     client.post(
-        "/v1beta/models/gemini-2.5-flash:generateContent",
+        "/v1beta/models/gemini-3.5-flash-lite:generateContent",
         json={"contents": [{"parts": [{"text": "hi"}]}]},
     )
     assert json.loads(seen[0].content)["contents"][0]["role"] == "user"
@@ -169,7 +169,7 @@ def test_missing_role_filled_with_user(capture):
 def test_google_error_passthrough(capture):
     err = {"error": {"code": 429, "message": "Resource exhausted", "status": "RESOURCE_EXHAUSTED"}}
     client, _ = capture(httpx.Response(429, json=[err]))
-    r = client.post("/v1beta/models/gemini-2.5-flash:generateContent", json=BODY)
+    r = client.post("/v1beta/models/gemini-3.5-flash-lite:generateContent", json=BODY)
     assert r.status_code == 429
     assert r.json() == err
 
@@ -177,8 +177,8 @@ def test_google_error_passthrough(capture):
 @pytest.mark.parametrize(
     "path",
     [
-        "/v1beta/models/gemini-2.5-flash:predict",
-        "/v1beta/models/gemini-2.5-flash",
+        "/v1beta/models/gemini-3.5-flash-lite:predict",
+        "/v1beta/models/gemini-3.5-flash-lite",
         "/v1beta/models/claude-opus-4-6:generateContent",
     ],
 )
@@ -194,7 +194,7 @@ def test_connection_error_gemini_format(make_client):
     def handler(request):
         raise httpx.ConnectError("refused", request=request)
 
-    r = make_client(handler).post("/v1beta/models/gemini-2.5-flash:generateContent", json=BODY)
+    r = make_client(handler).post("/v1beta/models/gemini-3.5-flash-lite:generateContent", json=BODY)
     assert r.status_code == 502
     assert r.json()["error"]["status"] == "UNAVAILABLE"
 
@@ -209,6 +209,6 @@ def test_v1_generate_content_path_uses_gemini_errors(capture):
 def test_gemini_models_list(capture):
     client, _ = capture()
     models = client.get("/v1beta/models").json()["models"]
-    assert "models/gemini-2.5-pro" in {m["name"] for m in models}
-    assert client.get("/v1beta/models/gemini-2.5-pro").json()["name"] == "models/gemini-2.5-pro"
+    assert "models/gemini-3.8-flash" in {m["name"] for m in models}
+    assert client.get("/v1beta/models/gemini-3.8-flash").json()["name"] == "models/gemini-3.8-flash"
     assert client.get("/v1beta/models/nope").status_code == 404
