@@ -10,3 +10,7 @@
 *.iss text eol=crlf
 *.ico binary
 *.png binary
+*.rs text eol=lf
+*.lock text eol=lf
+*.yml text eol=lf
+*.ts text eol=lf
