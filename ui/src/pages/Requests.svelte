@@ -27,35 +27,35 @@
   </div>
 </header>
 
-<div class="card table-card">
+<div class="panel table-card">
   {#if rows.length}
     <table>
       <thead>
         <tr>
-          <th>时间</th><th>入口</th><th>模型</th><th>档位</th><th>状态</th>
+          <th>时间</th><th>入口</th><th>模型</th><th class="tier-col">档位</th><th>状态</th>
           <th class="num">耗时</th><th class="num">输入</th><th class="num">输出</th>
         </tr>
       </thead>
       <tbody>
         {#each rows as r (r.seq)}
           <tr>
-            <td class="mono faint">{time(r.ts_ms)}</td>
-            <td>
+            <td class="mono faint nowrap">{time(r.ts_ms)}</td>
+            <td class="nowrap">
               <span class="proto">{r.protocol}</span>{#if r.stream}<span class="pill">流式</span>{/if}
             </td>
-            <td>
-              <div class="mono">{r.model ?? "—"}</div>
+            <td class="model">
+              <div class="mono ellipsis" title={r.model ?? undefined}>{r.model ?? "—"}</div>
               {#if r.error}<div class="err" title={r.error}>{r.error}</div>{/if}
             </td>
-            <td>{#if r.tier}<span class="pill accent">{r.tier}</span>{:else}<span class="faint">—</span>{/if}</td>
+            <td class="tier-col">{#if r.tier}<span class="pill accent">{r.tier}</span>{:else}<span class="faint">—</span>{/if}</td>
             <td>
               <span class="pill {OUTCOME_INFO[r.outcome].tone}">
                 {r.status} {OUTCOME_INFO[r.outcome].label}
               </span>
             </td>
-            <td class="num">{duration(r.duration_ms)}</td>
-            <td class="num">{tokens(r.input_tokens)}</td>
-            <td class="num">{tokens(r.output_tokens)}</td>
+            <td class="num nowrap">{duration(r.duration_ms)}</td>
+            <td class="num nowrap">{tokens(r.input_tokens)}</td>
+            <td class="num nowrap">{tokens(r.output_tokens)}</td>
           </tr>
         {/each}
       </tbody>
@@ -122,6 +122,32 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .nowrap {
+    white-space: nowrap;
+  }
+
+  /* 模型列吃掉剩余宽度，过长时截断（完整 ID 在提示里） */
+  td.model {
+    max-width: 0;
+    width: 100%;
+  }
+
+  .ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 900px) {
+    .tier-col {
+      display: none;
+    }
+
+    .tools input {
+      width: 160px;
+    }
   }
 
   .hint {

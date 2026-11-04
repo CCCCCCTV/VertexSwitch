@@ -67,7 +67,7 @@
   {/each}
 </div>
 
-<div class="card table-card">
+<div class="panel table-card">
   {#if !models}
     <div class="empty">正在加载…</div>
   {:else if rows.length}

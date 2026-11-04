@@ -29,3 +29,6 @@ vertexswitch-core = { version = "0.1.0", path = "../crates/vertexswitch-core" }
 
 [lints]
 workspace = true
+
+[target."cfg(windows)".dependencies]
+winreg = "0.56.0"

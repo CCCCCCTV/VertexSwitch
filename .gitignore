@@ -40,3 +40,10 @@ desktop.ini
 
 # Claude Code 本地预览配置
 .claude/
+
+# impeccable 的草稿与评审截图（PRODUCT.md / DESIGN.md 在仓库根目录，会提交）
+.impeccable/mocks/
+.impeccable/review/
+.impeccable/build/
+.impeccable/live/
+.impeccable/config.local.json

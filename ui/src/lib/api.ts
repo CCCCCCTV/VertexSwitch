@@ -36,6 +36,8 @@ export interface Api {
   getAutostart(): Promise<{ enabled: boolean }>;
   setAutostart(enabled: boolean): Promise<{ enabled: boolean }>;
   adminToken(): Promise<{ token: string }>;
+  /** Windows 系统强调色 #RRGGBB；取不到时为 null */
+  systemAccent(): Promise<string | null>;
   pickKeyFile(): Promise<string | null>;
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
@@ -73,6 +75,7 @@ async function tauriApi(): Promise<Api> {
     getAutostart: () => invoke("get_autostart"),
     setAutostart: (enabled) => invoke("set_autostart", { enabled }),
     adminToken: () => invoke("get_admin_token"),
+    systemAccent: () => invoke("get_system_accent"),
     pickKeyFile: async () => {
       const picked = await open({
         title: "选择服务账号密钥文件",

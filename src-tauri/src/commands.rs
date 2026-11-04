@@ -147,3 +147,27 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> CmdResult {
 pub fn get_admin_token(host: Host<'_>) -> CmdResult {
     Ok(json!({ "token": host.state.admin_token }))
 }
+
+/// Windows 系统强调色（`#RRGGBB`），界面用它生成整套色调；其他平台或读取失败时为 null。
+#[tauri::command]
+pub fn get_system_accent() -> CmdResult {
+    Ok(system_accent().map_or(Value::Null, Value::String))
+}
+
+#[cfg(windows)]
+pub fn system_accent() -> Option<String> {
+    use winreg::RegKey;
+    use winreg::enums::HKEY_CURRENT_USER;
+    let dwm = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Microsoft\Windows\DWM")
+        .ok()?;
+    // AccentColor 按 0xAABBGGRR 存储
+    let abgr: u32 = dwm.get_value("AccentColor").ok()?;
+    let [r, g, b, _] = abgr.to_le_bytes();
+    Some(format!("#{r:02X}{g:02X}{b:02X}"))
+}
+
+#[cfg(not(windows))]
+pub fn system_accent() -> Option<String> {
+    None
+}

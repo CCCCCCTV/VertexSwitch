@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { api, errorText } from "../lib/api";
   import { refreshStatus } from "../lib/live.svelte";
+  import { PRESETS, setThemePref, theme } from "../lib/theme.svelte";
   import type { AppInfo, Settings } from "../lib/types";
 
   let original = $state<Settings | null>(null);
@@ -139,7 +140,7 @@
 
 {#if draft}
   <div class="sections">
-    <section class="card">
+    <section class="panel">
       <h2>Google Cloud</h2>
       <label class="field">
         <span>服务账号密钥文件</span>
@@ -161,7 +162,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="panel">
       <h2>Gemini</h2>
       <div class="two">
         <label class="field">
@@ -189,7 +190,7 @@
       </div>
     </section>
 
-    <section class="card">
+    <section class="panel">
       <h2>代理服务</h2>
       <div class="two">
         <label class="field">
@@ -214,7 +215,7 @@
       </label>
     </section>
 
-    <section class="card">
+    <section class="panel">
       <h2>Ollama（本地模型）</h2>
       <div class="two">
         <label class="check">
@@ -228,7 +229,7 @@
       </div>
     </section>
 
-    <details class="card">
+    <details class="panel">
       <summary><h2>高级</h2></summary>
       <div class="three">
         <label class="field"><span>连接超时（秒）</span><input type="number" min="1" bind:value={draft.timeouts.connect} /></label>
@@ -247,7 +248,46 @@
       </label>
     </details>
 
-    <section class="card">
+    <section class="panel" id="appearance">
+      <div class="row-title"><h2>外观</h2><span class="faint small">立即生效，只影响这台电脑</span></div>
+      <div class="seeds" role="radiogroup" aria-label="主题色">
+        <button
+          role="radio"
+          aria-checked={theme.pref.source === "system"}
+          class="seed system"
+          class:on={theme.pref.source === "system"}
+          onclick={() => setThemePref({ source: "system", seed: theme.pref.seed })}
+        >
+          <span class="swatch" style:background={theme.systemAccent ?? "var(--accent)"}></span>
+          跟随 Windows 强调色
+        </button>
+        {#each PRESETS as p}
+          <button
+            role="radio"
+            aria-checked={theme.pref.source === "custom" && theme.pref.seed.toLowerCase() === p.seed.toLowerCase()}
+            aria-label={p.label}
+            title={p.label}
+            class="seed"
+            class:on={theme.pref.source === "custom" && theme.pref.seed.toLowerCase() === p.seed.toLowerCase()}
+            onclick={() => setThemePref({ source: "custom", seed: p.seed })}
+          >
+            <span class="swatch" style:background={p.seed}></span>
+          </button>
+        {/each}
+        <label class="seed custom" title="自定义颜色">
+          <input
+            type="color"
+            value={theme.seed}
+            oninput={(e) => setThemePref({ source: "custom", seed: e.currentTarget.value })}
+            aria-label="自定义主题色"
+          />
+          自定义
+        </label>
+      </div>
+      <p class="faint small">整个界面的色调都由这个颜色生成；浅色 / 深色跟随系统设置。</p>
+    </section>
+
+    <section class="panel">
       <div class="row-title">
         <h2>系统</h2>
         {#if systemMessage}<span class="msg {systemMessage.tone}">{systemMessage.text}</span>{/if}
@@ -282,12 +322,14 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
+    /* 吸顶：铺满内容区宽度并带一条分隔线，滚动时下面的内容不会从边缘露出 */
     position: sticky;
-    top: -24px;
-    background: var(--bg);
-    padding: 8px 0;
+    top: -22px;
     z-index: 2;
+    margin: -22px -28px 16px;
+    padding: 22px 28px 12px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
   }
 
   h1 {
@@ -398,6 +440,60 @@
 
   details[open] summary::before {
     content: "▾";
+  }
+
+  .small {
+    font-size: 12px;
+  }
+
+  .seeds {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .seed {
+    height: 36px;
+    padding: 0 10px;
+    gap: 8px;
+    border-radius: 999px;
+  }
+
+  .seed:not(.system):not(.custom) {
+    width: 36px;
+    padding: 0;
+  }
+
+  .seed.on {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--ring);
+  }
+
+  .swatch {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.12);
+  }
+
+  .seed.custom {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  .seed.custom input {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
   }
 
   .row-title {

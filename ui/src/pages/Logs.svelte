@@ -34,7 +34,7 @@
   </div>
 </header>
 
-<div class="card log" bind:this={box} onscroll={onScroll}>
+<div class="panel log" bind:this={box} onscroll={onScroll}>
   {#each rows as e (e.seq)}
     <div class="line {e.level.toLowerCase()}">
       <span class="ts">{time(e.ts_ms)}</span>
