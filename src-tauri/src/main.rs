@@ -9,6 +9,7 @@ mod app_icon;
 mod backdrop_color;
 mod commands;
 mod host;
+mod title_bar;
 mod tray;
 
 use std::sync::Arc;
@@ -91,6 +92,7 @@ fn main() {
             commands::get_admin_token,
             commands::get_system_accent,
             commands::set_backdrop,
+            commands::set_title_bar,
             commands::sample_backdrop,
         ])
         .setup(move |app| {
@@ -120,6 +122,7 @@ fn main() {
             }
             let window = builder.build()?;
             app_icon::apply_to_window(&window);
+            title_bar::hide_caption_content(&window);
             tray::create(&handle)?;
             forward(handle.clone(), "log", logs.subscribe());
             forward(

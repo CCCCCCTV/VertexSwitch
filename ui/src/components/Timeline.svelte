@@ -78,6 +78,7 @@
     </span>
   </div>
   <svg
+    class:quiet={total === 0}
     width={width}
     height={H}
     role="img"
@@ -157,7 +158,7 @@
   }
 
   .summary strong {
-    font: 600 20px var(--font-display);
+    font: 600 24px var(--font-display);
     color: var(--text);
   }
 
@@ -215,6 +216,11 @@
   .grid {
     stroke: var(--border);
     stroke-dasharray: 2 4;
+  }
+
+  /* 一个请求都没有时网格退后，空图不显得满屏刻度 */
+  svg.quiet .grid {
+    opacity: 0.35;
   }
 
   .axis {

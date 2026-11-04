@@ -79,29 +79,31 @@
 
 <div class="shell">
   <nav aria-label="主导航">
-    <span class="nav-glass glass" aria-hidden="true"></span>
-    <img class="logo" src="/logo.svg" alt="VertexSwitch" width="30" height="30" />
-    {#if gliderY !== null}
-      <span class="glider" class:animated={gliderReady} style:transform="translateY({gliderY}px)" aria-hidden="true"
-      ></span>
-    {/if}
-    {#each pages as p, i}
-      <button
-        bind:this={navItems[i]}
-        class="item"
-        class:active={page === p.id}
-        aria-current={page === p.id ? "page" : undefined}
-        onclick={() => (page = p.id)}
-      >
-        <span class="indicator">
-          <p.icon size={20} strokeWidth={1.75} />
-          {#if p.id === "requests" && failedRecent > 0}
-            <span class="badge" aria-label="最近 10 分钟 {failedRecent} 个失败">{failedRecent}</span>
-          {/if}
-        </span>
-        <span class="label">{p.label}</span>
-      </button>
-    {/each}
+    <!-- 图标、标志和选中药丸放在一条“导轨”里：液态玻璃下它是一枚刚好包住图标的悬浮胶囊 -->
+    <div class="rail glass">
+      <img class="logo" src="/logo.svg" alt="VertexSwitch" width="30" height="30" />
+      {#if gliderY !== null}
+        <span class="glider" class:animated={gliderReady} style:transform="translateY({gliderY}px)" aria-hidden="true"
+        ></span>
+      {/if}
+      {#each pages as p, i}
+        <button
+          bind:this={navItems[i]}
+          class="item"
+          class:active={page === p.id}
+          aria-current={page === p.id ? "page" : undefined}
+          onclick={() => (page = p.id)}
+        >
+          <span class="indicator">
+            <p.icon size={20} strokeWidth={1.75} />
+            {#if p.id === "requests" && failedRecent > 0}
+              <span class="badge" aria-label="最近 10 分钟 {failedRecent} 个失败">{failedRecent}</span>
+            {/if}
+          </span>
+          <span class="label">{p.label}</span>
+        </button>
+      {/each}
+    </div>
     {#if api.preview}<span class="preview" title="浏览器预览：示例数据，不连接核心">预览</span>{/if}
   </nav>
 
@@ -157,16 +159,20 @@
   }
 
   /* 液态玻璃：导航栏下面垫一块竖条玻璃 */
-  .nav-glass {
-    display: none;
+  /* 内边距两种模式一样：选中药丸按导轨里的位置算，切换液态玻璃时不会错位 */
+  .rail {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 64px;
+    padding: 12px 0 10px;
   }
 
-  :global(:root[data-glass]) .nav-glass {
-    display: block;
-    position: absolute;
-    inset: 8px 6px;
-    z-index: -1;
-    border-radius: 26px;
+  /* 液态玻璃：导轨是一枚悬浮的玻璃胶囊，高度随图标，不再通到底 */
+  :global(:root[data-glass]) .rail {
+    border-radius: 32px;
   }
 
   /* 导航栏与内容区共用同一片背景，不再单独成一块 */
@@ -175,14 +181,17 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 6px;
-    padding: 16px 0;
+    padding: 4px 0 16px;
+  }
+
+  :global(:root[data-glass]) nav {
+    padding-top: 10px;
   }
 
   .glider {
     position: absolute;
     top: 0;
-    left: 12px;
+    left: 6px;
     width: 52px;
     height: 30px;
     border-radius: 999px;

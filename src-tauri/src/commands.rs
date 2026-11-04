@@ -235,6 +235,19 @@ pub async fn sample_backdrop(window: tauri::WebviewWindow, scope: String) -> Cmd
     serde_json::to_value(result).map_err(|e| e.to_string())
 }
 
+/// 标题栏跟界面背景同色：color 为 `#RRGGBB`，null 表示交还系统；dark 时标题栏按钮用浅色图标。
+#[tauri::command]
+pub fn set_title_bar(window: tauri::WebviewWindow, color: Option<String>, dark: bool) -> CmdResult {
+    let color = match color {
+        Some(hex) => {
+            Some(crate::title_bar::parse_hex(&hex).ok_or_else(|| format!("颜色格式不对：{hex}"))?)
+        }
+        None => None,
+    };
+    crate::title_bar::set_colors(&window, color, dark);
+    Ok(Value::Null)
+}
+
 /// 切换窗口背景材质（Windows 11）：mica、tabbed（Mica Alt）、acrylic（亚克力）或 none。
 #[tauri::command]
 pub fn set_backdrop(window: tauri::WebviewWindow, kind: String) -> CmdResult {

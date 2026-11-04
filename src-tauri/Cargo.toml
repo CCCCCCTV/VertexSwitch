@@ -28,7 +28,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 vertexswitch-core = { version = "0.1.0", path = "../crates/vertexswitch-core" }
 
 # 与工作区相同，只是 unsafe 从 forbid 放宽到 deny：实时取色读屏、按缩放取图标帧要直接调 Win32，
-# 只在 backdrop_color::win、app_icon::win 两个模块里单独允许
+# 只在 backdrop_color::win、app_icon::win、title_bar::win 三个模块里单独允许
 [lints.rust]
 unsafe_code = "deny"
 
@@ -43,6 +43,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Graphics_Gdi",
     "Win32_Storage_Xps",
     "Win32_System_LibraryLoader",
+    "Win32_UI_Controls",
     "Win32_UI_HiDpi",
     "Win32_UI_WindowsAndMessaging",
 ] }

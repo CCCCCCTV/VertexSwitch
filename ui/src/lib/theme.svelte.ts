@@ -236,14 +236,28 @@ function renderField(live: LiveState, tint: number): string {
     ctx.fillStyle = `oklch(${lightness} ${chroma.toFixed(3)} ${h.toFixed(1)})`;
     ctx.fillRect(i % live.cols, Math.floor(i / live.cols), 1, 1);
   });
+  fieldTop = averageRow(ctx.getImageData(0, 0, live.cols, 1).data);
   return canvas.toDataURL();
 }
 
-/** 背景图片的平均亮度（0 黑 – 1 白），载入图片时算一次 */
-let bgImageLum: number | null = null;
+type Rgb = [number, number, number];
 
-/** 把图片缩到 16×16 求平均相对亮度 */
-async function imageLuminance(blob: Blob): Promise<number | null> {
+/** 颜色场最上面一行的平均色：标题栏要和它接上 */
+let fieldTop: Rgb | null = null;
+
+function averageRow(data: Uint8ClampedArray): Rgb {
+  const sum: Rgb = [0, 0, 0];
+  const n = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) for (let k = 0; k < 3; k++) sum[k] += data[i + k];
+  return sum.map((v) => v / n) as Rgb;
+}
+
+/** 背景图片的平均亮度（0 黑 – 1 白）和最上面一条的平均色，载入图片时算一次 */
+let bgImageLum: number | null = null;
+let bgImageTop: Rgb | null = null;
+
+/** 把图片缩到 16×16：求整体平均相对亮度、最上两行的平均色 */
+async function imageStats(blob: Blob): Promise<{ lum: number; top: Rgb } | null> {
   try {
     const bitmap = await createImageBitmap(blob, { resizeWidth: 16, resizeHeight: 16 });
     const canvas = document.createElement("canvas");
@@ -260,10 +274,59 @@ async function imageLuminance(blob: Blob): Promise<number | null> {
     for (let i = 0; i < data.length; i += 4) {
       total += 0.2126 * lin(data[i]) + 0.7152 * lin(data[i + 1]) + 0.0722 * lin(data[i + 2]);
     }
-    return total / 256;
+    return { lum: total / 256, top: averageRow(data.subarray(0, 16 * 2 * 4)) };
   } catch {
     return null;
   }
+}
+
+/** 把任意 CSS 颜色（oklch、color-mix 的结果等）换成 RGB：画在 1×1 画布上读回来 */
+let probe: CanvasRenderingContext2D | null = null;
+function cssToRgb(css: string): Rgb | null {
+  probe ??= document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+  if (!probe) return null;
+  probe.canvas.width = probe.canvas.height = 1;
+  probe.fillStyle = "#000";
+  probe.fillStyle = css;
+  probe.fillRect(0, 0, 1, 1);
+  const [r, g, b] = probe.getImageData(0, 0, 1, 1).data;
+  return [r, g, b];
+}
+
+const toHex = (rgb: Rgb) =>
+  "#" + rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("");
+
+/**
+ * 标题栏底色 = 界面最上面那条背景的颜色：颜色场有就用它最上一行，否则用底色；有背景图片再按不透明度混入图片上沿。
+ * Mica 下底色是半透明的、也没有颜色场和背景图片时，交还系统，让标题栏也是 Mica。
+ */
+function titleBarColor(): string | null {
+  const root = document.documentElement;
+  const mica = root.dataset.mica !== undefined;
+  const fieldOn = root.dataset.field !== undefined && fieldTop !== null;
+  const imageOn = theme.bgImage !== null && bgImageTop !== null;
+  let base: Rgb | null;
+  if (fieldOn) base = fieldTop;
+  else if (!mica) base = cssToRgb(getComputedStyle(document.body).backgroundColor);
+  // Mica 本身的颜色读不到，有背景图片时用最接近的表面色打底
+  else if (imageOn) base = cssToRgb(getComputedStyle(root).getPropertyValue("--surface"));
+  else return null;
+  if (!base) return null;
+  if (imageOn) {
+    const o = theme.pref.bgOpacity;
+    base = base.map((v, k) => v * (1 - o) + bgImageTop![k] * o) as Rgb;
+  }
+  return toHex(base);
+}
+
+let lastTitleBar = "";
+function syncTitleBar() {
+  const color = titleBarColor();
+  const dark = darkQuery.matches;
+  const key = `${color}:${dark}`;
+  if (key === lastTitleBar) return;
+  lastTitleBar = key;
+  void api.setTitleBar(color, dark).catch(() => {});
 }
 
 /**
@@ -325,13 +388,17 @@ function showBackground(blob: Blob | null) {
   if (theme.bgImage) URL.revokeObjectURL(theme.bgImage);
   theme.bgImage = blob ? URL.createObjectURL(blob) : null;
   bgImageLum = null;
+  bgImageTop = null;
   applyBackgroundImage();
   applyGlass();
-  // 图片亮度要等解码完才知道，算好再让玻璃按它调浓淡
+  syncTitleBar();
+  // 图片亮度和上沿颜色要等解码完才知道，算好再让玻璃调浓淡、标题栏换色
   if (blob) {
-    void imageLuminance(blob).then((lum) => {
-      bgImageLum = lum;
+    void imageStats(blob).then((stats) => {
+      bgImageLum = stats?.lum ?? null;
+      bgImageTop = stats?.top ?? null;
       applyGlass();
+      syncTitleBar();
     });
   }
 }
@@ -367,6 +434,7 @@ function resolve() {
   applyField();
   applyBackgroundImage();
   applyGlass();
+  syncTitleBar();
 }
 
 /** 底色是否半透明，跟着窗口材质走 */
@@ -379,6 +447,7 @@ function applyBackdropAttr() {
 export function setBackdrop(backdrop: Backdrop) {
   setThemePref({ ...theme.pref, backdrop });
   applyBackdropAttr();
+  syncTitleBar();
   if (theme.backdropSupported) void api.setBackdrop(backdrop).catch(() => {});
 }
 
@@ -538,6 +607,7 @@ export function startTheme() {
   darkQuery.addEventListener("change", () => {
     applyField();
     applyGlass();
+    syncTitleBar();
   });
   // 窗口从托盘重新显示时立即取一次
   document.addEventListener("visibilitychange", () => void sampleLive());

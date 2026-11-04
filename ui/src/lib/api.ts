@@ -43,6 +43,8 @@ export interface Api {
   systemAccent(): Promise<string | null>;
   /** 切换窗口背景材质（仅 Windows 11） */
   setBackdrop(kind: Backdrop): Promise<void>;
+  /** 标题栏底色跟界面背景一致：#RRGGBB，null 交还系统；dark 时按钮用浅色图标 */
+  setTitleBar(color: string | null, dark: boolean): Promise<void>;
   /** 实时取色：取一次种子色与颜色场；读屏失败或不支持时为 null */
   sampleBackdrop(scope: LiveScope): Promise<BackdropSample | null>;
   /** 窗口移动或改变大小（窗口后方取色要跟着重取） */
@@ -92,6 +94,7 @@ async function tauriApi(): Promise<Api> {
     adminToken: () => invoke("get_admin_token"),
     systemAccent: () => invoke("get_system_accent"),
     setBackdrop: (kind) => invoke("set_backdrop", { kind }),
+    setTitleBar: (color, dark) => invoke("set_title_bar", { color, dark }),
     sampleBackdrop: (scope) => invoke("sample_backdrop", { scope }),
     onWindowMoved: (cb) => {
       const win = getCurrentWindow();

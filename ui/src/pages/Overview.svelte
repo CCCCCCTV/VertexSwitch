@@ -12,6 +12,7 @@
     Copy,
     Check,
     ChevronRight,
+    ShieldCheck,
   } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { live, refreshStatus } from "../lib/live.svelte";
@@ -92,6 +93,29 @@
     return [...rows.values()].sort((a, b) => b.requests - a.requests);
   });
 
+  // 健康时的基准数据：最近 30 分钟的请求数与平均耗时（都来自真实记录）
+  const recent = $derived.by(() => {
+    const since = Date.now() - 30 * 60_000;
+    const rows = live.requests.filter((r) => r.ts_ms >= since);
+    const avg = rows.length ? rows.reduce((s, r) => s + r.duration_ms, 0) / rows.length : null;
+    return { count: rows.length, avg };
+  });
+
+  const totals = $derived(
+    usage.reduce(
+      (t, row) => ({ requests: t.requests + row.requests, input: t.input + row.input, output: t.output + row.output }),
+      { requests: 0, input: 0, output: 0 },
+    ),
+  );
+
+  // 测试连接：页头的一个按钮，点开是小弹层
+  let testOpen = $state(false);
+  let testWrap: HTMLDivElement | undefined = $state();
+
+  function closeTestOnOutside(e: MouseEvent) {
+    if (testOpen && testWrap && !testWrap.contains(e.target as Node)) testOpen = false;
+  }
+
   const testModels = $derived([
     ...Object.keys(models?.gemini ?? {}),
     ...Object.keys(models?.claude ?? {}),
@@ -140,6 +164,11 @@
   }
 </script>
 
+<svelte:window
+  onclick={closeTestOnOutside}
+  onkeydown={(e) => e.key === "Escape" && (testOpen = false)}
+/>
+
 <header>
   <h1>概览</h1>
   {#if status}
@@ -150,11 +179,41 @@
         <span class="pill bad"><span class="dot"></span>未在监听</span>
       {/if}
       {#if status.google_token === "ok"}
-        <span class="pill">Google 认证正常 · {status.project_id}</span>
+        <span class="pill">Google 认证正常 · <span class="mono">{status.project_id}</span></span>
       {:else}
         <span class="pill bad" title={status.google_token}>Google 认证失败</span>
       {/if}
       <span class="pill">已运行 {uptime(status.uptime_secs)}</span>
+    </div>
+    <div class="test-wrap" bind:this={testWrap}>
+      <button class="test-btn" aria-expanded={testOpen} aria-haspopup="dialog" onclick={() => (testOpen = !testOpen)}>
+        <FlaskConical size={15} />测试连接
+      </button>
+      {#if testOpen}
+        <div class="popover panel" role="dialog" aria-label="测试连接">
+          <div class="test-row">
+            <select bind:value={testModel} aria-label="测试用模型" disabled={!testModels.length}>
+              {#each testModels as m}<option value={m}>{m}</option>{/each}
+            </select>
+            <button class="primary" onclick={runTest} disabled={testing || !status.server.running}>
+              {testing ? "请求中…" : "发送"}
+            </button>
+          </div>
+          {#if testError}
+            <p class="result bad"><OctagonX size={16} />{testError}</p>
+          {:else if testResult}
+            <p class="result" class:ok={testResult.ok} class:bad={!testResult.ok}>
+              {#if testResult.ok}
+                <CircleCheck size={16} /><span>{duration(testResult.latency_ms)} · 回复：{testResult.reply}</span>
+              {:else}
+                <OctagonX size={16} /><span>HTTP {testResult.status}：{testResult.error?.message ?? "未知错误"}</span>
+              {/if}
+            </p>
+          {:else}
+            <p class="faint small">会真实调用 Vertex AI，产生少量费用（最多 32 个输出 token）。</p>
+          {/if}
+        </div>
+      {/if}
     </div>
   {/if}
 </header>
@@ -233,7 +292,16 @@
           {/each}
         </ul>
       {:else}
-        <div class="calm"><CircleCheck size={18} />最近 30 分钟没有失败或降级。</div>
+        <div class="calm">
+          <span class="calm-icon"><ShieldCheck size={26} strokeWidth={1.75} /></span>
+          <b>一切正常</b>
+          <small>最近 30 分钟没有失败或降级</small>
+        </div>
+        <dl class="baseline">
+          <div><dt>进行中</dt><dd>{status.in_flight}</dd></div>
+          <div title="最近 30 分钟的请求数"><dt>最近请求</dt><dd>{recent.count}</dd></div>
+          <div><dt>平均耗时</dt><dd>{recent.avg === null ? "—" : duration(recent.avg)}</dd></div>
+        </dl>
       {/if}
     </section>
 
@@ -254,12 +322,11 @@
                   {#if copied === pair}<Check size={13} />已复制{:else}<span class="mono">{env}</span>{/if}
                 </button>
               </div>
-              <div class="url">
+              <!-- 整行是一个只读的代码框，点哪里都复制地址 -->
+              <button class="url" onclick={() => copy(url)} title="点击复制" aria-label="复制 {name} 地址 {url}">
                 <span class="mono">{url}</span>
-                <button class="ghost icon" onclick={() => copy(url)} aria-label="复制 {name} 地址">
-                  {#if copied === url}<Check size={15} />{:else}<Copy size={15} />{/if}
-                </button>
-              </div>
+                {#if copied === url}<Check size={15} />{:else}<Copy size={15} />{/if}
+              </button>
             </li>
           {/each}
         </ul>
@@ -272,48 +339,31 @@
       <div class="panel-head"><Gauge size={16} /><h2>用量</h2><span class="end faint">本次运行</span></div>
       {#if !metrics}
         <div class="empty">正在加载…</div>
-      {:else if usage.length}
-        <table class="usage">
-          <thead><tr><th>后端</th><th class="num">请求</th><th class="num">输入</th><th class="num">输出</th></tr></thead>
-          <tbody>
-            {#each usage as row}
-              <tr>
-                <td>{row.backend}</td>
-                <td class="num">{row.requests}</td>
-                <td class="num">{tokens(row.input)}</td>
-                <td class="num">{tokens(row.output)}</td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
       {:else}
-        <p class="faint">还没有转发过请求。</p>
-      {/if}
-    </section>
-
-    <section class="panel span-12 test">
-      <div class="panel-head"><FlaskConical size={16} /><h2>测试连接</h2></div>
-      <div class="test-row">
-        <select bind:value={testModel} aria-label="测试用模型" disabled={!testModels.length}>
-          {#each testModels as m}<option value={m}>{m}</option>{/each}
-        </select>
-        <button class="primary" onclick={runTest} disabled={testing || !status.server.running}>
-          {testing ? "请求中…" : "发送测试请求"}
-        </button>
-        {#if testError}
-          <span class="result bad"><OctagonX size={16} />{testError}</span>
-        {:else if testResult}
-          <span class="result" class:ok={testResult.ok} class:bad={!testResult.ok}>
-            {#if testResult.ok}
-              <CircleCheck size={16} />{duration(testResult.latency_ms)} · 回复：{testResult.reply}
-            {:else}
-              <OctagonX size={16} />HTTP {testResult.status}：{testResult.error?.message ?? "未知错误"}
-            {/if}
-          </span>
+        <!-- 三个总数始终显示（没转发过就是 0），一眼知道这里统计什么 -->
+        <div class="totals">
+          <div><span>请求</span><b>{totals.requests}</b></div>
+          <div><span>输入 token</span><b>{tokens(totals.input)}</b></div>
+          <div><span>输出 token</span><b>{tokens(totals.output)}</b></div>
+        </div>
+        {#if usage.length}
+          <table class="usage">
+            <thead><tr><th>后端</th><th class="num">请求</th><th class="num">输入</th><th class="num">输出</th></tr></thead>
+            <tbody>
+              {#each usage as row}
+                <tr>
+                  <td>{row.backend}</td>
+                  <td class="num">{row.requests}</td>
+                  <td class="num">{tokens(row.input)}</td>
+                  <td class="num">{tokens(row.output)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
         {:else}
-          <span class="faint small">会真实调用 Vertex AI，产生少量费用（最多 32 个输出 token）。</span>
+          <p class="faint small">转发过请求后，这里按后端列出明细。</p>
         {/if}
-      </div>
+      {/if}
     </section>
   </div>
 {/if}
@@ -335,6 +385,33 @@
 
   .chips .mono {
     font-size: 12px;
+  }
+
+  /* 测试连接：页头右侧的按钮，点开在它下面弹出一小块 */
+  .test-wrap {
+    position: relative;
+    margin-left: auto;
+  }
+
+  .test-btn {
+    height: 30px;
+    padding: 0 12px;
+    border-radius: 999px;
+    font-size: 13px;
+  }
+
+  .popover {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    z-index: 10;
+    width: 380px;
+    padding: 14px;
+    box-shadow: 0 16px 40px -12px oklch(0.2 calc(var(--seed-c) * 0.3) var(--seed-h) / 0.3);
+  }
+
+  .popover p {
+    margin: 10px 0 0;
   }
 
   .spaced {
@@ -495,17 +572,66 @@
     font-size: 12px;
   }
 
+  /* 健康时：居中一枚柔和的盾牌，下面三项基准数据 */
   .calm {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    color: var(--text-2);
-    font-size: 13px;
-    padding: 6px 0;
+    display: grid;
+    justify-items: center;
+    gap: 2px;
+    padding: 6px 0 14px;
+    text-align: center;
   }
 
-  .calm :global(svg) {
+  .calm-icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    margin-bottom: 6px;
+    border-radius: 50%;
+    background: var(--ok-soft);
     color: var(--ok);
+  }
+
+  .calm b {
+    font-size: 14px;
+  }
+
+  .calm small {
+    font-size: 12px;
+    color: var(--text-2);
+  }
+
+  .baseline,
+  .totals {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 0;
+  }
+
+  .baseline div,
+  .totals div {
+    display: grid;
+    gap: 2px;
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in oklch, var(--surface-2) 70%, transparent);
+  }
+
+  .baseline dt,
+  .totals span {
+    font-size: 11.5px;
+    color: var(--text-2);
+  }
+
+  .baseline dd,
+  .totals b {
+    margin: 0;
+    font: 600 18px/1.2 var(--font-display);
+  }
+
+  .totals {
+    margin-bottom: 12px;
   }
 
   /* 接入地址 */
@@ -519,7 +645,7 @@
 
   /* 每个地址一块浅色内嵌容器，名字、地址、复制按钮在同一块里，横向扫视不错位 */
   .endpoints li {
-    padding: 7px 6px 6px 12px;
+    padding: 8px 8px 8px 12px;
     border-radius: 10px;
     background: color-mix(in oklch, var(--surface-2) 70%, transparent);
     transition: background-color 0.15s;
@@ -560,11 +686,23 @@
     border-color: transparent;
   }
 
+  /* 地址行：一个只读代码框，整行可点复制 */
   .endpoints .url {
-    display: flex;
-    align-items: center;
+    width: 100%;
+    height: 32px;
+    margin-top: 6px;
+    padding: 0 10px;
     justify-content: space-between;
     gap: 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-3);
+    font-weight: 400;
+  }
+
+  .endpoints .url .mono {
+    color: var(--text);
+    font-size: 12.5px;
   }
 
   /* 跳转链接与板块右缘 / 说明文字左缘对齐 */
@@ -574,12 +712,6 @@
 
   .note.own .more {
     margin-left: -10px;
-  }
-
-  button.icon {
-    width: 28px;
-    height: 28px;
-    padding: 0;
   }
 
   /* 用量 */
@@ -593,27 +725,29 @@
     background: transparent;
   }
 
-  /* 测试 */
-  .test .panel-head {
-    margin-bottom: 10px;
-  }
-
+  /* 测试弹层 */
   .test-row {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
-    flex-wrap: wrap;
   }
 
   .test-row select {
-    width: 260px;
+    flex: 1;
+    min-width: 0;
   }
 
   .result {
-    display: inline-flex;
+    display: flex;
     gap: 6px;
-    align-items: center;
+    align-items: flex-start;
     font-size: 13px;
+    word-break: break-word;
+  }
+
+  .result :global(svg) {
+    flex: none;
+    margin-top: 2px;
   }
 
   .result.ok {

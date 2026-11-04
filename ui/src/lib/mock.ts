@@ -104,11 +104,16 @@ function request(i: number, ts = Date.now()) {
 
 log("INFO", "VertexSwitch 0.1.0 监听 http://127.0.0.1:8788");
 log("INFO", "Google access token 已刷新", "vertexswitch_core::auth");
-for (let i = 0; i < 14; i++) request(i, Date.now() - (14 - i) * 47_000);
-log("WARN", "gemini-3.5-flash：请求了 priority 档位，但上游实际按 ON_DEMAND 处理（期望 ON_DEMAND_PRIORITY）", "vertexswitch_core::frontends::gemini");
+// #empty=1：刚启动、还没有任何请求的样子（检查空状态用）
+const emptyPreview = new URLSearchParams(location.hash.slice(1)).get("empty") === "1";
+if (!emptyPreview) {
+  for (let i = 0; i < 14; i++) request(i, Date.now() - (14 - i) * 47_000);
+  log("WARN", "gemini-3.5-flash：请求了 priority 档位，但上游实际按 ON_DEMAND 处理（期望 ON_DEMAND_PRIORITY）", "vertexswitch_core::frontends::gemini");
+}
 
 let tick = 0;
 setInterval(() => {
+  if (emptyPreview) return;
   request(tick++);
   if (tick % 4 === 0) log("INFO", "Google access token 已刷新", "vertexswitch_core::auth");
 }, 5000);
@@ -199,6 +204,7 @@ export const mockApi: Api = {
   adminToken: () => delay({ token: "0123456789abcdef0123456789abcdef0123456789abcdef" }),
   systemAccent: () => delay("#0078D4"),
   setBackdrop: () => delay(undefined),
+  setTitleBar: () => delay(undefined),
   // 预览：左边偏红、右边偏蓝的颜色场，相当于窗口后面左右各有一个应用
   sampleBackdrop: () =>
     delay({

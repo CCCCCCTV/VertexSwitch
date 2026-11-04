@@ -442,11 +442,44 @@ input::placeholder {
   color: var(--text-3);
 }
 
+/* 单选：自己画的圆圈，选中时主色描边 + 主色实心圆点（不用浏览器默认的灰黑圆圈） */
 input[type="radio"] {
-  accent-color: var(--accent);
+  appearance: none;
+  flex: none;
   width: 16px;
   height: 16px;
   margin: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+input[type="radio"]::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: scale(0);
+  transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+
+input[type="radio"]:checked {
+  border-color: var(--accent);
+}
+
+input[type="radio"]:checked::after {
+  transform: scale(1);
+}
+
+input[type="radio"]:hover:not(:disabled):not(:checked) {
+  box-shadow: 0 0 0 4px var(--hover);
 }
 
 input[type="checkbox"] {
