@@ -244,7 +244,12 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 ## 13. OpenAI → Gemini 原生转换
 
 用途：OpenAI 入口的 Gemini 请求需要服务档位时（兼容接口不接受档位头）。字段对应照 Vertex 自己的 OpenAI 兼容接口文档，换路后行为尽量不变。
-依据：Vertex「OpenAI compatibility」与「Thought signatures」文档、v1 discovery 文档（GenerateContentRequest / Part / FunctionDeclaration / Candidate）。**只用假上游测过，尚未真实验收。**
+依据：Vertex「OpenAI compatibility」与「Thought signatures」文档、v1 discovery 文档（GenerateContentRequest / Part / FunctionDeclaration / Candidate）。
+
+**实测**（2026-11-04，Rust，global，gemini-3.5-flash-lite，8/8 通过）：
+- 请求头 Flex 的非流式、流式（含 `include_usage`）都转原生成功，响应头 `X-VertexSwitch-Tier: flex`，没有 trafficType 不符告警；同模型原生入口 + Flex 的 trafficType 为 `ON_DEMAND_FLEX`。Flex 每次约 7 秒，Standard 约 1 秒。
+- 工具调用：第一轮返回 `tool_calls` 且带思考签名（124 字符，在 `extra_content.google.thought_signature`）；带回签名的第二轮正常作答；客户端丢掉签名时填占位值 `skip_thought_signature_validator`，同样正常（没有 400）。
+- 管理接口给该模型设 `model_tiers = flex` 后不带请求头即走 Flex，删掉后恢复；Standard 请求仍走兼容接口。
 
 请求（发往 `…/publishers/google/models/{model}:generateContent`，流式为 `:streamGenerateContent?alt=sse`，v1）：
 - `system` / `developer` → `systemInstruction.parts[].text`；`user` → role `user`；`assistant` → role `model`；空文本不发。
