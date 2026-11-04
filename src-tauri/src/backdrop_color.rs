@@ -4,8 +4,9 @@
 //! - 整张壁纸：让桌面窗口（Progman）把自己完整画一遍再取色，被其他窗口挡住也不影响。
 //!   Wallpaper Engine 这类动态壁纸挂在桌面窗口下面，取到的是当前画面；
 //!   直接读壁纸文件不行：播放列表轮换时文件和注册表都不会变。
-//! - 窗口后方：取样的一瞬间让本窗口不出现在屏幕截取里，读它覆盖的那块屏幕；
-//!   后面是别的应用就取那些应用的颜色。
+//! - 窗口后方：让本窗口下面的桌面和各个应用窗口分别把自己画进内存，按前后顺序叠成本窗口背后的样子；
+//!   后面是别的应用就取那些应用的颜色。不动本窗口的截屏属性，所以用户随时截图、录屏都看得到本窗口
+//!   （早先的做法是取样瞬间把本窗口排除出截屏，取得勤时截图里本窗口就总是不见）。
 //!
 //! 颜色场是把取到的画面缩成 FIELD_COLS × FIELD_ROWS 的平均色，界面把它模糊后铺满背景，
 //! 颜色的位置保持不变：后面左边是红色的应用、右边是蓝色的应用，界面也是左红右蓝。
@@ -167,20 +168,24 @@ mod win {
     use std::ffi::c_void;
     use std::ptr::{null, null_mut};
 
-    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows_sys::Win32::Graphics::Dwm::{
-        DWMWA_EXTENDED_FRAME_BOUNDS, DwmFlush, DwmGetWindowAttribute,
+        DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute,
     };
     use windows_sys::Win32::Graphics::Gdi::{
-        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC,
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC,
         CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, HALFTONE, HDC, ReleaseDC,
         SRCCOPY, SelectObject, SetBrushOrgEx, SetStretchBltMode, StretchBlt,
     };
     use windows_sys::Win32::Storage::Xps::PrintWindow;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, GetWindowRect, PW_RENDERFULLCONTENT, SetWindowDisplayAffinity,
-        WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
+        EnumWindows, FindWindowW, GWL_EXSTYLE, GetClassNameW, GetWindowLongPtrW, GetWindowRect,
+        IsHungAppWindow, IsIconic, IsWindowVisible, PW_RENDERFULLCONTENT, WS_EX_LAYERED,
+        WS_EX_NOACTIVATE, WS_EX_TRANSPARENT,
     };
+
+    /// 最多叠这么多层窗口（离本窗口最近的那些），再多的被盖在下面也看不到
+    const MAX_LAYERS: usize = 12;
 
     use super::{GRID_H, GRID_W};
 
@@ -276,36 +281,177 @@ mod win {
         }
     }
 
-    /// 窗口后方：取样期间把本窗口排除出屏幕截取，读它覆盖的那块屏幕，读完立即恢复。
-    /// 排除只影响截屏，屏幕上的显示不变。
-    pub fn capture_behind(window: HWND) -> Option<Vec<u8>> {
-        // SAFETY: window 是本进程自己的主窗口；其余同 shrink
+    fn intersect(a: &RECT, b: &RECT) -> Option<RECT> {
+        let r = RECT {
+            left: a.left.max(b.left),
+            top: a.top.max(b.top),
+            right: a.right.min(b.right),
+            bottom: a.bottom.min(b.bottom),
+        };
+        (r.right > r.left && r.bottom > r.top).then_some(r)
+    }
+
+    /// 窗口在屏幕上看得见的范围：DWM 的可见边框，不含四周看不见的拖拽边
+    ///
+    /// SAFETY: hwnd 可以是任意窗口句柄，失效时返回 None
+    unsafe fn visible_bounds(hwnd: HWND) -> Option<RECT> {
+        // SAFETY: 只读窗口属性
         unsafe {
             let mut r: RECT = std::mem::zeroed();
             let got = DwmGetWindowAttribute(
-                window,
+                hwnd,
                 DWMWA_EXTENDED_FRAME_BOUNDS as u32,
                 (&mut r as *mut RECT).cast(),
                 size_of::<RECT>() as u32,
             );
-            if got != 0 && GetWindowRect(window, &mut r) == 0 {
+            if got != 0 && GetWindowRect(hwnd, &mut r) == 0 {
                 return None;
             }
-            if SetWindowDisplayAffinity(window, WDA_EXCLUDEFROMCAPTURE) == 0 {
-                return None;
+            (r.right > r.left && r.bottom > r.top).then_some(r)
+        }
+    }
+
+    /// 本窗口下面、和 area 有重叠的窗口，从最底下往上排（最多 MAX_LAYERS 个，取离本窗口最近的）。
+    /// 跳过隐藏、最小化、被系统隐藏（cloaked，比如在别的虚拟桌面）、点击穿透或分层不激活的覆盖层、
+    /// 没响应的窗口（让它画会卡住），以及桌面本身（桌面单独画在最底层）。
+    ///
+    /// SAFETY: window 是本进程的主窗口
+    unsafe fn windows_below(window: HWND, area: &RECT) -> Vec<(HWND, RECT)> {
+        struct Scan {
+            me: HWND,
+            area: RECT,
+            below: bool,
+            found: Vec<(HWND, RECT)>,
+        }
+        unsafe extern "system" fn each(hwnd: HWND, data: LPARAM) -> i32 {
+            // SAFETY: data 是下面传进来的 Scan 指针，只在 EnumWindows 期间使用
+            unsafe {
+                let scan = &mut *(data as *mut Scan);
+                // EnumWindows 从最上面往下数，过了本窗口之后的才在它下面
+                if hwnd == scan.me {
+                    scan.below = true;
+                    return 1;
+                }
+                if !scan.below || IsWindowVisible(hwnd) == 0 || IsIconic(hwnd) != 0 {
+                    return 1;
+                }
+                let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+                let overlay = WS_EX_LAYERED | WS_EX_NOACTIVATE;
+                if ex & WS_EX_TRANSPARENT != 0 || ex & overlay == overlay {
+                    return 1;
+                }
+                let mut cloaked = 0u32;
+                DwmGetWindowAttribute(
+                    hwnd,
+                    DWMWA_CLOAKED as u32,
+                    (&mut cloaked as *mut u32).cast(),
+                    4,
+                );
+                if cloaked != 0 || IsHungAppWindow(hwnd) != 0 {
+                    return 1;
+                }
+                let mut class = [0u16; 32];
+                let n = GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32);
+                let class = String::from_utf16_lossy(&class[..n.max(0) as usize]);
+                if class == "Progman" || class == "WorkerW" {
+                    return 1;
+                }
+                if let Some(r) = visible_bounds(hwnd)
+                    && intersect(&r, &scan.area).is_some()
+                {
+                    scan.found.push((hwnd, r));
+                }
+                1
             }
-            // 等 DWM 合成出不含本窗口的画面
-            DwmFlush();
-            DwmFlush();
-            let screen = GetDC(null_mut());
-            let out = if screen.is_null() {
-                None
-            } else {
-                let out = shrink(screen, r.left, r.top, r.right - r.left, r.bottom - r.top);
-                ReleaseDC(null_mut(), screen);
-                out
+        }
+        let mut scan = Scan {
+            me: window,
+            area: *area,
+            below: false,
+            found: Vec::new(),
+        };
+        // SAFETY: 回调只在本调用期间运行
+        unsafe {
+            EnumWindows(Some(each), &mut scan as *mut Scan as LPARAM);
+        }
+        scan.found.truncate(MAX_LAYERS);
+        scan.found.reverse();
+        scan.found
+    }
+
+    /// 让 hwnd 把自己完整画进临时位图，再把它在 visible 里、和 area 重叠的部分贴到 canvas
+    /// （canvas 的原点对应 area 的左上角）。画失败（比如权限更高的窗口）就跳过。
+    ///
+    /// SAFETY: canvas、screen 是有效的设备上下文
+    unsafe fn paint(canvas: HDC, screen: HDC, hwnd: HWND, visible: &RECT, area: &RECT) {
+        // SAFETY: 所有句柄在返回前释放
+        unsafe {
+            let Some(clip) = intersect(visible, area) else {
+                return;
             };
-            SetWindowDisplayAffinity(window, WDA_NONE);
+            let mut whole: RECT = std::mem::zeroed();
+            if GetWindowRect(hwnd, &mut whole) == 0 {
+                return;
+            }
+            let (w, h) = (whole.right - whole.left, whole.bottom - whole.top);
+            if w <= 0 || h <= 0 {
+                return;
+            }
+            let mem = CreateCompatibleDC(screen);
+            let bitmap = CreateCompatibleBitmap(screen, w, h);
+            if !bitmap.is_null() {
+                let old = SelectObject(mem, bitmap);
+                if PrintWindow(hwnd, mem, PW_RENDERFULLCONTENT) != 0 {
+                    BitBlt(
+                        canvas,
+                        clip.left - area.left,
+                        clip.top - area.top,
+                        clip.right - clip.left,
+                        clip.bottom - clip.top,
+                        mem,
+                        clip.left - whole.left,
+                        clip.top - whole.top,
+                        SRCCOPY,
+                    );
+                }
+                SelectObject(mem, old);
+                DeleteObject(bitmap);
+            }
+            DeleteDC(mem);
+        }
+    }
+
+    /// 窗口后方：桌面打底，再把本窗口下面的应用窗口从下往上叠，得到本窗口背后的样子。
+    /// 不读屏幕，也不改本窗口的截屏属性。
+    pub fn capture_behind(window: HWND) -> Option<Vec<u8>> {
+        let class: Vec<u16> = "Progman\0".encode_utf16().collect();
+        // SAFETY: window 是本进程自己的主窗口；其余同 shrink
+        unsafe {
+            let area = visible_bounds(window)?;
+            let (w, h) = (area.right - area.left, area.bottom - area.top);
+            let screen = GetDC(null_mut());
+            if screen.is_null() {
+                return None;
+            }
+            let canvas = CreateCompatibleDC(screen);
+            let bitmap = CreateCompatibleBitmap(screen, w, h);
+            let mut out = None;
+            if !bitmap.is_null() {
+                let old = SelectObject(canvas, bitmap);
+                let desktop = FindWindowW(class.as_ptr(), null());
+                let mut desk: RECT = std::mem::zeroed();
+                if !desktop.is_null() && GetWindowRect(desktop, &mut desk) != 0 {
+                    paint(canvas, screen, desktop, &desk, &area);
+                }
+                for (hwnd, visible) in windows_below(window, &area) {
+                    paint(canvas, screen, hwnd, &visible, &area);
+                }
+                out = shrink(canvas, 0, 0, w, h);
+                SelectObject(canvas, old);
+                DeleteObject(bitmap);
+            }
+            DeleteDC(canvas);
+            ReleaseDC(null_mut(), screen);
             out
         }
     }

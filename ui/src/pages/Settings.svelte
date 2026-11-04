@@ -358,7 +358,7 @@
         {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
         {#if liveScope && theme.pref.liveInterval === 0}
           <br />无间隔：取完马上取下一次，跟得最紧，但会一直占用一些 CPU{liveScope.id === "behind"
-            ? "；录屏或截图时本窗口可能时隐时现（取样时窗口会被排除出截屏）"
+            ? "（窗口后方要让后面每个窗口都画一遍，比整张壁纸更耗）"
             : ""}。
         {/if}
       </p>
