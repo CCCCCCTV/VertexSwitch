@@ -154,6 +154,23 @@ pub fn get_system_accent() -> CmdResult {
     Ok(system_accent().map_or(Value::Null, Value::String))
 }
 
+/// 切换窗口背景材质（Windows 11）：mica、tabbed（Mica Alt）、acrylic（亚克力）或 none。
+#[tauri::command]
+pub fn set_backdrop(window: tauri::WebviewWindow, kind: String) -> CmdResult {
+    use tauri::window::{Effect, EffectsBuilder};
+    let effect = match kind.as_str() {
+        "mica" => Some(Effect::Mica),
+        "tabbed" => Some(Effect::Tabbed),
+        "acrylic" => Some(Effect::Acrylic),
+        "none" => None,
+        other => return Err(format!("未知的窗口材质：{other}")),
+    };
+    window
+        .set_effects(effect.map(|e| EffectsBuilder::new().effect(e).build()))
+        .map_err(|e| e.to_string())?;
+    Ok(Value::Null)
+}
+
 #[cfg(windows)]
 pub fn system_accent() -> Option<String> {
     use winreg::RegKey;

@@ -2,8 +2,8 @@
   import { onMount } from "svelte";
   import { api, errorText } from "../lib/api";
   import { refreshStatus } from "../lib/live.svelte";
-  import { PRESETS, TINT_DEFAULT, setThemePref, setTint, theme } from "../lib/theme.svelte";
-  import type { AppInfo, Settings } from "../lib/types";
+  import { BACKDROPS, PRESETS, TINT_DEFAULT, setBackdrop, setThemePref, setTint, theme } from "../lib/theme.svelte";
+  import type { AppInfo, Backdrop, Settings } from "../lib/types";
 
   let original = $state<Settings | null>(null);
   let draft = $state<Settings | null>(null);
@@ -299,6 +299,19 @@
         <span class="faint small">浓</span>
         <button class="ghost" onclick={() => setTint(TINT_DEFAULT)} disabled={theme.pref.tint === TINT_DEFAULT}>恢复默认</button>
       </div>
+      {#if theme.backdropSupported || api.preview}
+        <div class="backdrop">
+          <label for="backdrop">窗口材质</label>
+          <select
+            id="backdrop"
+            value={theme.pref.backdrop}
+            onchange={(e) => setBackdrop(e.currentTarget.value as Backdrop)}
+          >
+            {#each BACKDROPS as b}<option value={b.id}>{b.label}</option>{/each}
+          </select>
+          <span class="faint small">{BACKDROPS.find((b) => b.id === theme.pref.backdrop)?.hint}</span>
+        </div>
+      {/if}
       <p class="faint small">整个界面的色调都由这个颜色生成，强度只影响底色和面板；浅色 / 深色跟随系统设置。</p>
     </section>
 
@@ -520,6 +533,22 @@
     gap: 10px;
     align-items: center;
     margin-bottom: 10px;
+  }
+
+  .backdrop {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .backdrop label {
+    font-weight: 500;
+    margin-right: 6px;
+  }
+
+  .backdrop select {
+    width: auto;
   }
 
   .tint label {

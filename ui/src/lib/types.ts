@@ -122,3 +122,6 @@ export interface AppInfo {
   config_path: string | null;
   admin_token_location: string;
 }
+
+/** 窗口背景材质（Windows 11）：Mica、Mica Alt、亚克力，或不透明 */
+export type Backdrop = "mica" | "tabbed" | "acrylic" | "none";

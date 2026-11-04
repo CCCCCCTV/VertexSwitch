@@ -4,6 +4,7 @@
 
 import type {
   AppInfo,
+  Backdrop,
   LogEntry,
   Metrics,
   Models,
@@ -38,6 +39,8 @@ export interface Api {
   adminToken(): Promise<{ token: string }>;
   /** Windows 系统强调色 #RRGGBB；取不到时为 null */
   systemAccent(): Promise<string | null>;
+  /** 切换窗口背景材质（仅 Windows 11） */
+  setBackdrop(kind: Backdrop): Promise<void>;
   pickKeyFile(): Promise<string | null>;
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
@@ -76,6 +79,7 @@ async function tauriApi(): Promise<Api> {
     setAutostart: (enabled) => invoke("set_autostart", { enabled }),
     adminToken: () => invoke("get_admin_token"),
     systemAccent: () => invoke("get_system_accent"),
+    setBackdrop: (kind) => invoke("set_backdrop", { kind }),
     pickKeyFile: async () => {
       const picked = await open({
         title: "选择服务账号密钥文件",

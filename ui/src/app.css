@@ -96,18 +96,18 @@
 }
 
 /*
- * Mica（Windows 11）：窗口本身是系统的半透明材质，只把页面底色与导航栏改为半透明，
- * 面板保持不透明以保证文字对比度。浏览器预览用一张模拟壁纸的渐变代替。
+ * 半透明窗口材质（Windows 11 的 Mica / Mica Alt / 亚克力）：页面底色与导航栏只盖一层很薄的
+ * 种子色，让系统材质透出来；面板保持不透明以保证文字对比度。浏览器预览用一张模拟壁纸的渐变代替。
  */
 :root[data-mica] {
-  --bg: oklch(0.966 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.55);
-  --rail: oklch(0.945 calc(var(--seed-c) * 0.34 * var(--tint)) var(--seed-h) / 0.35);
+  --bg: oklch(0.966 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.2);
+  --rail: oklch(0.945 calc(var(--seed-c) * 0.34 * var(--tint)) var(--seed-h) / 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-mica] {
-    --bg: oklch(0.17 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h) / 0.55);
-    --rail: oklch(0.195 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.35);
+    --bg: oklch(0.17 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h) / 0.2);
+    --rail: oklch(0.195 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.08);
   }
 }
 

@@ -192,6 +192,7 @@ export const mockApi: Api = {
   },
   adminToken: () => delay({ token: "0123456789abcdef0123456789abcdef0123456789abcdef" }),
   systemAccent: () => delay("#0078D4"),
+  setBackdrop: () => delay(undefined),
   pickKeyFile: () => delay("C:\\Users\\me\\keys\\service-account.json"),
   onLog: (cb) => (logListeners.add(cb), () => logListeners.delete(cb)),
   onRequest: (cb) => (requestListeners.add(cb), () => requestListeners.delete(cb)),

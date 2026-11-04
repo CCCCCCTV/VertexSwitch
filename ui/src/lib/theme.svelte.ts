@@ -3,6 +3,7 @@
 // 这里只负责把种子色换算成 OKLCH 并写进这两个变量。默认种子是 Windows 系统强调色。
 
 import { api } from "./api";
+import type { Backdrop } from "./types";
 
 export const PRESETS = [
   { id: "blue", label: "靛蓝", seed: "#3B5BDB" },
@@ -20,7 +21,16 @@ export interface ThemePref {
   seed: string;
   /** 色调强度 0–2：0 接近中性灰，1 为默认，2 最浓 */
   tint: number;
+  /** 窗口背景材质，只在支持的系统（Windows 11）上起作用 */
+  backdrop: Backdrop;
 }
+
+export const BACKDROPS: { id: Backdrop; label: string; hint: string }[] = [
+  { id: "mica", label: "Mica", hint: "取桌面壁纸的模糊色调，最安静" },
+  { id: "tabbed", label: "Mica Alt", hint: "同样取壁纸色调，颜色更明显" },
+  { id: "acrylic", label: "亚克力", hint: "透出窗口后面的内容（模糊），最明显" },
+  { id: "none", label: "不透明", hint: "关闭半透明" },
+];
 
 export const TINT_DEFAULT = 1;
 
@@ -48,13 +58,14 @@ export function loadPref(): ThemePref {
       const p = JSON.parse(raw);
       if ((p.source === "system" || p.source === "custom") && /^#[0-9a-f]{6}$/i.test(p.seed)) {
         const tint = typeof p.tint === "number" && p.tint >= 0 && p.tint <= 2 ? p.tint : TINT_DEFAULT;
-        return { source: p.source, seed: p.seed, tint };
+        const backdrop = BACKDROPS.some((b) => b.id === p.backdrop) ? (p.backdrop as Backdrop) : "mica";
+        return { source: p.source, seed: p.seed, tint, backdrop };
       }
     }
   } catch {
     // 存储不可用时用默认值
   }
-  return { source: "system", seed: FALLBACK_SEED, tint: TINT_DEFAULT };
+  return { source: "system", seed: FALLBACK_SEED, tint: TINT_DEFAULT, backdrop: "mica" };
 }
 
 function savePref(pref: ThemePref) {
@@ -113,6 +124,8 @@ export const theme = $state({
   systemAccent: cachedAccent(),
   /** 当前实际使用的种子色 */
   seed: FALLBACK_SEED,
+  /** 系统支持半透明窗口材质（Windows 11）；桌面程序在页面加载前注入 */
+  backdropSupported: Boolean((window as { __VS_MICA__?: boolean }).__VS_MICA__),
 });
 
 function resolve() {
@@ -120,6 +133,19 @@ function resolve() {
     theme.pref.source === "system" ? (theme.systemAccent ?? FALLBACK_SEED) : theme.pref.seed;
   applySeed(theme.seed);
   document.documentElement.style.setProperty("--tint", String(theme.pref.tint));
+}
+
+/** 底色与导航栏是否半透明，跟着窗口材质走 */
+function applyBackdropAttr() {
+  const root = document.documentElement;
+  if (theme.backdropSupported && theme.pref.backdrop !== "none") root.dataset.mica = "";
+  else delete root.dataset.mica;
+}
+
+export function setBackdrop(backdrop: Backdrop) {
+  setThemePref({ ...theme.pref, backdrop });
+  applyBackdropAttr();
+  if (theme.backdropSupported) void api.setBackdrop(backdrop).catch(() => {});
 }
 
 /** 只改色调强度，保留颜色来源 */
@@ -152,8 +178,11 @@ async function refreshSystemAccent() {
 
 /** 启动时调用；窗口重新获得焦点时重读系统强调色（用户可能刚在 Windows 设置里改过）。 */
 export function startTheme() {
-  // 桌面程序在 Windows 11 上启用了 Mica：底色与导航栏改为半透明
-  if ((window as { __VS_MICA__?: boolean }).__VS_MICA__) document.documentElement.dataset.mica = "";
+  // 桌面程序在 Windows 11 上默认以 Mica 创建窗口；用户选了别的材质就在这里切过去
+  applyBackdropAttr();
+  if (theme.backdropSupported && theme.pref.backdrop !== "mica") {
+    void api.setBackdrop(theme.pref.backdrop).catch(() => {});
+  }
   resolve();
   void refreshSystemAccent();
   window.addEventListener("focus", () => void refreshSystemAccent());

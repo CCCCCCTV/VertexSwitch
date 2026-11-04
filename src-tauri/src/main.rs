@@ -85,6 +85,7 @@ fn main() {
             commands::set_autostart,
             commands::get_admin_token,
             commands::get_system_accent,
+            commands::set_backdrop,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
