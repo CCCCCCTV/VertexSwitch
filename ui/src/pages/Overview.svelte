@@ -13,6 +13,7 @@
     Check,
     ChevronRight,
     ShieldCheck,
+    X,
   } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { live, refreshStatus } from "../lib/live.svelte";
@@ -108,12 +109,12 @@
     ),
   );
 
-  // 测试连接：页头的一个按钮，点开是小弹层
-  let testOpen = $state(false);
-  let testWrap: HTMLDivElement | undefined = $state();
+  // 测试连接：页头的一个按钮，点开是居中的模态弹窗（原生 dialog：Esc 关闭、焦点锁在弹窗里）
+  let testDialog: HTMLDialogElement | undefined = $state();
 
-  function closeTestOnOutside(e: MouseEvent) {
-    if (testOpen && testWrap && !testWrap.contains(e.target as Node)) testOpen = false;
+  /** 点在遮罩上（事件目标就是 dialog 本身，内容都包在里层）时关闭 */
+  function closeOnBackdrop(e: MouseEvent) {
+    if (e.target === testDialog) testDialog?.close();
   }
 
   const testModels = $derived([
@@ -126,6 +127,10 @@
     const load = async () => (metrics = await api.metrics());
     void load();
     void api.models().then((m) => (models = m));
+    // 仅浏览器预览：#dialog=test 直接打开测试弹窗（截图检查用）
+    if (api.preview && new URLSearchParams(location.hash.slice(1)).get("dialog") === "test") {
+      setTimeout(() => testDialog?.showModal(), 300);
+    }
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   });
@@ -164,11 +169,6 @@
   }
 </script>
 
-<svelte:window
-  onclick={closeTestOnOutside}
-  onkeydown={(e) => e.key === "Escape" && (testOpen = false)}
-/>
-
 <header>
   <h1>概览</h1>
   {#if status}
@@ -185,36 +185,38 @@
       {/if}
       <span class="pill">已运行 {uptime(status.uptime_secs)}</span>
     </div>
-    <div class="test-wrap" bind:this={testWrap}>
-      <button class="test-btn" aria-expanded={testOpen} aria-haspopup="dialog" onclick={() => (testOpen = !testOpen)}>
-        <FlaskConical size={15} />测试连接
-      </button>
-      {#if testOpen}
-        <div class="popover panel" role="dialog" aria-label="测试连接">
-          <div class="test-row">
-            <select bind:value={testModel} aria-label="测试用模型" disabled={!testModels.length}>
-              {#each testModels as m}<option value={m}>{m}</option>{/each}
-            </select>
-            <button class="primary" onclick={runTest} disabled={testing || !status.server.running}>
-              {testing ? "请求中…" : "发送"}
-            </button>
-          </div>
-          {#if testError}
-            <p class="result bad"><OctagonX size={16} />{testError}</p>
-          {:else if testResult}
-            <p class="result" class:ok={testResult.ok} class:bad={!testResult.ok}>
-              {#if testResult.ok}
-                <CircleCheck size={16} /><span>{duration(testResult.latency_ms)} · 回复：{testResult.reply}</span>
-              {:else}
-                <OctagonX size={16} /><span>HTTP {testResult.status}：{testResult.error?.message ?? "未知错误"}</span>
-              {/if}
-            </p>
-          {:else}
-            <p class="faint small">会真实调用 Vertex AI，产生少量费用（最多 32 个输出 token）。</p>
-          {/if}
+    <button class="test-btn" aria-haspopup="dialog" onclick={() => testDialog?.showModal()}>
+      <FlaskConical size={15} />测试连接
+    </button>
+    <dialog class="test-dialog" bind:this={testDialog} aria-labelledby="test-title" onclick={closeOnBackdrop}>
+      <div class="dialog-body">
+        <div class="dialog-head">
+          <FlaskConical size={18} />
+          <h2 id="test-title">测试连接</h2>
+          <button class="ghost close" onclick={() => testDialog?.close()} aria-label="关闭"><X size={16} /></button>
         </div>
-      {/if}
-    </div>
+        <p class="faint small">用选中的模型发一个最小请求，确认认证、网络和档位都通。会真实调用 Vertex AI，产生少量费用（最多 32 个输出 token）。</p>
+        <div class="test-row">
+          <select bind:value={testModel} aria-label="测试用模型" disabled={!testModels.length}>
+            {#each testModels as m}<option value={m}>{m}</option>{/each}
+          </select>
+          <button class="primary" onclick={runTest} disabled={testing || !status.server.running}>
+            {testing ? "请求中…" : "发送"}
+          </button>
+        </div>
+        {#if testError}
+          <p class="result bad"><OctagonX size={16} /><span>{testError}</span></p>
+        {:else if testResult}
+          <p class="result" class:ok={testResult.ok} class:bad={!testResult.ok}>
+            {#if testResult.ok}
+              <CircleCheck size={16} /><span>{duration(testResult.latency_ms)} · 回复：{testResult.reply}</span>
+            {:else}
+              <OctagonX size={16} /><span>HTTP {testResult.status}：{testResult.error?.message ?? "未知错误"}</span>
+            {/if}
+          </p>
+        {/if}
+      </div>
+    </dialog>
   {/if}
 </header>
 
@@ -369,15 +371,17 @@
 {/if}
 
 <style>
+  /* 页头：标题 | 状态胶囊（窄窗口时自己换行）| 测试连接按钮（始终在右上） */
   header {
     display: flex;
     align-items: center;
     gap: 16px;
-    flex-wrap: wrap;
     margin-bottom: 18px;
   }
 
   .chips {
+    flex: 1;
+    min-width: 0;
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
@@ -387,31 +391,74 @@
     font-size: 12px;
   }
 
-  /* 测试连接：页头右侧的按钮，点开在它下面弹出一小块 */
-  .test-wrap {
-    position: relative;
-    margin-left: auto;
-  }
-
   .test-btn {
+    flex: none;
+    align-self: flex-start;
     height: 30px;
     padding: 0 12px;
     border-radius: 999px;
     font-size: 13px;
   }
 
-  .popover {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    z-index: 10;
-    width: 380px;
-    padding: 14px;
-    box-shadow: 0 16px 40px -12px oklch(0.2 calc(var(--seed-c) * 0.3) var(--seed-h) / 0.3);
+  /* 测试连接弹窗：居中，后面一层带模糊的遮罩 */
+  .test-dialog {
+    width: min(460px, calc(100vw - 32px));
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 24px 64px -16px oklch(0.15 calc(var(--seed-c) * 0.4) var(--seed-h) / 0.4);
   }
 
-  .popover p {
-    margin: 10px 0 0;
+  .test-dialog::backdrop {
+    background: oklch(0.2 calc(var(--seed-c) * 0.3) var(--seed-h) / 0.28);
+    backdrop-filter: blur(3px);
+  }
+
+  .test-dialog[open] {
+    animation: dialog-in 0.2s cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.98);
+    }
+  }
+
+  :global(:root[data-glass]) .test-dialog {
+    background: var(--glass-fill);
+    backdrop-filter: blur(24px) saturate(1.8);
+    box-shadow:
+      inset 0 1px 0 0 var(--glass-rim),
+      0 24px 64px -16px var(--glass-shade);
+  }
+
+  .dialog-body {
+    display: grid;
+    gap: 12px;
+    padding: 16px 18px 18px;
+  }
+
+  .dialog-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .dialog-head h2 {
+    font-size: 15px;
+  }
+
+  .dialog-head .close {
+    margin-left: auto;
+    width: 30px;
+    padding: 0;
+  }
+
+  .dialog-body p {
+    margin: 0;
   }
 
   .spaced {
