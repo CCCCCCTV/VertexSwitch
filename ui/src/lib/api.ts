@@ -41,6 +41,8 @@ export interface Api {
   systemAccent(): Promise<string | null>;
   /** 切换窗口背景材质（仅 Windows 11） */
   setBackdrop(kind: Backdrop): Promise<void>;
+  /** 实时取色：从桌面露出的壁纸取一次主色 #RRGGBB；露出太少时为 null */
+  sampleWallpaperColor(): Promise<string | null>;
   pickKeyFile(): Promise<string | null>;
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
@@ -80,6 +82,7 @@ async function tauriApi(): Promise<Api> {
     adminToken: () => invoke("get_admin_token"),
     systemAccent: () => invoke("get_system_accent"),
     setBackdrop: (kind) => invoke("set_backdrop", { kind }),
+    sampleWallpaperColor: () => invoke("sample_wallpaper_color"),
     pickKeyFile: async () => {
       const picked = await open({
         title: "选择服务账号密钥文件",

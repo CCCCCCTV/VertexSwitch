@@ -284,6 +284,19 @@
           自定义
         </label>
       </div>
+      <label class="check inline live">
+        <input
+          type="checkbox"
+          checked={theme.pref.source === "wallpaper"}
+          onchange={(e) =>
+            setThemePref({ ...theme.pref, source: e.currentTarget.checked ? "wallpaper" : "system" })}
+        />
+        <span
+          >实时取色<small
+            >每 3 秒从桌面上露出来的壁纸取主色，Wallpaper Engine 这类动态壁纸也会跟着变；被窗口挡住的部分不算，全被挡住时保持上一次的颜色</small
+          ></span
+        >
+      </label>
       <div class="tint">
         <label for="tint">色调强度</label>
         <span class="faint small">中性</span>
@@ -360,8 +373,9 @@
     border-bottom: 1px solid var(--border);
   }
 
-  /* Mica 下底色半透明：吸顶栏加模糊，滚过的内容不会透出来 */
+  /* 半透明窗口材质下底色很薄：吸顶栏用更不透明的同色底再加模糊，滚过的内容不会透出来 */
   :global(:root[data-mica]) header {
+    background: oklch(from var(--bg) l c h / 0.92);
     backdrop-filter: blur(24px) saturate(1.2);
   }
 
@@ -583,6 +597,10 @@
 
   .check.inline {
     padding-top: 0;
+  }
+
+  .check.live {
+    margin: 14px 0 12px;
   }
 
   .facts {

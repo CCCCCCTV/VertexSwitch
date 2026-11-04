@@ -14,7 +14,8 @@ export const PRESETS = [
   { id: "graphite", label: "石墨", seed: "#5C677D" },
 ] as const;
 
-export type ThemeSource = "system" | "custom";
+/** system：Windows 强调色；wallpaper：实时从桌面壁纸取色；custom：用户选的颜色 */
+export type ThemeSource = "system" | "wallpaper" | "custom";
 export interface ThemePref {
   source: ThemeSource;
   /** source 为 custom 时使用 */
@@ -38,17 +39,25 @@ const KEY = "vertexswitch.theme";
 /** 上次读到的系统强调色：首帧直接用它，避免先画成后备色再跳变 */
 const ACCENT_KEY = "vertexswitch.systemAccent";
 const FALLBACK_SEED = "#3B5BDB";
+/** 上次从壁纸取到的颜色：实时取色时首帧直接用它 */
+const WALLPAPER_KEY = "vertexswitch.wallpaperColor";
+/** 实时取色的采样间隔 */
+const SAMPLE_MS = 3000;
+
+function cachedHex(key: string): string | null {
+  try {
+    const v = localStorage.getItem(key);
+    return v && /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
 
 function cachedAccent(): string | null {
   // 桌面程序在页面加载前注入的系统强调色优先
   const injected = (window as { __VS_ACCENT__?: string }).__VS_ACCENT__;
   if (injected && /^#[0-9a-f]{6}$/i.test(injected)) return injected;
-  try {
-    const v = localStorage.getItem(ACCENT_KEY);
-    return v && /^#[0-9a-f]{6}$/i.test(v) ? v : null;
-  } catch {
-    return null;
-  }
+  return cachedHex(ACCENT_KEY);
 }
 
 export function loadPref(): ThemePref {
@@ -56,7 +65,7 @@ export function loadPref(): ThemePref {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      if ((p.source === "system" || p.source === "custom") && /^#[0-9a-f]{6}$/i.test(p.seed)) {
+      if (["system", "wallpaper", "custom"].includes(p.source) && /^#[0-9a-f]{6}$/i.test(p.seed)) {
         const tint = typeof p.tint === "number" && p.tint >= 0 && p.tint <= 2 ? p.tint : TINT_DEFAULT;
         const backdrop = BACKDROPS.some((b) => b.id === p.backdrop) ? (p.backdrop as Backdrop) : "mica";
         return { source: p.source, seed: p.seed, tint, backdrop };
@@ -122,6 +131,8 @@ export function applySeed(hex: string) {
 export const theme = $state({
   pref: loadPref(),
   systemAccent: cachedAccent(),
+  /** 实时取色最近采用的颜色 */
+  wallpaperColor: cachedHex(WALLPAPER_KEY),
   /** 当前实际使用的种子色 */
   seed: FALLBACK_SEED,
   /** 系统支持半透明窗口材质（Windows 11）；桌面程序在页面加载前注入 */
@@ -129,8 +140,13 @@ export const theme = $state({
 });
 
 function resolve() {
+  const system = theme.systemAccent ?? FALLBACK_SEED;
   theme.seed =
-    theme.pref.source === "system" ? (theme.systemAccent ?? FALLBACK_SEED) : theme.pref.seed;
+    theme.pref.source === "custom"
+      ? theme.pref.seed
+      : theme.pref.source === "wallpaper"
+        ? (theme.wallpaperColor ?? system)
+        : system;
   applySeed(theme.seed);
   document.documentElement.style.setProperty("--tint", String(theme.pref.tint));
 }
@@ -157,6 +173,60 @@ export function setThemePref(pref: ThemePref) {
   theme.pref = pref;
   savePref(pref);
   resolve();
+  syncLiveColor();
+}
+
+/** 两个种子色看起来是否明显不同（只比较界面实际用到的色相与彩度；都接近灰色时色相不算数） */
+function differs(a: string, b: string) {
+  const x = hexToOklch(a);
+  const y = hexToOklch(b);
+  if (x.c < 0.03 && y.c < 0.03) return false;
+  return hueDistance(x.h, y.h) > 12 || Math.abs(x.c - y.c) > 0.03;
+}
+
+let liveTimer: ReturnType<typeof setInterval> | undefined;
+/** 与当前颜色不同、等待下一次采样确认的新颜色：动态壁纸画面在变，连续两次取到相近的颜色才换，避免闪烁 */
+let candidate: string | null = null;
+
+async function sampleWallpaper() {
+  if (document.visibilityState !== "visible") return;
+  let color: string | null;
+  try {
+    color = await api.sampleWallpaperColor();
+  } catch {
+    return;
+  }
+  if (!color || theme.pref.source !== "wallpaper") return;
+  const current = theme.wallpaperColor;
+  if (current && !differs(color, current)) {
+    candidate = null;
+    return;
+  }
+  if (current && (!candidate || differs(color, candidate))) {
+    candidate = color;
+    return;
+  }
+  candidate = null;
+  theme.wallpaperColor = color;
+  try {
+    localStorage.setItem(WALLPAPER_KEY, color);
+  } catch {
+    // 忽略：只是首帧优化
+  }
+  resolve();
+}
+
+/** 选了实时取色就定时采样，换成别的来源就停 */
+function syncLiveColor() {
+  const on = theme.pref.source === "wallpaper";
+  if (on && !liveTimer) {
+    void sampleWallpaper();
+    liveTimer = setInterval(() => void sampleWallpaper(), SAMPLE_MS);
+  } else if (!on && liveTimer) {
+    clearInterval(liveTimer);
+    liveTimer = undefined;
+    candidate = null;
+  }
 }
 
 async function refreshSystemAccent() {
@@ -184,6 +254,7 @@ export function startTheme() {
     void api.setBackdrop(theme.pref.backdrop).catch(() => {});
   }
   resolve();
+  syncLiveColor();
   void refreshSystemAccent();
   window.addEventListener("focus", () => void refreshSystemAccent());
 }

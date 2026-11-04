@@ -154,6 +154,15 @@ pub fn get_system_accent() -> CmdResult {
     Ok(system_accent().map_or(Value::Null, Value::String))
 }
 
+/// 实时取色：从桌面露出的壁纸取一次主色（`#RRGGBB`）；露出太少或不支持时为 null。
+#[tauri::command]
+pub async fn sample_wallpaper_color() -> CmdResult {
+    let color = tauri::async_runtime::spawn_blocking(crate::wallpaper_color::sample)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(color.map_or(Value::Null, Value::String))
+}
+
 /// 切换窗口背景材质（Windows 11）：mica、tabbed（Mica Alt）、acrylic（亚克力）或 none。
 #[tauri::command]
 pub fn set_backdrop(window: tauri::WebviewWindow, kind: String) -> CmdResult {
