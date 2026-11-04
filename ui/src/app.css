@@ -14,7 +14,6 @@
 
   /* 表面：浅色，带一点种子色调 */
   --bg: oklch(0.966 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h));
-  --rail: oklch(0.945 calc(var(--seed-c) * 0.34 * var(--tint)) var(--seed-h));
   --surface: oklch(0.993 calc(var(--seed-c) * 0.08 * var(--tint)) var(--seed-h));
   --surface-2: oklch(0.952 calc(var(--seed-c) * 0.28 * var(--tint)) var(--seed-h));
   --surface-3: oklch(0.92 calc(var(--seed-c) * 0.36 * var(--tint)) var(--seed-h));
@@ -34,6 +33,12 @@
   --on-accent-soft: oklch(0.3 calc(var(--seed-c) * 0.85) var(--seed-h));
   --ring: oklch(0.6 var(--seed-c) var(--seed-h) / 0.45);
   --link: var(--accent);
+
+  /* 悬停与按下：在原来的底色上叠一层主色 */
+  --hover: color-mix(in oklch, var(--accent) 10%, transparent);
+  --press: color-mix(in oklch, var(--accent) 17%, transparent);
+  /* 板块底色；实时取色时略透明，让背后的颜色场透进来 */
+  --panel: var(--surface);
 
   /* 状态色（固定） */
   --ok: oklch(0.52 0.13 155);
@@ -63,7 +68,6 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: oklch(0.17 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h));
-    --rail: oklch(0.195 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h));
     --surface: oklch(0.21 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h));
     --surface-2: oklch(0.245 calc(var(--seed-c) * 0.16 * var(--tint)) var(--seed-h));
     --surface-3: oklch(0.29 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h));
@@ -96,23 +100,26 @@
 }
 
 /*
- * 半透明窗口材质（Windows 11 的 Mica / Mica Alt / 亚克力）：页面底色与导航栏只盖一层很薄的
- * 种子色，让系统材质透出来；面板保持不透明以保证文字对比度。浏览器预览用一张模拟壁纸的渐变代替。
+ * 半透明窗口材质（Windows 11 的 Mica / Mica Alt / 亚克力）：页面底色只盖一层很薄的种子色，
+ * 让系统材质透出来；面板保持不透明以保证文字对比度。浏览器预览用一张模拟壁纸的渐变代替。
  */
 :root[data-mica] {
   --bg: oklch(0.966 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.2);
-  --rail: oklch(0.945 calc(var(--seed-c) * 0.34 * var(--tint)) var(--seed-h) / 0.08);
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-mica] {
     --bg: oklch(0.17 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h) / 0.2);
-    --rail: oklch(0.195 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.08);
   }
 }
 
 :root[data-mica] {
   background: transparent;
+}
+
+/* 实时取色：颜色场由 App 铺在窗口背景上（见 App.svelte），板块透出一点 */
+:root[data-field] {
+  --panel: color-mix(in oklch, var(--surface) 80%, transparent);
 }
 
 :root[data-mica-preview] {
@@ -186,11 +193,22 @@ button {
   background: var(--surface);
   border-radius: var(--radius-sm);
   font-weight: 500;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  transition:
+    background-color 0.15s cubic-bezier(0.2, 0, 0, 1),
+    border-color 0.15s cubic-bezier(0.2, 0, 0, 1),
+    color 0.15s,
+    box-shadow 0.15s,
+    transform 0.12s cubic-bezier(0.2, 0, 0, 1);
 }
 
 button:hover:not(:disabled) {
-  background: var(--surface-2);
+  background-color: color-mix(in oklch, var(--surface), var(--accent) 8%);
+  border-color: color-mix(in oklch, var(--border), var(--accent) 35%);
+}
+
+button:active:not(:disabled) {
+  background-color: color-mix(in oklch, var(--surface), var(--accent) 15%);
+  transform: scale(0.97);
 }
 
 button:disabled {
@@ -207,6 +225,12 @@ button.primary {
 button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+  box-shadow: 0 4px 12px -4px color-mix(in oklch, var(--accent) 70%, transparent);
+}
+
+button.primary:active:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: none;
 }
 
 button.ghost {
@@ -216,8 +240,13 @@ button.ghost {
 }
 
 button.ghost:hover:not(:disabled) {
-  background: var(--surface-2);
+  background: var(--hover);
+  border-color: transparent;
   color: var(--text);
+}
+
+button.ghost:active:not(:disabled) {
+  background: var(--press);
 }
 
 button.link {
@@ -233,10 +262,42 @@ button.link {
   text-underline-offset: 3px;
 }
 
-button.link:hover:not(:disabled) {
+button.link:hover:not(:disabled),
+button.link:active:not(:disabled) {
   background: none;
   text-decoration: underline;
   text-underline-offset: 3px;
+  transform: none;
+}
+
+/* 分段选择（药丸形，选中的一段浮起） */
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.segmented button {
+  height: 28px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.segmented button:hover:not(:disabled):not(.on) {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.segmented button.on {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
 }
 
 /* ---------- 输入 ---------- */
@@ -265,7 +326,7 @@ select {
 
 input:hover:not(:disabled),
 select:hover:not(:disabled) {
-  border-color: var(--border-strong);
+  border-color: color-mix(in oklch, var(--border-strong), var(--accent) 40%);
 }
 
 input:focus,
@@ -301,7 +362,11 @@ input[type="checkbox"] {
   display: inline-grid;
   place-content: center;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+
+input[type="checkbox"]:hover:not(:disabled):not(:checked) {
+  box-shadow: 0 0 0 4px var(--hover);
 }
 
 input[type="checkbox"]::after {
@@ -326,7 +391,7 @@ input[type="checkbox"]:checked::after {
 /* ---------- 板块 ---------- */
 
 .panel {
-  background: var(--surface);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 18px;
@@ -420,7 +485,9 @@ th {
   color: var(--text-2);
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--panel);
+  /* 板块半透明时，滚到表头下面的行要模糊掉 */
+  backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 1;
@@ -431,10 +498,11 @@ td {
   padding: 9px 12px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+  transition: background-color 0.12s;
 }
 
 tbody tr:hover td {
-  background: var(--surface-2);
+  background: var(--hover);
 }
 
 tr:last-child td {

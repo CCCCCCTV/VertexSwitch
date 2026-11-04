@@ -1,9 +1,10 @@
 // 莫奈式取色：整个界面的色调由一个种子色生成。
 // CSS 里所有颜色都写成 oklch(L C H)，H 与 C 来自 --seed-h / --seed-c 两个变量，
 // 这里只负责把种子色换算成 OKLCH 并写进这两个变量。默认种子是 Windows 系统强调色。
+// 实时取色时还会生成一张“颜色场”（按位置排列的背景色），模糊后铺在窗口背景上。
 
 import { api } from "./api";
-import type { Backdrop } from "./types";
+import type { Backdrop, BackdropSample, LiveScope } from "./types";
 
 export const PRESETS = [
   { id: "blue", label: "靛蓝", seed: "#3B5BDB" },
@@ -14,8 +15,11 @@ export const PRESETS = [
   { id: "graphite", label: "石墨", seed: "#5C677D" },
 ] as const;
 
-/** system：Windows 强调色；wallpaper：实时从桌面壁纸取色；custom：用户选的颜色 */
-export type ThemeSource = "system" | "wallpaper" | "custom";
+/**
+ * system：Windows 强调色；custom：用户选的颜色；
+ * wallpaper / behind：实时取色（整张壁纸 / 窗口后方，包括后面的其他应用）
+ */
+export type ThemeSource = "system" | "custom" | LiveScope;
 export interface ThemePref {
   source: ThemeSource;
   /** source 为 custom 时使用 */
@@ -26,9 +30,22 @@ export interface ThemePref {
   backdrop: Backdrop;
 }
 
+export const LIVE_SCOPES: { id: LiveScope; label: string; hint: string }[] = [
+  {
+    id: "wallpaper",
+    label: "整张壁纸",
+    hint: "每 3 秒取一次整张壁纸的颜色（Wallpaper Engine 动态壁纸取当前画面），被窗口挡住也不影响",
+  },
+  {
+    id: "behind",
+    label: "窗口后方",
+    hint: "取窗口正后方的画面，包括后面的其他应用；左边是红色应用、右边是蓝色应用，背景也左红右蓝。移动窗口时立即重取",
+  },
+];
+
 export const BACKDROPS: { id: Backdrop; label: string; hint: string }[] = [
-  { id: "mica", label: "Mica", hint: "取桌面壁纸的模糊色调，最安静" },
-  { id: "tabbed", label: "Mica Alt", hint: "同样取壁纸色调，颜色更明显" },
+  { id: "mica", label: "Mica", hint: "系统静态壁纸的模糊色调（不认动态壁纸），最安静" },
+  { id: "tabbed", label: "Mica Alt", hint: "同样取静态壁纸色调，颜色更明显" },
   { id: "acrylic", label: "亚克力", hint: "透出窗口后面的内容（模糊），最明显" },
   { id: "none", label: "不透明", hint: "关闭半透明" },
 ];
@@ -39,15 +56,33 @@ const KEY = "vertexswitch.theme";
 /** 上次读到的系统强调色：首帧直接用它，避免先画成后备色再跳变 */
 const ACCENT_KEY = "vertexswitch.systemAccent";
 const FALLBACK_SEED = "#3B5BDB";
-/** 上次从壁纸取到的颜色：实时取色时首帧直接用它 */
-const WALLPAPER_KEY = "vertexswitch.wallpaperColor";
-/** 实时取色的采样间隔 */
-const SAMPLE_MS = 3000;
+/** 上次实时取色的结果：首帧直接用它 */
+const LIVE_KEY = "vertexswitch.liveSample";
+/** 实时取色的采样间隔：整张壁纸变化慢；窗口后方要跟上后面应用的变化 */
+const SAMPLE_MS: Record<LiveScope, number> = { wallpaper: 3000, behind: 1500 };
+const HEX = /^#[0-9a-f]{6}$/i;
 
-function cachedHex(key: string): string | null {
+const isLive = (source: ThemeSource): source is LiveScope => source === "wallpaper" || source === "behind";
+
+type LiveState = BackdropSample & { scope: LiveScope };
+
+function validSample(s: unknown): s is BackdropSample {
+  const v = s as BackdropSample;
+  return (
+    !!v &&
+    HEX.test(v.seed) &&
+    Number.isInteger(v.cols) &&
+    Number.isInteger(v.rows) &&
+    Array.isArray(v.field) &&
+    v.field.length === v.cols * v.rows &&
+    v.field.every((c) => HEX.test(c))
+  );
+}
+
+function cachedLive(): LiveState | null {
   try {
-    const v = localStorage.getItem(key);
-    return v && /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+    const v = JSON.parse(localStorage.getItem(LIVE_KEY) ?? "null");
+    return validSample(v) && isLive((v as LiveState).scope) ? (v as LiveState) : null;
   } catch {
     return null;
   }
@@ -56,8 +91,13 @@ function cachedHex(key: string): string | null {
 function cachedAccent(): string | null {
   // 桌面程序在页面加载前注入的系统强调色优先
   const injected = (window as { __VS_ACCENT__?: string }).__VS_ACCENT__;
-  if (injected && /^#[0-9a-f]{6}$/i.test(injected)) return injected;
-  return cachedHex(ACCENT_KEY);
+  if (injected && HEX.test(injected)) return injected;
+  try {
+    const v = localStorage.getItem(ACCENT_KEY);
+    return v && HEX.test(v) ? v : null;
+  } catch {
+    return null;
+  }
 }
 
 export function loadPref(): ThemePref {
@@ -65,7 +105,7 @@ export function loadPref(): ThemePref {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      if (["system", "wallpaper", "custom"].includes(p.source) && /^#[0-9a-f]{6}$/i.test(p.seed)) {
+      if (["system", "custom", "wallpaper", "behind"].includes(p.source) && HEX.test(p.seed)) {
         const tint = typeof p.tint === "number" && p.tint >= 0 && p.tint <= 2 ? p.tint : TINT_DEFAULT;
         const backdrop = BACKDROPS.some((b) => b.id === p.backdrop) ? (p.backdrop as Backdrop) : "mica";
         return { source: p.source, seed: p.seed, tint, backdrop };
@@ -131,27 +171,63 @@ export function applySeed(hex: string) {
 export const theme = $state({
   pref: loadPref(),
   systemAccent: cachedAccent(),
-  /** 实时取色最近采用的颜色 */
-  wallpaperColor: cachedHex(WALLPAPER_KEY),
+  /** 实时取色最近采用的结果 */
+  live: cachedLive() as LiveState | null,
   /** 当前实际使用的种子色 */
   seed: FALLBACK_SEED,
   /** 系统支持半透明窗口材质（Windows 11）；桌面程序在页面加载前注入 */
   backdropSupported: Boolean((window as { __VS_MICA__?: boolean }).__VS_MICA__),
 });
 
-function resolve() {
-  const system = theme.systemAccent ?? FALLBACK_SEED;
-  theme.seed =
-    theme.pref.source === "custom"
-      ? theme.pref.seed
-      : theme.pref.source === "wallpaper"
-        ? (theme.wallpaperColor ?? system)
-        : system;
-  applySeed(theme.seed);
-  document.documentElement.style.setProperty("--tint", String(theme.pref.tint));
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+/**
+ * 把颜色场画成一张 cols × rows 的小图：保留每格的色相，亮度统一到当前主题的底色亮度，
+ * 彩度随色调强度缩放。CSS 把它拉伸铺满窗口再模糊，就是一片按位置渐变的背景。
+ */
+function renderField(live: LiveState, tint: number): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = live.cols;
+  canvas.height = live.rows;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+  // 深色底上同样的彩度显得更浓，上限压低一些
+  const [lightness, maxChroma] = darkQuery.matches ? [0.25, 0.075] : [0.9, 0.11];
+  live.field.forEach((hex, i) => {
+    const { c, h } = hexToOklch(hex);
+    const chroma = Math.min(0.2, Math.min(c * 0.85, maxChroma) * tint);
+    ctx.fillStyle = `oklch(${lightness} ${chroma.toFixed(3)} ${h.toFixed(1)})`;
+    ctx.fillRect(i % live.cols, Math.floor(i / live.cols), 1, 1);
+  });
+  return canvas.toDataURL();
 }
 
-/** 底色与导航栏是否半透明，跟着窗口材质走 */
+function applyField() {
+  const root = document.documentElement;
+  const live = theme.live;
+  if (isLive(theme.pref.source) && live && live.scope === theme.pref.source) {
+    const url = renderField(live, theme.pref.tint);
+    if (url) {
+      root.style.setProperty("--field", `url("${url}")`);
+      root.dataset.field = "";
+      return;
+    }
+  }
+  delete root.dataset.field;
+  root.style.removeProperty("--field");
+}
+
+function resolve() {
+  const system = theme.systemAccent ?? FALLBACK_SEED;
+  const source = theme.pref.source;
+  const live = theme.live && theme.live.scope === source ? theme.live : null;
+  theme.seed = source === "custom" ? theme.pref.seed : isLive(source) ? (live?.seed ?? system) : system;
+  applySeed(theme.seed);
+  document.documentElement.style.setProperty("--tint", String(theme.pref.tint));
+  applyField();
+}
+
+/** 底色是否半透明，跟着窗口材质走 */
 function applyBackdropAttr() {
   const root = document.documentElement;
   if (theme.backdropSupported && theme.pref.backdrop !== "none") root.dataset.mica = "";
@@ -173,7 +249,7 @@ export function setThemePref(pref: ThemePref) {
   theme.pref = pref;
   savePref(pref);
   resolve();
-  syncLiveColor();
+  syncLive();
 }
 
 /** 两个种子色看起来是否明显不同（只比较界面实际用到的色相与彩度；都接近灰色时色相不算数） */
@@ -184,48 +260,83 @@ function differs(a: string, b: string) {
   return hueDistance(x.h, y.h) > 12 || Math.abs(x.c - y.c) > 0.03;
 }
 
-let liveTimer: ReturnType<typeof setInterval> | undefined;
-/** 与当前颜色不同、等待下一次采样确认的新颜色：动态壁纸画面在变，连续两次取到相近的颜色才换，避免闪烁 */
-let candidate: string | null = null;
+/** 两张颜色场的平均差异（0–255），小于阈值就不重画背景 */
+function fieldDistance(a: string[], b: string[]) {
+  if (a.length !== b.length) return Infinity;
+  let sum = 0;
+  a.forEach((hex, i) => {
+    const x = parseInt(hex.slice(1), 16);
+    const y = parseInt(b[i].slice(1), 16);
+    for (const shift of [16, 8, 0]) sum += Math.abs(((x >> shift) & 255) - ((y >> shift) & 255));
+  });
+  return sum / (a.length * 3);
+}
 
-async function sampleWallpaper() {
-  if (document.visibilityState !== "visible") return;
-  let color: string | null;
+let liveTimer: ReturnType<typeof setInterval> | undefined;
+let liveTimerScope: LiveScope | null = null;
+let stopMoveWatch: (() => void) | undefined;
+let moveDebounce: ReturnType<typeof setTimeout> | undefined;
+/** 与当前种子色不同、等待下一次采样确认的新颜色：画面在变，连续两次取到相近的颜色才换，避免闪烁 */
+let candidate: string | null = null;
+let sampling = false;
+
+async function sampleLive() {
+  const scope = theme.pref.source;
+  if (!isLive(scope) || sampling || document.visibilityState !== "visible") return;
+  sampling = true;
+  let sample: BackdropSample | null = null;
   try {
-    color = await api.sampleWallpaperColor();
+    sample = await api.sampleBackdrop(scope);
   } catch {
-    return;
+    // 读屏失败：沿用上一次的颜色
+  } finally {
+    sampling = false;
   }
-  if (!color || theme.pref.source !== "wallpaper") return;
-  const current = theme.wallpaperColor;
-  if (current && !differs(color, current)) {
-    candidate = null;
-    return;
+  if (!validSample(sample) || theme.pref.source !== scope) return;
+
+  const prev = theme.live && theme.live.scope === scope ? theme.live : null;
+  let seed = sample.seed;
+  if (prev) {
+    if (!differs(sample.seed, prev.seed)) {
+      seed = prev.seed;
+      candidate = null;
+    } else if (candidate && !differs(sample.seed, candidate)) {
+      candidate = null;
+    } else {
+      candidate = sample.seed;
+      seed = prev.seed;
+    }
   }
-  if (current && (!candidate || differs(color, candidate))) {
-    candidate = color;
-    return;
-  }
-  candidate = null;
-  theme.wallpaperColor = color;
+  const field = prev && fieldDistance(prev.field, sample.field) < 6 ? prev.field : sample.field;
+  if (prev && seed === prev.seed && field === prev.field) return;
+
+  theme.live = { ...sample, seed, field, scope };
   try {
-    localStorage.setItem(WALLPAPER_KEY, color);
+    localStorage.setItem(LIVE_KEY, JSON.stringify(theme.live));
   } catch {
     // 忽略：只是首帧优化
   }
   resolve();
 }
 
-/** 选了实时取色就定时采样，换成别的来源就停 */
-function syncLiveColor() {
-  const on = theme.pref.source === "wallpaper";
-  if (on && !liveTimer) {
-    void sampleWallpaper();
-    liveTimer = setInterval(() => void sampleWallpaper(), SAMPLE_MS);
-  } else if (!on && liveTimer) {
-    clearInterval(liveTimer);
-    liveTimer = undefined;
-    candidate = null;
+/** 选了实时取色就定时采样，换成别的来源就停；窗口后方还要在窗口移动后立即重取 */
+function syncLive() {
+  const scope = isLive(theme.pref.source) ? theme.pref.source : null;
+  if (scope === liveTimerScope) return;
+  clearInterval(liveTimer);
+  liveTimer = undefined;
+  stopMoveWatch?.();
+  stopMoveWatch = undefined;
+  candidate = null;
+  liveTimerScope = scope;
+  if (!scope) return;
+  void sampleLive();
+  liveTimer = setInterval(() => void sampleLive(), SAMPLE_MS[scope]);
+  if (scope === "behind") {
+    stopMoveWatch = api.onWindowMoved(() => {
+      clearTimeout(moveDebounce);
+      moveDebounce = setTimeout(() => void sampleLive(), 200);
+    });
   }
 }
 
@@ -254,7 +365,11 @@ export function startTheme() {
     void api.setBackdrop(theme.pref.backdrop).catch(() => {});
   }
   resolve();
-  syncLiveColor();
+  syncLive();
   void refreshSystemAccent();
   window.addEventListener("focus", () => void refreshSystemAccent());
+  // 浅色 / 深色切换时颜色场要按新的底色亮度重画
+  darkQuery.addEventListener("change", () => applyField());
+  // 窗口从托盘重新显示时立即取一次
+  document.addEventListener("visibilitychange", () => void sampleLive());
 }

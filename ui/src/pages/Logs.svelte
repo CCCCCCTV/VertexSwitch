@@ -94,7 +94,7 @@
   }
 
   .line:hover {
-    background: var(--surface-2);
+    background: var(--hover);
   }
 
   .ts {

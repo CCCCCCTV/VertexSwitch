@@ -154,13 +154,27 @@ pub fn get_system_accent() -> CmdResult {
     Ok(system_accent().map_or(Value::Null, Value::String))
 }
 
-/// 实时取色：从桌面露出的壁纸取一次主色（`#RRGGBB`）；露出太少或不支持时为 null。
+/// 实时取色：scope 为 wallpaper（整张壁纸）或 behind（窗口后方）。
+/// 返回 `{seed, cols, rows, field}`；读屏失败或不支持时为 null。
 #[tauri::command]
-pub async fn sample_wallpaper_color() -> CmdResult {
-    let color = tauri::async_runtime::spawn_blocking(crate::wallpaper_color::sample)
+pub async fn sample_backdrop(window: tauri::WebviewWindow, scope: String) -> CmdResult {
+    use crate::backdrop_color::{Scope, sample};
+    let scope = match scope.as_str() {
+        "wallpaper" => Scope::Wallpaper,
+        "behind" => Scope::Behind,
+        other => return Err(format!("未知的取色范围：{other}")),
+    };
+    #[cfg(windows)]
+    let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
+    #[cfg(not(windows))]
+    let hwnd = {
+        let _ = window;
+        0
+    };
+    let result = tauri::async_runtime::spawn_blocking(move || sample(scope, hwnd))
         .await
         .map_err(|e| e.to_string())?;
-    Ok(color.map_or(Value::Null, Value::String))
+    serde_json::to_value(result).map_err(|e| e.to_string())
 }
 
 /// 切换窗口背景材质（Windows 11）：mica、tabbed（Mica Alt）、acrylic（亚克力）或 none。

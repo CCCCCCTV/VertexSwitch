@@ -21,6 +21,15 @@
   type PageId = (typeof pages)[number]["id"];
   let page = $state<PageId>("overview");
 
+  // 导航的选中药丸：一块滑到当前页，而不是每项各自亮起
+  let navItems: HTMLButtonElement[] = $state([]);
+  const gliderY = $derived.by(() => {
+    const el = navItems[pages.findIndex((p) => p.id === page)];
+    return el ? el.offsetTop + 4 : null;
+  });
+  // 首次定位不要动画，之后切页才滑动
+  let gliderReady = $state(false);
+
   const failedRecent = $derived(
     live.requests.filter((r) => r.outcome !== "ok" && Date.now() - r.ts_ms < 10 * 60_000).length,
   );
@@ -36,6 +45,8 @@
       if (preset || /^[0-9a-f]{6}$/i.test(seed ?? "")) {
         setThemePref({ ...theme.pref, source: "custom", seed: preset?.seed ?? `#${seed}` });
       }
+      const liveScope = params.get("live");
+      if (liveScope === "wallpaper" || liveScope === "behind") setThemePref({ ...theme.pref, source: liveScope });
       const tint = Number(params.get("tint"));
       if (params.has("tint") && tint >= 0 && tint <= 2) setTint(tint);
       // 浏览器里没有真正的 Mica：用一张模拟壁纸的渐变检查半透明效果
@@ -47,14 +58,20 @@
       if (anchor) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ block: "center" }), 600);
     }
     void startLive();
+    requestAnimationFrame(() => (gliderReady = true));
   });
 </script>
 
 <div class="shell">
   <nav aria-label="主导航">
     <img class="logo" src="/logo.svg" alt="VertexSwitch" width="30" height="30" />
-    {#each pages as p}
+    {#if gliderY !== null}
+      <span class="glider" class:animated={gliderReady} style:transform="translateY({gliderY}px)" aria-hidden="true"
+      ></span>
+    {/if}
+    {#each pages as p, i}
       <button
+        bind:this={navItems[i]}
         class="item"
         class:active={page === p.id}
         aria-current={page === p.id ? "page" : undefined}
@@ -89,19 +106,52 @@
 
 <style>
   .shell {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
     display: grid;
     grid-template-columns: 76px 1fr;
     height: 100%;
   }
 
+  /*
+   * 实时取色的颜色场：一张几格大小的图拉伸铺满窗口再模糊，取到的颜色留在原来的位置。
+   * 四周多铺一圈，模糊后边缘不会发灰；换图时 Chromium 会交叉淡入。
+   */
+  :global(:root[data-field]) .shell::before {
+    content: "";
+    position: absolute;
+    inset: -60px;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--field) center / 100% 100% no-repeat;
+    filter: blur(36px);
+    transition: background-image 1.2s ease;
+  }
+
+  /* 导航栏与内容区共用同一片背景，不再单独成一块 */
   nav {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 6px;
     padding: 16px 0;
-    background: var(--rail);
-    border-right: 1px solid var(--border);
+  }
+
+  .glider {
+    position: absolute;
+    top: 0;
+    left: 12px;
+    width: 52px;
+    height: 30px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    pointer-events: none;
+  }
+
+  .glider.animated {
+    transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .logo {
@@ -109,6 +159,8 @@
   }
 
   .item {
+    position: relative;
+    z-index: 1;
     flex-direction: column;
     gap: 3px;
     width: 64px;
@@ -119,9 +171,11 @@
     color: var(--text-2);
   }
 
-  .item:hover:not(:disabled) {
+  .item:hover:not(:disabled),
+  .item:active:not(:disabled) {
     background: none;
     color: var(--text);
+    transform: none;
   }
 
   /* 药丸形选中指示（Material 导航栏） */
@@ -132,15 +186,24 @@
     width: 52px;
     height: 30px;
     border-radius: 999px;
-    transition: background 0.18s cubic-bezier(0.2, 0, 0, 1);
+    transition:
+      background-color 0.18s cubic-bezier(0.2, 0, 0, 1),
+      transform 0.15s cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .item:hover .indicator {
-    background: var(--surface-3);
+  .item:hover:not(.active) .indicator {
+    background: var(--hover);
+  }
+
+  .item:active .indicator {
+    transform: scale(0.92);
+  }
+
+  .item:active:not(.active) .indicator {
+    background: var(--press);
   }
 
   .item.active .indicator {
-    background: var(--accent-soft);
     color: var(--on-accent-soft);
   }
 

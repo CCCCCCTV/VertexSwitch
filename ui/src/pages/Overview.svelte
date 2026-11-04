@@ -374,7 +374,11 @@
   }
 
   .tier:hover:not(.on) {
-    background: var(--surface-2);
+    background: var(--hover);
+  }
+
+  .tier:active:not(.on) {
+    background: var(--press);
   }
 
   .tier.on {

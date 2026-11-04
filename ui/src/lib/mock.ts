@@ -193,7 +193,15 @@ export const mockApi: Api = {
   adminToken: () => delay({ token: "0123456789abcdef0123456789abcdef0123456789abcdef" }),
   systemAccent: () => delay("#0078D4"),
   setBackdrop: () => delay(undefined),
-  sampleWallpaperColor: () => delay("#8A4FD0"),
+  // 预览：左边偏红、右边偏蓝的颜色场，相当于窗口后面左右各有一个应用
+  sampleBackdrop: () =>
+    delay({
+      seed: "#C8424A",
+      cols: 8,
+      rows: 5,
+      field: Array.from({ length: 40 }, (_, i) => (i % 8 < 4 ? "#D2484E" : "#3A6FD8")),
+    }),
+  onWindowMoved: () => () => {},
   pickKeyFile: () => delay("C:\\Users\\me\\keys\\service-account.json"),
   onLog: (cb) => (logListeners.add(cb), () => logListeners.delete(cb)),
   onRequest: (cb) => (requestListeners.add(cb), () => requestListeners.delete(cb)),

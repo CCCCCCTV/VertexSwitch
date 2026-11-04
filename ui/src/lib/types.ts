@@ -125,3 +125,14 @@ export interface AppInfo {
 
 /** 窗口背景材质（Windows 11）：Mica、Mica Alt、亚克力，或不透明 */
 export type Backdrop = "mica" | "tabbed" | "acrylic" | "none";
+
+/** 实时取色的范围：整张壁纸，或窗口后方（包括后面的其他应用） */
+export type LiveScope = "wallpaper" | "behind";
+
+/** 一次实时取色的结果：种子色，加上一张按位置排列的颜色场（cols × rows，按行） */
+export interface BackdropSample {
+  seed: string;
+  cols: number;
+  rows: number;
+  field: string[];
+}

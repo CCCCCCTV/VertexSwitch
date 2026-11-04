@@ -2,12 +2,22 @@
   import { onMount } from "svelte";
   import { api, errorText } from "../lib/api";
   import { refreshStatus } from "../lib/live.svelte";
-  import { BACKDROPS, PRESETS, TINT_DEFAULT, setBackdrop, setThemePref, setTint, theme } from "../lib/theme.svelte";
+  import {
+    BACKDROPS,
+    LIVE_SCOPES,
+    PRESETS,
+    TINT_DEFAULT,
+    setBackdrop,
+    setThemePref,
+    setTint,
+    theme,
+  } from "../lib/theme.svelte";
   import type { AppInfo, Backdrop, Settings } from "../lib/types";
 
   let original = $state<Settings | null>(null);
   let draft = $state<Settings | null>(null);
   let info = $state<AppInfo | null>(null);
+  const liveScope = $derived(LIVE_SCOPES.find((s) => s.id === theme.pref.source));
   let saving = $state(false);
   let message = $state<{ tone: "ok" | "bad" | "warn"; text: string } | null>(null);
   let showKey = $state(false);
@@ -284,19 +294,28 @@
           自定义
         </label>
       </div>
-      <label class="check inline live">
-        <input
-          type="checkbox"
-          checked={theme.pref.source === "wallpaper"}
-          onchange={(e) =>
-            setThemePref({ ...theme.pref, source: e.currentTarget.checked ? "wallpaper" : "system" })}
-        />
-        <span
-          >实时取色<small
-            >每 3 秒从桌面上露出来的壁纸取主色，Wallpaper Engine 这类动态壁纸也会跟着变；被窗口挡住的部分不算，全被挡住时保持上一次的颜色</small
-          ></span
-        >
-      </label>
+      <div class="live">
+        <span class="live-label" id="live-label">实时取色</span>
+        <div class="segmented" role="radiogroup" aria-labelledby="live-label">
+          <button
+            role="radio"
+            aria-checked={!liveScope}
+            class:on={!liveScope}
+            onclick={() => liveScope && setThemePref({ ...theme.pref, source: "system" })}>关闭</button
+          >
+          {#each LIVE_SCOPES as scope}
+            <button
+              role="radio"
+              aria-checked={liveScope?.id === scope.id}
+              class:on={liveScope?.id === scope.id}
+              onclick={() => setThemePref({ ...theme.pref, source: scope.id })}>{scope.label}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <p class="faint small live-hint">
+        {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
+      </p>
       <div class="tint">
         <label for="tint">色调强度</label>
         <span class="faint small">中性</span>
@@ -322,7 +341,11 @@
           >
             {#each BACKDROPS as b}<option value={b.id}>{b.label}</option>{/each}
           </select>
-          <span class="faint small">{BACKDROPS.find((b) => b.id === theme.pref.backdrop)?.hint}</span>
+          <span class="faint small"
+            >{BACKDROPS.find((b) => b.id === theme.pref.backdrop)?.hint}{liveScope
+              ? "；实时取色打开时背景由取到的颜色铺满，材质看不到"
+              : ""}</span
+          >
         </div>
       {/if}
       <p class="faint small">整个界面的色调都由这个颜色生成，强度只影响底色和面板；浅色 / 深色跟随系统设置。</p>
@@ -377,6 +400,12 @@
   :global(:root[data-mica]) header {
     background: oklch(from var(--bg) l c h / 0.92);
     backdrop-filter: blur(24px) saturate(1.2);
+  }
+
+  /* 实时取色时背后是颜色场：吸顶栏半透明加模糊，颜色连贯，滚过的内容也看不清 */
+  :global(:root[data-field]) header {
+    background: oklch(from var(--bg) l c h / 0.35);
+    backdrop-filter: blur(28px) saturate(1.2);
   }
 
   h1 {
@@ -599,8 +628,19 @@
     padding-top: 0;
   }
 
-  .check.live {
-    margin: 14px 0 12px;
+  .live {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    margin-top: 16px;
+  }
+
+  .live-label {
+    font-weight: 500;
+  }
+
+  .live-hint {
+    margin: 6px 0 14px;
   }
 
   .facts {

@@ -5,6 +5,8 @@
 import type {
   AppInfo,
   Backdrop,
+  BackdropSample,
+  LiveScope,
   LogEntry,
   Metrics,
   Models,
@@ -41,8 +43,10 @@ export interface Api {
   systemAccent(): Promise<string | null>;
   /** 切换窗口背景材质（仅 Windows 11） */
   setBackdrop(kind: Backdrop): Promise<void>;
-  /** 实时取色：从桌面露出的壁纸取一次主色 #RRGGBB；露出太少时为 null */
-  sampleWallpaperColor(): Promise<string | null>;
+  /** 实时取色：取一次种子色与颜色场；读屏失败或不支持时为 null */
+  sampleBackdrop(scope: LiveScope): Promise<BackdropSample | null>;
+  /** 窗口移动或改变大小（窗口后方取色要跟着重取） */
+  onWindowMoved(cb: () => void): () => void;
   pickKeyFile(): Promise<string | null>;
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
@@ -53,6 +57,7 @@ async function tauriApi(): Promise<Api> {
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
   const { open } = await import("@tauri-apps/plugin-dialog");
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
 
   // listen 是异步注册的；返回同步的取消函数
   const subscribe = <T>(event: string, cb: (payload: T) => void) => {
@@ -82,7 +87,12 @@ async function tauriApi(): Promise<Api> {
     adminToken: () => invoke("get_admin_token"),
     systemAccent: () => invoke("get_system_accent"),
     setBackdrop: (kind) => invoke("set_backdrop", { kind }),
-    sampleWallpaperColor: () => invoke("sample_wallpaper_color"),
+    sampleBackdrop: (scope) => invoke("sample_backdrop", { scope }),
+    onWindowMoved: (cb) => {
+      const win = getCurrentWindow();
+      const pending = Promise.all([win.onMoved(() => cb()), win.onResized(() => cb())]);
+      return () => void pending.then((fns) => fns.forEach((unlisten) => unlisten()));
+    },
     pickKeyFile: async () => {
       const picked = await open({
         title: "选择服务账号密钥文件",

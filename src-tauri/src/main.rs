@@ -5,10 +5,10 @@
 // 发布版不弹控制台窗口
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backdrop_color;
 mod commands;
 mod host;
 mod tray;
-mod wallpaper_color;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -87,7 +87,7 @@ fn main() {
             commands::get_admin_token,
             commands::get_system_accent,
             commands::set_backdrop,
-            commands::sample_wallpaper_color,
+            commands::sample_backdrop,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
