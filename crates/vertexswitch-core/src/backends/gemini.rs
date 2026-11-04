@@ -8,7 +8,18 @@ use crate::tiers::{Tier, TierOptions, TierPlan, plan_tier};
 pub const GENERATE_ACTIONS: &[&str] = &["generateContent", "streamGenerateContent"];
 pub const ACTIONS: &[&str] = &["generateContent", "streamGenerateContent", "countTokens"];
 
-/// 档位头只用于生成类请求；countTokens 等不发。`override_tier` 来自请求头，优先于配置。
+/// 某个模型按配置该用的档位：按模型单独设的优先，否则用默认档位。
+pub fn configured_tier(settings: &Settings, model: &str) -> Tier {
+    let g = &settings.gemini;
+    g.model_tiers
+        .get(model)
+        .and_then(|t| Tier::parse(t))
+        .or_else(|| Tier::parse(&g.tier))
+        .unwrap_or(Tier::Standard)
+}
+
+/// 档位头只用于生成类请求；countTokens 等不发。
+/// 优先级：请求头 `X-VertexSwitch-Tier`（`override_tier`）> 按模型设的档位 > 默认档位。
 pub fn tier_plan(
     settings: &Settings,
     model: &str,
@@ -21,8 +32,7 @@ pub fn tier_plan(
     let g = &settings.gemini;
     let tier = override_tier
         .and_then(Tier::parse)
-        .or_else(|| Tier::parse(&g.tier))
-        .unwrap_or(Tier::Standard);
+        .unwrap_or_else(|| configured_tier(settings, model));
     Some(plan_tier(
         tier,
         model,
@@ -64,6 +74,27 @@ mod tests {
         assert_eq!(body["contents"][0]["role"], "user");
         assert_eq!(body["contents"][1]["role"], "model");
         assert_eq!(body["contents"][2]["role"], "user");
+    }
+
+    #[test]
+    fn model_tier_beats_default_and_header_beats_both() {
+        let mut s = Settings::default();
+        s.gemini.tier = "priority".into();
+        s.gemini
+            .model_tiers
+            .insert("gemini-3.5-flash".into(), "flex".into());
+        let plan = |model, header| tier_plan(&s, model, "generateContent", header).unwrap();
+        assert_eq!(plan("gemini-3.5-flash", None).effective, Tier::Flex);
+        assert_eq!(plan("gemini-3.5-pro", None).effective, Tier::Priority);
+        assert_eq!(
+            plan("gemini-3.5-flash", Some("standard")).effective,
+            Tier::Standard
+        );
+        // 请求头写错时退回配置
+        assert_eq!(
+            plan("gemini-3.5-flash", Some("bogus")).effective,
+            Tier::Flex
+        );
     }
 
     #[test]

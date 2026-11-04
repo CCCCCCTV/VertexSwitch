@@ -14,6 +14,8 @@ export interface Status {
   region: string;
   gemini_region: string;
   gemini_tier: Tier;
+  /** 按模型单独设的档位（键为上游模型 ID），没列出的跟随 gemini_tier */
+  gemini_model_tiers: Record<string, Tier>;
   google_token: string;
   project_id?: string;
   listen: string;
@@ -38,10 +40,13 @@ export interface Settings {
   gemini: {
     region: string;
     tier: Tier;
+    model_tiers: Record<string, Tier>;
     shared_only: boolean;
     flex_server_timeout: number;
     flex_unsupported_models: string[];
     openai_api_version: string;
+    /** OpenAI 格式的 Gemini 请求：auto 需要档位时转原生 / always 总是转 / never 从不转 */
+    openai_native: "auto" | "always" | "never";
   };
   maas: { region: string; api_version: string };
   ollama: { enabled: boolean; base_url: string };

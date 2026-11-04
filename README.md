@@ -63,9 +63,13 @@ region = "global"      # global / us / eu / 具体区域
 
 [gemini]
 region = ""            # 留空则沿用 google.region；Flex 只支持 global
-tier = "standard"      # standard / flex / priority
+tier = "standard"      # 默认档位：standard / flex / priority
 shared_only = false    # true 时只走 PayGo，绕过预配吞吐量
 flex_server_timeout = 1800
+openai_native = "auto" # OpenAI 格式的 Gemini 请求需要档位时转成原生格式（always / never 可选）
+
+[gemini.model_tiers]   # 按上游模型单独设档位，优先于默认档位（界面“模型”页也能改）
+"gemini-3.5-flash" = "flex"
 
 [ollama]
 enabled = false
@@ -78,6 +82,8 @@ api_key = ""           # 非空时客户端须携带此 key
 模型表默认内置；要修改，把 `crates/vertexswitch-core/data/models.toml` 复制到
 `%APPDATA%\VertexSwitch\models.toml` 后编辑。
 
+档位对 Gemini 原生接口和 OpenAI 兼容接口（`/v1/chat/completions`）都生效：Vertex 的兼容接口不接受档位，
+需要档位时代理会把 OpenAI 格式的请求转成 Gemini 原生格式发送、再把响应转回来。
 单个请求可用请求头 `X-VertexSwitch-Tier: flex|priority|standard` 覆盖档位，
 响应头 `X-VertexSwitch-Tier` 给出实际使用的档位。
 

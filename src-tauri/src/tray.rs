@@ -41,7 +41,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .iter()
         .map(|(_, item)| item as &dyn tauri::menu::IsMenuItem<Wry>)
         .collect();
-    let tier_menu = Submenu::with_items(app, "Gemini 档位", true, &refs)?;
+    let tier_menu = Submenu::with_items(app, "Gemini 默认档位", true, &refs)?;
     let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -108,7 +108,7 @@ pub fn sync(app: &AppHandle, state: &SharedState) {
     }
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(format!(
-            "VertexSwitch\n{}:{}\nGemini 档位：{tier}",
+            "VertexSwitch\n{}:{}\nGemini 默认档位：{tier}",
             settings.server.host, settings.server.port
         )));
     }

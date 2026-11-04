@@ -24,10 +24,12 @@ const settings: Settings = {
   gemini: {
     region: "",
     tier: "standard",
+    model_tiers: { "gemini-3.5-flash-lite": "flex" },
     shared_only: false,
     flex_server_timeout: 1800,
     flex_unsupported_models: ["gemini-4-argon"],
     openai_api_version: "v1beta1",
+    openai_native: "auto",
   },
   maas: { region: "", api_version: "v1" },
   ollama: { enabled: false, base_url: "http://127.0.0.1:11434" },
@@ -86,7 +88,7 @@ function request(i: number, ts = Date.now()) {
     protocol: s.protocol ?? "openai",
     model: s.model ?? null,
     backend: s.backend ?? null,
-    tier: s.backend === "gemini" && s.protocol === "gemini" ? settings.gemini.tier : null,
+    tier: s.backend === "gemini" ? (settings.gemini.model_tiers[s.model ?? ""] ?? settings.gemini.tier) : null,
     stream: s.stream ?? false,
     status: s.status ?? 200,
     duration_ms: s.status ? 1 : 400 + ((i * 937) % 9000),
@@ -117,6 +119,7 @@ function status(): Status {
     region: settings.google.region,
     gemini_region: settings.gemini.region || settings.google.region,
     gemini_tier: settings.gemini.tier,
+    gemini_model_tiers: { ...settings.gemini.model_tiers },
     google_token: "ok",
     project_id: "my-project-123",
     listen: `${settings.server.host}:${settings.server.port}`,
@@ -128,9 +131,11 @@ function status(): Status {
   };
 }
 
+// JSON Merge Patch：null 表示删掉该项
 function merge(target: any, patch: any) {
   for (const [k, v] of Object.entries(patch)) {
-    if (v && typeof v === "object" && !Array.isArray(v)) merge(target[k], v);
+    if (v === null) delete target[k];
+    else if (typeof v === "object" && !Array.isArray(v)) merge((target[k] ??= {}), v);
     else target[k] = v;
   }
 }

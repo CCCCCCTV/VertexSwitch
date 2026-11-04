@@ -44,9 +44,8 @@ async fn post(h: &common::Harness, path: &str, body: &Value) -> reqwest::Respons
 
 #[tokio::test]
 async fn gemini_via_openai_compat_on_all_paths() {
-    let mut s = common::settings();
-    s.gemini.tier = "flex".into(); // 兼容接口不支持档位头，必须不发
-    let h = common::start(s).await;
+    // 默认 Standard：不需要档位头，走兼容接口原样转发
+    let h = common::start(common::settings()).await;
     mount(&h, ResponseTemplate::new(200).set_body_json(completion())).await;
     for p in [
         "/v1/chat/completions",

@@ -181,12 +181,22 @@
           <small>Flex 只支持 global；Priority 支持 global / us / eu</small>
         </label>
         <label class="field">
-          <span>服务档位</span>
+          <span>默认服务档位</span>
           <select bind:value={draft.gemini.tier}>
             <option value="standard">Standard（标准）</option>
             <option value="flex">Flex（低价，排队）</option>
             <option value="priority">Priority（优先）</option>
           </select>
+          <small>单个模型的档位在“模型”页设置</small>
+        </label>
+        <label class="field">
+          <span>OpenAI 格式的 Gemini 请求</span>
+          <select bind:value={draft.gemini.openai_native}>
+            <option value="auto">需要档位时转成原生格式（推荐）</option>
+            <option value="always">总是转成原生格式</option>
+            <option value="never">总是走兼容接口（档位不生效）</option>
+          </select>
+          <small>Vertex 的 OpenAI 兼容接口不接受档位，转成原生格式才能带上</small>
         </label>
         <label class="field">
           <span>Flex 排队超时（秒）</span>

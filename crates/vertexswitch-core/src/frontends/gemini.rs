@@ -27,7 +27,7 @@ use crate::transport::{UpstreamRequest, VERTEX};
 
 pub const TIER_OVERRIDE_HEADER: &str = "x-vertexswitch-tier";
 /// Flex 排队到 X-Server-Timeout 才返回时，本地多等这么久再判超时
-const TIMEOUT_MARGIN: Duration = Duration::from_secs(60);
+pub(super) const TIMEOUT_MARGIN: Duration = Duration::from_secs(60);
 
 pub fn routes() -> Router<SharedState> {
     let mut router = Router::new();
@@ -69,14 +69,22 @@ fn forwarded_query(raw: Option<&str>) -> String {
 }
 
 /// 收到第一个 trafficType 时核对一次档位。
-struct TrafficCheck {
+pub(super) struct TrafficCheck {
     plan: Option<TierPlan>,
     model: String,
     watcher: TrafficTypeWatcher,
 }
 
 impl TrafficCheck {
-    fn feed(&mut self, chunk: &[u8]) {
+    pub(super) fn new(plan: Option<TierPlan>, model: String) -> Self {
+        Self {
+            plan,
+            model,
+            watcher: TrafficTypeWatcher::default(),
+        }
+    }
+
+    pub(super) fn feed(&mut self, chunk: &[u8]) {
         let Some(plan) = &self.plan else {
             return;
         };
@@ -173,11 +181,7 @@ pub async fn model_action(
     let tier_header = plan
         .as_ref()
         .map(|p| HeaderValue::from_static(p.effective.as_str()));
-    let mut check = TrafficCheck {
-        plan,
-        model: route.upstream_model,
-        watcher: TrafficTypeWatcher::default(),
-    };
+    let mut check = TrafficCheck::new(plan, route.upstream_model);
 
     let mut out = if stream {
         let chunks = state.transport.chunks(response, VERTEX);

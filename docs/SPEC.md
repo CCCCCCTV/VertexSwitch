@@ -23,11 +23,13 @@
 | claude | anthropic_version | `vertex-2023-10-16` | |
 | claude | drop_body_fields | `["context_management"]` | 转发前删掉的顶层字段；Vertex 是否仍拒绝 context_management **未核实** |
 | gemini | region | `""` | 为空沿用 google.region（Flex 只支持 global，所以常需单独设） |
-| gemini | tier | `standard` | standard / flex / priority |
+| gemini | tier | `standard` | 默认档位：standard / flex / priority |
+| gemini | model_tiers | `{}` | 按上游模型 ID 单独设的档位，如 `{"gemini-3.5-flash" = "flex"}`；优先于 tier |
 | gemini | shared_only | false | 加 `X-Vertex-AI-LLM-Request-Type: shared` |
 | gemini | flex_server_timeout | 1800 | 封顶 1800 |
 | gemini | flex_unsupported_models | `["gemini-4-argon"]` | 官方注明不支持 Flex |
 | gemini | openai_api_version | `v1beta1` | Gemini 的 OpenAI 兼容接口版本 |
+| gemini | openai_native | `auto` | OpenAI 格式的 Gemini 请求：auto 需要档位头时转原生（§13）/ always 总是转 / never 总走兼容接口（档位不生效） |
 | maas | region / api_version | `""` / `v1` | |
 | ollama | enabled / base_url | false / `http://127.0.0.1:11434` | |
 | openai | default_max_tokens | 8192 | OpenAI→Claude 时客户端没给 max_tokens 的默认值 |
@@ -143,6 +145,7 @@ Ollama：启用时启动即调 `/api/tags` 发现（失败只告警），也应�
 - `POST /v1/chat/completions`、`/chat/completions`、`/openai/v1/chat/completions`、`/api/v1/chat/completions`
 - 按 `model` 分流：Gemini / MaaS / Ollama 原样转发（见 §3），流式转发时 `text/event-stream`，中途出错按 OpenAI 格式发错误；Claude 走 §10 转换。
 - Ollama 未启用 → 400。Gemini 兼容接口**绝不能**带档位头（Vertex 返回 400 "Flex API is not supported with chatCompletions API"）。
+- Gemini：按 §9 算出档位方案；要发任何档位头（或 `openai_native = always`）时转成原生 generateContent（§13），否则走兼容接口。请求头 `X-VertexSwitch-Tier` 同样可按请求覆盖；走原生时响应带 `X-VertexSwitch-Tier`。
 - **实测**（2026-11-03，Rust，global）：Gemini 兼容接口用 `v1beta1` 可用；非流式、流式、工具调用（含流式）、`/openai/v1`、`/chat/completions` 别名均正常。配置为 Flex 时该接口不带档位头，上游按 `ON_DEMAND` 处理；同一配置下 Gemini 原生接口仍为 `ON_DEMAND_FLEX`。兼容接口的响应里用量档位在 `usage.extra_properties.google.traffic_type`。
 
 ### 8.4 模型列表
@@ -155,11 +158,13 @@ Ollama：启用时启动即调 `/api/tags` 发现（失败只告警），也应�
 
 `GET /health`（不鉴权）：`{"status":"ok"|"degraded","version","region","gemini_region","gemini_tier","google_token":"ok"|<错误>,"project_id"}`；拿不到 token → 503。
 
-## 9. 服务档位（仅 Gemini 原生生成请求）
+## 9. 服务档位（Gemini 生成请求）
 
 依据：Flex PayGo、Priority PayGo 官方文档。**全部实测通过**（2026-11-03，global；Python 原型与 Rust R1 各测一次）。
 Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所述的无空余容量情形），告警按设计触发。
 
+- 用哪个档位：请求头 `X-VertexSwitch-Tier`（写错时忽略）> `gemini.model_tiers[上游模型 ID]` > `gemini.tier`。配置里的档位名在加载 / 修改时校验，错了拒绝（400 / 保留旧配置）。
+- 只有原生接口能带档位头：Gemini 原生入口直接带；OpenAI 入口的 Gemini 请求需要时转成原生格式（§13）。
 - 头：`X-Vertex-AI-LLM-Shared-Request-Type: flex|priority`；`shared_only` 时再加 `X-Vertex-AI-LLM-Request-Type: shared`；Flex 加 `X-Server-Timeout: <秒>`（1..1800）。
 - Flex：只支持 `global`；不支持 flex_unsupported_models 里的模型（gemini-4-argon）。
 - Priority：支持 `global`、`us`、`eu`（旧项目误以为只支持 global）；argon 可用。
@@ -208,7 +213,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `status` | `/health` 的内容 + 监听地址、运行时长、进行中请求数、各后端模型数、配置文件路径 |
+| GET | `status` | `/health` 的内容 + `gemini_model_tiers`、监听地址、运行时长、进行中请求数、各后端模型数、配置文件路径 |
 | GET | `config` | 当前完整配置 |
 | PATCH | `config` | JSON Merge Patch（RFC 7396），`null` 恢复默认；校验 → 写盘 → 立即生效 |
 | PUT | `config` | 整体替换，同上 |
@@ -235,3 +240,29 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - 用量从响应字节流里取各协议字段的最后一次出现值：Anthropic `input_tokens`(+缓存读写) / `output_tokens`；Gemini `promptTokenCount` / `candidatesTokenCount`(+`thoughtsTokenCount`)；OpenAI `prompt_tokens` / `completion_tokens`。OpenAI→Claude 的流式请求只有客户端开了 `stream_options.include_usage` 才有用量。
 
 `/metrics`（Prometheus 文本，**需要代理 API key**）：`vertexswitch_requests_total{protocol,backend,status}`、`vertexswitch_request_duration_seconds_{sum,count}{protocol,backend}`、`vertexswitch_tokens_total{protocol,backend,kind}`、`vertexswitch_requests_in_flight`、`vertexswitch_uptime_seconds`。
+
+## 13. OpenAI → Gemini 原生转换
+
+用途：OpenAI 入口的 Gemini 请求需要服务档位时（兼容接口不接受档位头）。字段对应照 Vertex 自己的 OpenAI 兼容接口文档，换路后行为尽量不变。
+依据：Vertex「OpenAI compatibility」与「Thought signatures」文档、v1 discovery 文档（GenerateContentRequest / Part / FunctionDeclaration / Candidate）。**只用假上游测过，尚未真实验收。**
+
+请求（发往 `…/publishers/google/models/{model}:generateContent`，流式为 `:streamGenerateContent?alt=sse`，v1）：
+- `system` / `developer` → `systemInstruction.parts[].text`；`user` → role `user`；`assistant` → role `model`；空文本不发。
+- 内容：`text`；`image_url` 的 data URL → `inlineData`，其他地址（https / gs）→ `fileData`（按扩展名猜 MIME，猜不出按 image/jpeg）；`input_audio` → `inlineData`（`audio/{format}`）；`file.file_data` → `inlineData`；`file_id` 等 → 400。
+- 助手 `tool_calls`（含已弃用的 `function_call`）→ `functionCall{name,args}`；`extra_content.google.thought_signature` → 该部分的 `thoughtSignature`。
+- 思考签名：Gemini 3 起（模型名 `gemini-N…`，N ≥ 3）函数调用缺签名会 400。一条助手消息里的调用都没带签名时，给第一个调用填文档给出的占位值 `skip_thought_signature_validator`（只有并行调用的第一个带签名）；更早的模型不填。
+- `tool` / `function` 消息 → `functionResponse{name, response:{output}}`，name 用消息自带的或按 `tool_call_id` 从前面的调用里找，找不到 → 400；能解析成 JSON 就按 JSON 放进 output，否则按字符串；连续的工具结果合进同一条 user 内容。
+- 工具：`tools[].function` / 已弃用的 `functions` → `functionDeclarations[]{name, description, parametersJsonSchema}`（参数原样当 JSON Schema）；`web_search_options` → `googleSearch`；其他工具类型 → 400。
+- `tool_choice`：auto / none / required / validated → AUTO / NONE / ANY / VALIDATED；指定函数 → ANY + `allowedFunctionNames`。
+- `generationConfig`：temperature、top_p→topP、n→candidateCount、presence_penalty、frequency_penalty、seed；`max_completion_tokens` 优先于 `max_tokens` → maxOutputTokens；stop → stopSequences；`response_format` json_object → `responseMimeType: application/json`，json_schema → 再加 `responseJsonSchema`。
+- `reasoning_effort` low / medium / high → `thinkingConfig.thinkingBudget` 1024 / 8192 / 24576（与兼容接口相同），其他值忽略；`extra_body.google`（或顶层 `google`）的 `thinking_config` → thinkingConfig（顶层键改 camelCase），与 reasoning_effort 同时给 → 400；`safety_settings` → safetySettings；`cached_content` → cachedContent。
+- 其他字段（user、logprobs、stream_options 以外的 OpenAI 专有字段）忽略。
+
+响应：
+- `id` = `chatcmpl-{responseId}`；每个候选一个 choice（`index` 取候选的 index）。
+- 文本拼成 `content`；`thought: true` 的文本放 `reasoning_content`；`functionCall` → `tool_calls[]`（id 用上游给的，没有就生成 `call_…`；签名放 `extra_content.google.thought_signature`）。
+- finish_reason：有工具调用 → `tool_calls`；MAX_TOKENS → `length`；SAFETY / RECITATION / BLOCKLIST / PROHIBITED_CONTENT / SPII / MODEL_ARMOR / IMAGE_* 拦截类 → `content_filter`；其余 → `stop`。提示词被拦（无候选、有 `promptFeedback.blockReason`）→ 一个空 choice，`content_filter`。
+- usage：prompt = promptTokenCount + toolUsePromptTokenCount；completion = candidatesTokenCount + thoughtsTokenCount（后者另记 `completion_tokens_details.reasoning_tokens`）；cachedContentTokenCount → `prompt_tokens_details.cached_tokens`。
+- 流式：每个上游事件转成 `chat.completion.chunk`；候选第一段先发 role；函数调用整段到达，转成一次带完整 arguments 的 tool_calls 增量；收到 finishReason 发结束块；正常结束后客户端开了 `stream_options.include_usage` 时补一个只有 usage 的块，再发 `[DONE]`。没收到 finishReason 就断了 → 发 OpenAI 格式错误事件（"流式响应提前结束"），不发 `[DONE]`。上游 SSE 里出现 `error.message` → 转成错误事件并结束。
+- 上游非 2xx → 按 §5 转成 OpenAI 错误格式。trafficType 核对同 §9。
+

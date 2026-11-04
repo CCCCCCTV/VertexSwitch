@@ -16,15 +16,15 @@ use serde_json::{Map, Value, json};
 
 use crate::errors::{ProxyError, ProxyResult};
 
-static DATA_URL: LazyLock<Regex> = LazyLock::new(|| {
+pub(crate) static DATA_URL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?s)^data:(?P<media>[\w/+.-]+);base64,(?P<data>.+)$").expect("合法正则")
 });
 
-fn bad(message: impl Into<String>) -> ProxyError {
+pub(crate) fn bad(message: impl Into<String>) -> ProxyError {
     ProxyError::new(400, message)
 }
 
-fn now_secs() -> u64 {
+pub(crate) fn now_secs() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -34,7 +34,7 @@ fn now_secs() -> u64 {
 // ---------------------------------------------------------------- 请求
 
 /// OpenAI 的 content（字符串或分段数组）里的纯文本。
-fn text_of(content: Option<&Value>) -> ProxyResult<String> {
+pub(crate) fn text_of(content: Option<&Value>) -> ProxyResult<String> {
     match content {
         None | Some(Value::Null) => Ok(String::new()),
         Some(Value::String(s)) => Ok(s.clone()),

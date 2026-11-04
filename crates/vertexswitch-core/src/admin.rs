@@ -40,6 +40,7 @@ pub async fn status(state: &SharedState) -> Value {
         runtime.settings.server.host, runtime.settings.server.port
     )
     .into();
+    info["gemini_model_tiers"] = json!(runtime.settings.gemini.model_tiers);
     info["uptime_secs"] = state.metrics.uptime_secs().into();
     info["in_flight"] = state.metrics.in_flight().into();
     info["models"] = json!({
@@ -64,6 +65,9 @@ pub fn settings(state: &SharedState) -> Settings {
 pub fn replace_settings(state: &SharedState, value: Value) -> ProxyResult<Value> {
     let settings: Settings = serde_json::from_value(value)
         .map_err(|e| ProxyError::new(400, format!("配置格式错误：{e}")))?;
+    settings
+        .validate()
+        .map_err(|e| ProxyError::new(400, format!("配置有误：{e}")))?;
     if let Some(path) = &state.config_path {
         settings
             .save(path)

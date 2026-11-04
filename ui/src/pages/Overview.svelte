@@ -18,7 +18,7 @@
   import type { Metrics, Models, TestResult, Tier } from "../lib/types";
   import Timeline from "../components/Timeline.svelte";
 
-  let { go }: { go: (page: "settings" | "requests" | "logs") => void } = $props();
+  let { go }: { go: (page: "settings" | "requests" | "logs" | "models") => void } = $props();
 
   let metrics = $state<Metrics | null>(null);
   let models = $state<Models | null>(null);
@@ -41,13 +41,18 @@
   const status = $derived(live.status);
   const base = $derived(status?.server.addr ? `http://${status.server.addr}` : "");
 
+  // 单独设了档位的模型数（在模型页设置）
+  const ownTiers = $derived(Object.keys(status?.gemini_model_tiers ?? {}).length);
+
+  // 默认档位或单独设的档位里，当前区域不支持的会按 Standard 处理
   const regionNote = $derived.by(() => {
     if (!status) return "";
     const r = status.gemini_region;
-    if (status.gemini_tier === "flex" && r !== "global")
-      return `Gemini 区域是 ${r}，Flex 只支持 global，请求会按 Standard 处理。`;
-    if (status.gemini_tier === "priority" && !["global", "us", "eu"].includes(r))
-      return `Gemini 区域是 ${r}，Priority 只支持 global / us / eu，请求会按 Standard 处理。`;
+    const used = new Set([status.gemini_tier, ...Object.values(status.gemini_model_tiers ?? {})]);
+    if (used.has("flex") && r !== "global")
+      return `Gemini 区域是 ${r}，Flex 只支持 global，设为 Flex 的请求会按 Standard 处理。`;
+    if (used.has("priority") && !["global", "us", "eu"].includes(r))
+      return `Gemini 区域是 ${r}，Priority 只支持 global / us / eu，设为 Priority 的请求会按 Standard 处理。`;
     return "";
   });
 
@@ -196,7 +201,16 @@
           </label>
         {/each}
       </div>
-      <p class="note faint">只作用于 Gemini 原生接口。区域：<span class="mono">{status.gemini_region}</span></p>
+      <p class="note faint">
+        默认档位，Gemini 原生接口与 OpenAI 兼容接口都生效。区域：<span class="mono">{status.gemini_region}</span>
+      </p>
+      <p class="note own">
+        {#if ownTiers}
+          <button class="link" onclick={() => go("models")}>{ownTiers} 个模型单独设置了档位</button>
+        {:else}
+          <button class="link" onclick={() => go("models")}>按模型单独设置档位</button>
+        {/if}
+      </p>
       {#if regionNote}<div class="banner warn"><TriangleAlert size={16} />{regionNote}</div>{/if}
       {#if tierError}<div class="banner bad"><OctagonX size={16} />{tierError}</div>{/if}
     </section>
@@ -403,6 +417,10 @@
   .note {
     font-size: 12px;
     margin: 10px 0 8px;
+  }
+
+  .note.own {
+    margin-top: -4px;
   }
 
   /* 需要注意 */

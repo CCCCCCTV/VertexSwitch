@@ -3,6 +3,7 @@
 //! 位置：`%APPDATA%\VertexSwitch\config.toml`（其他平台为系统配置目录）；
 //! 环境变量 `VERTEXSWITCH_HOME` 可改目录。文件不存在时用默认值，不写盘。
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,8 @@ pub enum ConfigError {
         path: PathBuf,
         source: toml::de::Error,
     },
+    #[error("配置文件 {path} 有误：{message}")]
+    Invalid { path: PathBuf, message: String },
 }
 
 /// 配置、日志所在目录。
@@ -165,8 +168,10 @@ impl Default for ClaudeSettings {
 pub struct GeminiSettings {
     /// 为空时用 google.region；Flex 只支持 global
     pub region: String,
-    /// standard / flex / priority；请求头 X-VertexSwitch-Tier 可按请求覆盖
+    /// 默认档位 standard / flex / priority
     pub tier: String,
+    /// 按模型单独设的档位（键为上游模型 ID），优先于 tier；请求头 X-VertexSwitch-Tier 再优先
+    pub model_tiers: BTreeMap<String, String>,
     /// 加 X-Vertex-AI-LLM-Request-Type: shared，只走 PayGo
     pub shared_only: bool,
     /// Flex 排队超时（秒，X-Server-Timeout），上限 1800
@@ -175,17 +180,24 @@ pub struct GeminiSettings {
     pub flex_unsupported_models: Vec<String>,
     /// OpenAI 兼容接口的 API 版本
     pub openai_api_version: String,
+    /// OpenAI 格式的 Gemini 请求怎么发：auto（需要档位头时转成原生格式，否则走兼容接口）/
+    /// always（总是转成原生格式）/ never（总是走兼容接口，档位不生效）
+    pub openai_native: String,
 }
+
+pub const OPENAI_NATIVE_MODES: &[&str] = &["auto", "always", "never"];
 
 impl Default for GeminiSettings {
     fn default() -> Self {
         Self {
             region: String::new(),
             tier: "standard".into(),
+            model_tiers: BTreeMap::new(),
             shared_only: false,
             flex_server_timeout: 1800,
             flex_unsupported_models: vec!["gemini-4-argon".into()],
             openai_api_version: "v1beta1".into(),
+            openai_native: "auto".into(),
         }
     }
 }
@@ -240,16 +252,50 @@ impl Settings {
     /// 读取配置；文件不存在时返回默认值。
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         match std::fs::read_to_string(path) {
-            Ok(text) => toml::from_str(&text).map_err(|source| ConfigError::Parse {
-                path: path.into(),
-                source,
-            }),
+            Ok(text) => {
+                let settings: Self =
+                    toml::from_str(&text).map_err(|source| ConfigError::Parse {
+                        path: path.into(),
+                        source,
+                    })?;
+                settings
+                    .validate()
+                    .map_err(|message| ConfigError::Invalid {
+                        path: path.into(),
+                        message,
+                    })?;
+                Ok(settings)
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(source) => Err(ConfigError::Io {
                 path: path.into(),
                 source,
             }),
         }
+    }
+
+    /// serde 管不到的取值范围：档位名、OpenAI 转发方式。
+    pub fn validate(&self) -> Result<(), String> {
+        let g = &self.gemini;
+        let tier_ok = |t: &str| crate::tiers::Tier::parse(t).is_some();
+        if !tier_ok(&g.tier) {
+            return Err(format!(
+                "gemini.tier 只能是 standard / flex / priority，不是 {:?}",
+                g.tier
+            ));
+        }
+        if let Some((model, tier)) = g.model_tiers.iter().find(|(_, t)| !tier_ok(t)) {
+            return Err(format!(
+                "gemini.model_tiers.{model} 只能是 standard / flex / priority，不是 {tier:?}"
+            ));
+        }
+        if !OPENAI_NATIVE_MODES.contains(&g.openai_native.as_str()) {
+            return Err(format!(
+                "gemini.openai_native 只能是 auto / always / never，不是 {:?}",
+                g.openai_native
+            ));
+        }
+        Ok(())
     }
 
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
