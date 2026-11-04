@@ -56,7 +56,7 @@
   </div>
 </header>
 
-<div class="tabs" role="tablist">
+<div class="segmented tabs" role="tablist">
   {#each tabs as t}
     <button role="tab" aria-selected={tab === t.id} class:on={tab === t.id} onclick={() => (tab = t.id)}>
       {t.label}
@@ -134,25 +134,9 @@
     color: var(--bad);
   }
 
+  /* 标签用全局的分段选择样式（app.css .segmented） */
   .tabs {
-    display: flex;
-    gap: 4px;
     margin-bottom: 12px;
-  }
-
-  .tabs button {
-    border: none;
-    background: none;
-    padding: 6px 12px;
-    border-radius: 7px;
-    color: var(--text-2);
-    font-weight: 500;
-  }
-
-  .tabs button.on {
-    background: var(--surface);
-    color: var(--text);
-    box-shadow: var(--shadow);
   }
 
   .count {

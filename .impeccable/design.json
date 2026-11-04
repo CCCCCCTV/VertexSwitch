@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-04T00:29:07.077Z",
+  "generatedAt": "2026-11-04T10:20:16.096Z",
   "title": "Design System: VertexSwitch",
   "extensions": {
     "colorMeta": {
@@ -60,8 +60,8 @@
         "tonalRamp": [
           "oklch(0.15 0.024 262)",
           "oklch(0.27 0.042 262)",
-          "oklch(0.39 0.053 262)",
-          "oklch(0.51 0.059 262)",
+          "oklch(0.39 0.054 262)",
+          "oklch(0.51 0.058 262)",
           "oklch(0.63 0.058 262)",
           "oklch(0.75 0.050 262)",
           "oklch(0.86 0.038 262)",
@@ -74,14 +74,14 @@
         "canonical": "oklch(0.3 calc(var(--seed-c) * 0.85) var(--seed-h))",
         "dark": "oklch(0.92 calc(var(--seed-c) * 0.4) var(--seed-h))",
         "tonalRamp": [
-          "oklch(0.15 0.048 262)",
+          "oklch(0.15 0.049 262)",
           "oklch(0.27 0.084 262)",
           "oklch(0.39 0.108 262)",
           "oklch(0.51 0.118 262)",
-          "oklch(0.63 0.116 262)",
+          "oklch(0.63 0.117 262)",
           "oklch(0.75 0.101 262)",
-          "oklch(0.86 0.077 262)",
-          "oklch(0.95 0.048 262)"
+          "oklch(0.86 0.076 262)",
+          "oklch(0.95 0.049 262)"
         ]
       },
       "ring": {
@@ -89,6 +89,38 @@
         "displayName": "焦点环",
         "canonical": "oklch(0.6 var(--seed-c) var(--seed-h) / 0.45)",
         "dark": "oklch(0.75 var(--seed-c) var(--seed-h) / 0.5)",
+        "tonalRamp": [
+          "oklch(0.15 0.057 262)",
+          "oklch(0.27 0.099 262)",
+          "oklch(0.39 0.127 262)",
+          "oklch(0.51 0.139 262)",
+          "oklch(0.63 0.137 262)",
+          "oklch(0.75 0.119 262)",
+          "oklch(0.86 0.090 262)",
+          "oklch(0.95 0.057 262)"
+        ]
+      },
+      "hover": {
+        "role": "neutral",
+        "displayName": "悬停层",
+        "canonical": "color-mix(in oklch, var(--accent) 10%, transparent)",
+        "dark": "同公式（跟随深色 accent）",
+        "tonalRamp": [
+          "oklch(0.15 0.057 262)",
+          "oklch(0.27 0.099 262)",
+          "oklch(0.39 0.127 262)",
+          "oklch(0.51 0.139 262)",
+          "oklch(0.63 0.137 262)",
+          "oklch(0.75 0.119 262)",
+          "oklch(0.86 0.090 262)",
+          "oklch(0.95 0.057 262)"
+        ]
+      },
+      "press": {
+        "role": "neutral",
+        "displayName": "按下层",
+        "canonical": "color-mix(in oklch, var(--accent) 17%, transparent)",
+        "dark": "同公式（跟随深色 accent）",
         "tonalRamp": [
           "oklch(0.15 0.057 262)",
           "oklch(0.27 0.099 262)",
@@ -115,24 +147,7 @@
           "oklch(0.86 0.023 262)",
           "oklch(0.95 0.015 262)"
         ],
-        "mica": "半透明材质（Mica / Mica Alt / 亚克力）下透明度 0.2（浅色与深色）"
-      },
-      "rail": {
-        "role": "neutral",
-        "displayName": "导航栏底色",
-        "canonical": "oklch(0.945 calc(var(--seed-c) * 0.34 * var(--tint)) var(--seed-h))",
-        "dark": "oklch(0.195 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h))",
-        "tonalRamp": [
-          "oklch(0.15 0.020 262)",
-          "oklch(0.27 0.034 262)",
-          "oklch(0.39 0.043 262)",
-          "oklch(0.51 0.048 262)",
-          "oklch(0.63 0.047 262)",
-          "oklch(0.75 0.041 262)",
-          "oklch(0.86 0.031 262)",
-          "oklch(0.95 0.020 262)"
-        ],
-        "mica": "半透明材质下透明度 0.08（浅色与深色）"
+        "mica": "data-mica（Mica / Mica Alt / 亚克力）下透明度 0.2（浅色与深色），根背景透明"
       },
       "surface": {
         "role": "neutral",
@@ -140,15 +155,32 @@
         "canonical": "oklch(0.993 calc(var(--seed-c) * 0.08 * var(--tint)) var(--seed-h))",
         "dark": "oklch(0.21 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h))",
         "tonalRamp": [
-          "oklch(0.15 0.004 262)",
+          "oklch(0.15 0.005 262)",
           "oklch(0.27 0.008 262)",
           "oklch(0.39 0.010 262)",
           "oklch(0.51 0.011 262)",
           "oklch(0.63 0.011 262)",
           "oklch(0.75 0.009 262)",
           "oklch(0.86 0.007 262)",
-          "oklch(0.95 0.004 262)"
+          "oklch(0.95 0.005 262)"
         ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "板块底",
+        "canonical": "var(--surface)",
+        "dark": "var(--surface)",
+        "tonalRamp": [
+          "oklch(0.15 0.005 262)",
+          "oklch(0.27 0.008 262)",
+          "oklch(0.39 0.010 262)",
+          "oklch(0.51 0.011 262)",
+          "oklch(0.63 0.011 262)",
+          "oklch(0.75 0.009 262)",
+          "oklch(0.86 0.007 262)",
+          "oklch(0.95 0.005 262)"
+        ],
+        "field": "data-field（实时取色）下为 color-mix(in oklch, var(--surface) 80%, transparent)"
       },
       "surface-2": {
         "role": "neutral",
@@ -172,14 +204,14 @@
         "canonical": "oklch(0.92 calc(var(--seed-c) * 0.36 * var(--tint)) var(--seed-h))",
         "dark": "oklch(0.29 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h))",
         "tonalRamp": [
-          "oklch(0.15 0.020 262)",
+          "oklch(0.15 0.021 262)",
           "oklch(0.27 0.035 262)",
-          "oklch(0.39 0.045 262)",
+          "oklch(0.39 0.046 262)",
           "oklch(0.51 0.050 262)",
           "oklch(0.63 0.049 262)",
           "oklch(0.75 0.043 262)",
           "oklch(0.86 0.032 262)",
-          "oklch(0.95 0.020 262)"
+          "oklch(0.95 0.021 262)"
         ]
       },
       "border": {
@@ -208,7 +240,7 @@
           "oklch(0.27 0.018 262)",
           "oklch(0.39 0.023 262)",
           "oklch(0.51 0.025 262)",
-          "oklch(0.63 0.024 262)",
+          "oklch(0.63 0.025 262)",
           "oklch(0.75 0.021 262)",
           "oklch(0.86 0.016 262)",
           "oklch(0.95 0.010 262)"
@@ -290,7 +322,7 @@
           "oklch(0.51 0.129 155)",
           "oklch(0.63 0.127 155)",
           "oklch(0.75 0.111 155)",
-          "oklch(0.86 0.084 155)",
+          "oklch(0.86 0.083 155)",
           "oklch(0.95 0.053 155)"
         ]
       },
@@ -322,7 +354,7 @@
           "oklch(0.51 0.129 70)",
           "oklch(0.63 0.127 70)",
           "oklch(0.75 0.111 70)",
-          "oklch(0.86 0.084 70)",
+          "oklch(0.86 0.083 70)",
           "oklch(0.95 0.053 70)"
         ]
       },
@@ -332,14 +364,14 @@
         "canonical": "oklch(0.95 0.055 85)",
         "dark": "oklch(0.32 0.06 75)",
         "tonalRamp": [
-          "oklch(0.15 0.022 85)",
+          "oklch(0.15 0.023 85)",
           "oklch(0.27 0.039 85)",
           "oklch(0.39 0.050 85)",
-          "oklch(0.51 0.055 85)",
+          "oklch(0.51 0.054 85)",
           "oklch(0.63 0.054 85)",
           "oklch(0.75 0.047 85)",
           "oklch(0.86 0.035 85)",
-          "oklch(0.95 0.022 85)"
+          "oklch(0.95 0.023 85)"
         ]
       },
       "bad": {
@@ -348,14 +380,14 @@
         "canonical": "oklch(0.53 0.19 27)",
         "dark": "oklch(0.74 0.15 25)",
         "tonalRamp": [
-          "oklch(0.15 0.077 27)",
+          "oklch(0.15 0.078 27)",
           "oklch(0.27 0.135 27)",
-          "oklch(0.39 0.172 27)",
-          "oklch(0.51 0.189 27)",
-          "oklch(0.63 0.185 27)",
+          "oklch(0.39 0.173 27)",
+          "oklch(0.51 0.188 27)",
+          "oklch(0.63 0.186 27)",
           "oklch(0.75 0.162 27)",
           "oklch(0.86 0.122 27)",
-          "oklch(0.95 0.077 27)"
+          "oklch(0.95 0.078 27)"
         ]
       },
       "bad-soft": {
@@ -373,15 +405,108 @@
           "oklch(0.86 0.026 25)",
           "oklch(0.95 0.016 25)"
         ]
+      },
+      "on-bad": {
+        "role": "status",
+        "displayName": "失败红上的文字",
+        "canonical": "oklch(0.99 0.005 25)",
+        "dark": "oklch(0.2 0.04 25)",
+        "tonalRamp": [
+          "oklch(0.15 0.002 25)",
+          "oklch(0.27 0.004 25)",
+          "oklch(0.39 0.005 25)",
+          "oklch(0.51 0.005 25)",
+          "oklch(0.63 0.005 25)",
+          "oklch(0.75 0.004 25)",
+          "oklch(0.86 0.003 25)",
+          "oklch(0.95 0.002 25)"
+        ]
+      },
+      "brand-blue": {
+        "role": "brand",
+        "displayName": "Gemini 蓝（图标底色）",
+        "canonical": "#3186FF",
+        "dark": "#3186FF",
+        "tonalRamp": [
+          "oklch(0.15 0.078 259)",
+          "oklch(0.27 0.135 259)",
+          "oklch(0.39 0.173 259)",
+          "oklch(0.51 0.188 259)",
+          "oklch(0.63 0.186 259)",
+          "oklch(0.75 0.162 259)",
+          "oklch(0.86 0.122 259)",
+          "oklch(0.95 0.078 259)"
+        ],
+        "approxOklch": "oklch(0.63 0.19 259)",
+        "scope": "只用于应用图标"
+      },
+      "brand-red": {
+        "role": "brand",
+        "displayName": "品牌红（图标晕染）",
+        "canonical": "#FF4641",
+        "dark": "#FF4641",
+        "tonalRamp": [
+          "oklch(0.15 0.090 27)",
+          "oklch(0.27 0.156 27)",
+          "oklch(0.39 0.200 27)",
+          "oklch(0.51 0.218 27)",
+          "oklch(0.63 0.216 27)",
+          "oklch(0.75 0.187 27)",
+          "oklch(0.86 0.141 27)",
+          "oklch(0.95 0.090 27)"
+        ],
+        "approxOklch": "oklch(0.66 0.22 27)",
+        "scope": "只用于应用图标"
+      },
+      "brand-yellow": {
+        "role": "brand",
+        "displayName": "品牌黄（图标晕染）",
+        "canonical": "#FFD314",
+        "dark": "#FFD314",
+        "tonalRamp": [
+          "oklch(0.15 0.074 94)",
+          "oklch(0.27 0.128 94)",
+          "oklch(0.39 0.164 94)",
+          "oklch(0.51 0.178 94)",
+          "oklch(0.63 0.176 94)",
+          "oklch(0.75 0.153 94)",
+          "oklch(0.86 0.115 94)",
+          "oklch(0.95 0.074 94)"
+        ],
+        "approxOklch": "oklch(0.88 0.18 94)",
+        "scope": "只用于应用图标"
+      },
+      "brand-green": {
+        "role": "brand",
+        "displayName": "品牌绿（图标晕染）",
+        "canonical": "#00B95C",
+        "dark": "#00B95C",
+        "tonalRamp": [
+          "oklch(0.15 0.074 151)",
+          "oklch(0.27 0.128 151)",
+          "oklch(0.39 0.164 151)",
+          "oklch(0.51 0.178 151)",
+          "oklch(0.63 0.176 151)",
+          "oklch(0.75 0.153 151)",
+          "oklch(0.86 0.115 151)",
+          "oklch(0.95 0.074 151)"
+        ],
+        "approxOklch": "oklch(0.68 0.18 151)",
+        "scope": "只用于应用图标"
       }
     },
     "seed": {
       "variables": {
         "--seed-h": "OKLCH 色相，CSS 默认 262",
         "--seed-c": "OKLCH 彩度，夹在 0.04–0.16，CSS 默认 0.14",
-        "--tint": "色调强度 0–2，默认 1，只乘在 bg / rail / surface* / border* 上"
+        "--tint": "色调强度 0–2（步长 0.05），默认 1，只乘在 bg / surface* / border* 与颜色场彩度上"
       },
-      "source": "默认 Windows 系统强调色（外壳注入 window.__VS_ACCENT__，窗口重新获得焦点时重读），后备 #3B5BDB",
+      "sources": {
+        "system": "Windows 系统强调色（外壳注入 window.__VS_ACCENT__，窗口获得焦点时重读），后备 #3B5BDB",
+        "custom": "六个预设或自定义颜色",
+        "wallpaper": "实时取色·整张壁纸：PrintWindow(PW_RENDERFULLCONTENT) 重绘桌面窗口后取色，每 3 秒",
+        "behind": "实时取色·窗口后方：取样瞬间 SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE) 读窗口覆盖的屏幕，每 1.5 秒，移动窗口后 200ms 重取"
+      },
       "presets": [
         {
           "label": "靛蓝",
@@ -408,8 +533,26 @@
           "seed": "#5C677D"
         }
       ],
+      "liveStability": "新种子与当前种子色相差 >12° 或彩度差 >0.03 才算不同；连续两次取到相近的新颜色才切换。颜色场平均通道差 <6 时不重画。",
+      "colorField": {
+        "grid": "8 × 5（由 96 × 60 缩略图分块平均）",
+        "lightness": "浅色 0.9 / 深色 0.25",
+        "chroma": "min(0.2, min(c × 0.85, 浅 0.11 / 深 0.075) × tint)",
+        "render": ".shell::before：inset -60px，背景拉伸 100% 100%，filter blur(36px)，background-image 过渡 1.2s ease，z-index -1",
+        "attr": ":root[data-field]，同时 --panel 变为 80% surface"
+      },
       "seedNear": "种子色相与状态色相（27 / 70 / 155）相距小于 35° 时根元素带 data-seed-near：--link 改为 --text，链接按钮常驻下划线",
-      "mica": "Windows 11 上 :root[data-mica]：bg 透明度 0.2、rail 透明度 0.08，根背景透明；板块不透明。材质可在设置里选 Mica（默认）、Mica Alt、亚克力或不透明（不透明时去掉 data-mica）"
+      "backdrop": "Windows 11 上 :root[data-mica]：bg 透明度 0.2，根背景透明；板块不透明。材质：Mica（默认）、Mica Alt（tabbed）、亚克力（acrylic）、不透明（none，去掉 data-mica）。浏览器预览用 data-mica-preview 渐变模拟壁纸。"
+    },
+    "brandMark": {
+      "sources": {
+        "full": "src-tauri/icons/source/icon.svg（12 道光芒，32px 及以上）",
+        "small": "src-tauri/icons/source/icon-small.svg（8 道更粗的光芒，16–24px）"
+      },
+      "build": "npm run icons → scripts/build-icons.mjs（resvg）：icon.ico [16,20,24,32,40,48,64,256]（≤24 用小尺寸版）、icon.icns、32/64/128/256/512 PNG、tray/16|20|24|32.png、ui/public/logo.svg（完整版副本）",
+      "runtime": "app_icon.rs：窗口图标按 DPI 从 exe 内嵌 ICO 取帧，托盘按 SM_CXSMICON 选最接近的 PNG",
+      "paint": "#3186FF 底 + 径向晕染 红 #FF4641（cx -6, cy -50, r 46）、黄 #FFD314（cx -52, cy 8, r 42）、绿 #00B95C（cx 4, cy 54, r 44），viewBox -50 -50 100 100",
+      "inUi": "导航栏顶部 30px（ui/public/logo.svg）"
     },
     "typographyMeta": {
       "display": {
@@ -458,31 +601,66 @@
         "purpose": "设置页选中的种子色按钮。"
       },
       {
-        "name": "floating",
-        "value": "0 4px 12px oklch(0 0 0 / 0.18)",
-        "purpose": "时间线悬停提示等浮层；板块不用。"
+        "name": "raised",
+        "value": "var(--shadow)：0 1px 2px oklch(0.2 calc(var(--seed-c) * 0.3) var(--seed-h) / 0.14)；深色 0 1px 2px oklch(0 0 0 / 0.45)",
+        "purpose": "分段选择选中段、跳到最新、模型页选中标签。"
       },
       {
-        "name": "mica-sticky-blur",
-        "value": "backdrop-filter: blur(24px) saturate(1.2)",
-        "purpose": "Mica 下吸顶页头的模糊，防止滚过的内容透出。"
+        "name": "primary-hover-glow",
+        "value": "0 4px 12px -4px color-mix(in oklch, var(--accent) 70%, transparent)",
+        "purpose": "主按钮悬停；按下收回。"
+      },
+      {
+        "name": "floating",
+        "value": "0 4px 12px oklch(0 0 0 / 0.18)",
+        "purpose": "时间线悬停提示框；板块不用。"
+      },
+      {
+        "name": "checkbox-hover-halo",
+        "value": "0 0 0 4px var(--hover)",
+        "purpose": "未选中复选框悬停。"
+      },
+      {
+        "name": "sticky-header-mica",
+        "value": "background: oklch(from var(--bg) l c h / 0.92); backdrop-filter: blur(24px) saturate(1.2)",
+        "purpose": "半透明材质下设置页吸顶栏。"
+      },
+      {
+        "name": "sticky-header-field",
+        "value": "background: oklch(from var(--bg) l c h / 0.35); backdrop-filter: blur(28px) saturate(1.2)",
+        "purpose": "实时取色时设置页吸顶栏。"
+      },
+      {
+        "name": "table-head-blur",
+        "value": "background: var(--panel); backdrop-filter: blur(10px)",
+        "purpose": "吸顶表头，挡住滚过去的行。"
       }
     ],
     "motion": [
       {
         "name": "state",
-        "value": "0.12s",
-        "purpose": "按钮、输入框、行悬停的颜色与描边过渡。"
+        "value": "0.15s cubic-bezier(0.2, 0, 0, 1)",
+        "purpose": "按钮颜色、描边、阴影过渡；输入框与行悬停为 0.12s。"
+      },
+      {
+        "name": "press",
+        "value": "transform 0.12s cubic-bezier(0.2, 0, 0, 1) → scale(0.97)；导航药丸 0.15s → scale(0.92)",
+        "purpose": "按下反馈。"
       },
       {
         "name": "ease-emphasized",
         "value": "cubic-bezier(0.2, 0, 0, 1)",
-        "purpose": "导航药丸底色（0.18s）、复选框勾（0.15s）。"
+        "purpose": "导航药丸底色（0.18s）、复选框勾（0.15s）、折叠箭头（0.18s）。"
       },
       {
         "name": "ease-out-expo",
         "value": "cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "档位滑动高亮（0.38s）、档位切换竖线自上而下画出（0.7s）。"
+        "purpose": "导航滑块与档位高亮（0.38s）、档位切换竖线自上而下画出（0.7s）。"
+      },
+      {
+        "name": "field-crossfade",
+        "value": "background-image 1.2s ease",
+        "purpose": "颜色场换图。"
       },
       {
         "name": "reduced-motion",
@@ -514,25 +692,33 @@
       "name": "默认按钮",
       "kind": "button",
       "refersTo": "button",
-      "description": "板块里的普通操作。",
+      "description": "板块里的普通操作：悬停混主色，按下缩到 0.97。",
       "html": "<button class=\"ds-btn\">重新加载</button>",
-      "css": ".ds-btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:var(--radius-sm);font:500 14px var(--font);cursor:pointer;transition:background .12s,border-color .12s,color .12s}.ds-btn:hover{background:var(--surface-2)}.ds-btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
+      "css": ".ds-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:var(--radius-sm);font:500 14px var(--font);cursor:pointer;transition:background-color .15s cubic-bezier(.2,0,0,1),border-color .15s cubic-bezier(.2,0,0,1),color .15s,box-shadow .15s,transform .12s cubic-bezier(.2,0,0,1)}.ds-btn:hover{background-color:color-mix(in oklch,var(--surface),var(--accent) 8%);border-color:color-mix(in oklch,var(--border),var(--accent) 35%)}.ds-btn:active{background-color:color-mix(in oklch,var(--surface),var(--accent) 15%);transform:scale(.97)}.ds-btn:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
     },
     {
       "name": "主按钮",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "每个板块最多一个的主要操作。",
+      "description": "每个板块最多一个的主要操作；悬停带主色光晕。",
       "html": "<button class=\"ds-btn-primary\">发送测试请求</button>",
-      "css": ".ds-btn-primary{display:inline-flex;align-items:center;height:32px;padding:0 12px;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);border-radius:var(--radius-sm);font:500 14px var(--font);cursor:pointer;transition:background .12s,border-color .12s}.ds-btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}.ds-btn-primary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;justify-content:center;height:32px;padding:0 12px;border:1px solid var(--accent);background:var(--accent);color:var(--on-accent);border-radius:var(--radius-sm);font:500 14px var(--font);cursor:pointer;transition:background-color .15s cubic-bezier(.2,0,0,1),border-color .15s,box-shadow .15s,transform .12s cubic-bezier(.2,0,0,1)}.ds-btn-primary:hover{background:var(--accent-hover);border-color:var(--accent-hover);box-shadow:0 4px 12px -4px color-mix(in oklch,var(--accent) 70%,transparent)}.ds-btn-primary:active{background:var(--accent-hover);box-shadow:none;transform:scale(.97)}.ds-btn-primary:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
     },
     {
       "name": "幽灵图标按钮",
       "kind": "button",
-      "refersTo": "button-ghost",
-      "description": "复制地址等行内次要操作。",
+      "refersTo": "button-icon",
+      "description": "复制地址等行内次要操作；悬停叠 hover 层，按下叠 press 层。",
       "html": "<button class=\"ds-btn-ghost\" aria-label=\"复制\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect width=\"14\" height=\"14\" x=\"8\" y=\"8\" rx=\"2\"/><path d=\"M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2\"/></svg></button>",
-      "css": ".ds-btn-ghost{display:inline-grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid transparent;background:transparent;color:var(--text-2);border-radius:var(--radius-sm);cursor:pointer;transition:background .12s,color .12s}.ds-btn-ghost:hover{background:var(--surface-2);color:var(--text)}.ds-btn-ghost:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
+      "css": ".ds-btn-ghost{display:inline-grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid transparent;background:transparent;color:var(--text-2);border-radius:var(--radius-sm);cursor:pointer;transition:background-color .15s cubic-bezier(.2,0,0,1),color .15s,transform .12s cubic-bezier(.2,0,0,1)}.ds-btn-ghost:hover{background:var(--hover);color:var(--text)}.ds-btn-ghost:active{background:var(--press);transform:scale(.97)}.ds-btn-ghost:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
+    },
+    {
+      "name": "分段选择",
+      "kind": "custom",
+      "refersTo": "segmented",
+      "description": "少量互斥选项（实时取色范围）；选中的一段浮起。",
+      "html": "<div class=\"ds-seg\" role=\"radiogroup\" aria-label=\"实时取色\"><button class=\"ds-seg-b\" role=\"radio\" aria-checked=\"false\">关闭</button><button class=\"ds-seg-b ds-on\" role=\"radio\" aria-checked=\"true\">整张壁纸</button><button class=\"ds-seg-b\" role=\"radio\" aria-checked=\"false\">窗口后方</button></div>",
+      "css": ".ds-seg{display:inline-flex;gap:2px;padding:3px;border-radius:999px;background:var(--surface-2);border:1px solid var(--border)}.ds-seg-b{height:28px;padding:0 14px;border:none;border-radius:999px;background:transparent;color:var(--text-2);font:500 14px var(--font);cursor:pointer;transition:background-color .15s cubic-bezier(.2,0,0,1),color .15s,box-shadow .15s,transform .12s cubic-bezier(.2,0,0,1)}.ds-seg-b:hover:not(.ds-on){background:var(--hover);color:var(--text)}.ds-seg-b:active{transform:scale(.97)}.ds-seg-b.ds-on{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}.ds-seg-b:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
     },
     {
       "name": "输入框",
@@ -540,7 +726,7 @@
       "refersTo": "input",
       "description": "文本、数字、密码与下拉框共用的字段样式。",
       "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"筛选模型或路径\">",
-      "css": ".ds-input{width:240px;height:34px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:var(--radius-sm);padding:0 10px;font:14px var(--font);outline:none;transition:border-color .12s,box-shadow .12s}.ds-input::placeholder{color:var(--text-3)}.ds-input:hover{border-color:var(--border-strong)}.ds-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}"
+      "css": ".ds-input{width:240px;height:34px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:var(--radius-sm);padding:0 10px;font:14px var(--font);outline:none;transition:border-color .12s,box-shadow .12s}.ds-input::placeholder{color:var(--text-3)}.ds-input:hover{border-color:color-mix(in oklch,var(--border-strong),var(--accent) 40%)}.ds-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--ring)}"
     },
     {
       "name": "状态胶囊",
@@ -556,23 +742,23 @@
       "refersTo": "filter-chip-on",
       "description": "请求页与日志页的结果 / 级别筛选。",
       "html": "<div class=\"ds-chips\"><button class=\"ds-chip ds-on\">全部</button><button class=\"ds-chip\">失败</button><button class=\"ds-chip\">中断</button></div>",
-      "css": ".ds-chips{display:flex;gap:4px}.ds-chip{height:32px;border-radius:999px;padding:4px 12px;font:500 13px var(--font);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:background .12s}.ds-chip:hover{background:var(--surface-2)}.ds-chip.ds-on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}.ds-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
+      "css": ".ds-chips{display:flex;gap:4px}.ds-chip{display:inline-flex;align-items:center;height:32px;border-radius:999px;padding:4px 12px;font:500 13px var(--font);border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:background-color .15s cubic-bezier(.2,0,0,1),border-color .15s,transform .12s}.ds-chip:hover{background-color:color-mix(in oklch,var(--surface),var(--accent) 8%);border-color:color-mix(in oklch,var(--border),var(--accent) 35%)}.ds-chip:active{transform:scale(.97)}.ds-chip.ds-on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}.ds-chip:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
     },
     {
       "name": "板块",
       "kind": "card",
       "refersTo": "panel",
-      "description": "便当网格与各页的基本容器：不透明、1px 描边、无阴影。",
+      "description": "便当网格与各页的基本容器：panel 底、1px 描边、无阴影。",
       "html": "<section class=\"ds-panel\"><div class=\"ds-panel-head\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2\"/></svg><h2>请求时间线</h2><span class=\"ds-end\">最近 30 分钟</span></div><p>15 个请求</p></section>",
-      "css": ".ds-panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;color:var(--text);font:14px/1.5 var(--font)}.ds-panel-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--text-2)}.ds-panel-head h2{margin:0;font-size:14px;font-weight:600;color:var(--text)}.ds-end{margin-left:auto;color:var(--text-3)}.ds-panel p{margin:0}"
+      "css": ".ds-panel{background:var(--panel,var(--surface));border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;color:var(--text);font:14px/1.5 var(--font)}.ds-panel-head{display:flex;align-items:center;gap:8px;margin-bottom:12px;color:var(--text-2)}.ds-panel-head h2{margin:0;font-size:14px;font-weight:600;color:var(--text)}.ds-end{margin-left:auto;color:var(--text-3)}.ds-panel p{margin:0}"
     },
     {
       "name": "导航栏",
       "kind": "nav",
-      "refersTo": "nav-indicator-active",
-      "description": "76px 竖向导航，药丸形选中指示。",
-      "html": "<nav class=\"ds-rail\"><button class=\"ds-nav ds-active\"><span class=\"ds-ind\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\"/></svg></span><span class=\"ds-lbl\">概览</span></button><button class=\"ds-nav\"><span class=\"ds-ind\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\"><path d=\"M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\"/></svg></span><span class=\"ds-lbl\">日志</span></button></nav>",
-      "css": ".ds-rail{display:flex;flex-direction:column;align-items:center;gap:6px;width:76px;padding:16px 0;background:var(--rail);border-right:1px solid var(--border)}.ds-nav{display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;padding:4px 0 6px;border:none;background:none;color:var(--text-2);cursor:pointer;font-family:var(--font)}.ds-nav:hover{color:var(--text)}.ds-ind{display:grid;place-items:center;width:52px;height:30px;border-radius:999px;transition:background .18s cubic-bezier(.2,0,0,1)}.ds-nav:hover .ds-ind{background:var(--surface-3)}.ds-active{color:var(--text)}.ds-active .ds-ind{background:var(--accent-soft);color:var(--on-accent-soft)}.ds-lbl{font-size:12px;font-weight:500}.ds-active .ds-lbl{font-weight:600}.ds-nav:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
+      "refersTo": "nav-glider",
+      "description": "76px 竖向导航，无底色无分隔线；accent-soft 滑块滑到当前项。",
+      "html": "<nav class=\"ds-rail\"><span class=\"ds-glider\" style=\"transform:translateY(4px)\"></span><button class=\"ds-nav ds-active\"><span class=\"ds-ind\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\"><rect width=\"7\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"3\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"14\" y=\"14\" rx=\"1\"/><rect width=\"7\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\"/></svg></span><span class=\"ds-lbl\">概览</span></button><button class=\"ds-nav\"><span class=\"ds-ind\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M15 12h-5M15 8h-5M19 17V5a2 2 0 0 0-2-2H4\"/><path d=\"M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3\"/></svg></span><span class=\"ds-lbl\">日志</span></button></nav>",
+      "css": ".ds-rail{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;width:76px}.ds-glider{position:absolute;top:0;left:12px;width:52px;height:30px;border-radius:999px;background:var(--accent-soft);pointer-events:none;transition:transform .38s cubic-bezier(.16,1,.3,1)}.ds-nav{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:3px;width:64px;padding:4px 0 6px;border:none;background:none;color:var(--text-2);cursor:pointer;font-family:var(--font)}.ds-nav:hover{color:var(--text)}.ds-ind{display:grid;place-items:center;width:52px;height:30px;border-radius:999px;transition:background-color .18s cubic-bezier(.2,0,0,1),transform .15s cubic-bezier(.2,0,0,1)}.ds-nav:hover:not(.ds-active) .ds-ind{background:var(--hover)}.ds-nav:active .ds-ind{transform:scale(.92)}.ds-nav:active:not(.ds-active) .ds-ind{background:var(--press)}.ds-active{color:var(--text)}.ds-active .ds-ind{color:var(--on-accent-soft)}.ds-lbl{font-size:12px;font-weight:500}.ds-active .ds-lbl{font-weight:600}.ds-nav:focus-visible{outline:2px solid var(--ring);outline-offset:2px}"
     },
     {
       "name": "提示条",
@@ -589,33 +775,48 @@
       "description": "签名组件：每分钟请求按结果堆叠，失败带斜纹，档位切换画主色虚线。",
       "html": "<svg class=\"ds-tl\" width=\"320\" height=\"120\" viewBox=\"0 0 320 120\"><defs><pattern id=\"ds-hatch\" width=\"5\" height=\"5\" patternUnits=\"userSpaceOnUse\" patternTransform=\"rotate(45)\"><rect width=\"5\" height=\"5\" style=\"fill:var(--bad)\"/><line x1=\"0\" y1=\"0\" x2=\"0\" y2=\"5\" style=\"stroke:var(--surface);stroke-width:1.6\"/></pattern></defs><line class=\"ds-grid\" x1=\"20\" x2=\"316\" y1=\"30\" y2=\"30\"/><line class=\"ds-grid\" x1=\"20\" x2=\"316\" y1=\"65\" y2=\"65\"/><rect class=\"ds-ok\" x=\"40\" y=\"65\" width=\"18\" height=\"35\" rx=\"2\"/><rect class=\"ds-ok\" x=\"62\" y=\"65\" width=\"18\" height=\"35\" rx=\"2\"/><rect x=\"84\" y=\"65\" width=\"18\" height=\"35\" rx=\"2\" fill=\"url(#ds-hatch)\"/><rect class=\"ds-ok\" x=\"128\" y=\"65\" width=\"18\" height=\"35\" rx=\"2\"/><rect class=\"ds-warn\" x=\"128\" y=\"48\" width=\"18\" height=\"17\" rx=\"2\"/><rect class=\"ds-ok\" x=\"150\" y=\"30\" width=\"18\" height=\"70\" rx=\"2\"/><path class=\"ds-tri\" d=\"M155 22 h8 l-4 6 z\"/><line class=\"ds-mark\" x1=\"118\" x2=\"118\" y1=\"10\" y2=\"100\"/><text class=\"ds-mark-l\" x=\"122\" y=\"18\">切到 flex</text></svg>",
       "css": ".ds-tl{display:block;background:var(--surface)}.ds-grid{stroke:var(--border);stroke-dasharray:2 4}.ds-ok{fill:var(--series-ok)}.ds-warn{fill:var(--warn)}.ds-tri{fill:var(--warn)}.ds-mark{stroke:var(--accent);stroke-width:1.5;stroke-dasharray:4 3}.ds-mark-l{fill:var(--accent);font:600 11px var(--font)}"
+    },
+    {
+      "name": "品牌标",
+      "kind": "custom",
+      "refersTo": "brand-mark",
+      "description": "应用图标：十二道锥形光芒蒙版下的 Gemini 2025 四色；16–24px 用八道光芒的小尺寸版。",
+      "html": "<svg class=\"ds-mark-icon\" width=\"64\" height=\"64\" xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-50 -50 100 100\"><defs><radialGradient id=\"ds-vs-r\" gradientUnits=\"userSpaceOnUse\" cx=\"-6\" cy=\"-50\" r=\"46\"><stop offset=\"0\" stop-color=\"#FF4641\"/><stop offset=\"1\" stop-color=\"#FF4641\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"ds-vs-y\" gradientUnits=\"userSpaceOnUse\" cx=\"-52\" cy=\"8\" r=\"42\"><stop offset=\"0\" stop-color=\"#FFD314\"/><stop offset=\"1\" stop-color=\"#FFD314\" stop-opacity=\"0\"/></radialGradient><radialGradient id=\"ds-vs-g\" gradientUnits=\"userSpaceOnUse\" cx=\"4\" cy=\"54\" r=\"44\"><stop offset=\"0\" stop-color=\"#00B95C\"/><stop offset=\"1\" stop-color=\"#00B95C\" stop-opacity=\"0\"/></radialGradient><mask id=\"ds-vs-m\" maskUnits=\"userSpaceOnUse\" x=\"-50\" y=\"-50\" width=\"100\" height=\"100\"><rect x=\"-50\" y=\"-50\" width=\"100\" height=\"100\"/><g fill=\"#fff\"><path d=\"M-7,0 L-1.6,-45.4 A1.6,1.6 0 0 1 1.6,-45.4 L7,0 Z\" transform=\"rotate(0)\"/><path d=\"M-5.5,0 L-2.2,-27.8 A2.2,2.2 0 0 1 2.2,-27.8 L5.5,0 Z\" transform=\"rotate(38)\"/><path d=\"M-5,0 L-2.2,-22.8 A2.2,2.2 0 0 1 2.2,-22.8 L5,0 Z\" transform=\"rotate(66)\"/><path d=\"M-7,0 L-1.6,-45.4 A1.6,1.6 0 0 1 1.6,-45.4 L7,0 Z\" transform=\"rotate(90)\"/><path d=\"M-5.5,0 L-2.2,-26.8 A2.2,2.2 0 0 1 2.2,-26.8 L5.5,0 Z\" transform=\"rotate(128)\"/><path d=\"M-5,0 L-2.2,-21.8 A2.2,2.2 0 0 1 2.2,-21.8 L5,0 Z\" transform=\"rotate(155)\"/><path d=\"M-7,0 L-1.6,-45.4 A1.6,1.6 0 0 1 1.6,-45.4 L7,0 Z\" transform=\"rotate(180)\"/><path d=\"M-5.5,0 L-2.2,-28.8 A2.2,2.2 0 0 1 2.2,-28.8 L5.5,0 Z\" transform=\"rotate(214)\"/><path d=\"M-5,0 L-2.2,-22.8 A2.2,2.2 0 0 1 2.2,-22.8 L5,0 Z\" transform=\"rotate(243)\"/><path d=\"M-7,0 L-1.6,-45.4 A1.6,1.6 0 0 1 1.6,-45.4 L7,0 Z\" transform=\"rotate(270)\"/><path d=\"M-5.5,0 L-2.2,-26.8 A2.2,2.2 0 0 1 2.2,-26.8 L5.5,0 Z\" transform=\"rotate(306)\"/><path d=\"M-5,0 L-2.2,-21.8 A2.2,2.2 0 0 1 2.2,-21.8 L5,0 Z\" transform=\"rotate(333)\"/><circle r=\"9\"/></g></mask></defs><g mask=\"url(#ds-vs-m)\"><rect x=\"-50\" y=\"-50\" width=\"100\" height=\"100\" fill=\"#3186FF\"/><rect x=\"-50\" y=\"-50\" width=\"100\" height=\"100\" fill=\"url(#ds-vs-r)\"/><rect x=\"-50\" y=\"-50\" width=\"100\" height=\"100\" fill=\"url(#ds-vs-y)\"/><rect x=\"-50\" y=\"-50\" width=\"100\" height=\"100\" fill=\"url(#ds-vs-g)\"/></g></svg>",
+      "css": ".ds-mark-icon{display:block}"
     }
   ],
   "narrative": {
     "northStar": "跟着系统强调色呼吸的 Windows 控制台",
-    "overview": "整个界面由一个种子色生成。种子默认取 Windows 系统强调色（桌面外壳在页面加载前注入，窗口重新获得焦点时重读），用户也可以在设置里改用六个预设、自定义颜色，或打开“实时取色”：每 3 秒从桌面上没被窗口挡住的壁纸区域取主色（动态壁纸同样有效），连续两次取到相近的新颜色才切换，避免闪烁。种子只提供 OKLCH 的色相与彩度（`--seed-h`、`--seed-c`，彩度夹在 0.04–0.16），底色、表面、描边、文字、主色、主色容器全部按固定的亮度与彩度比例从它推出；frontmatter 里的数值是 CSS 默认种子（色相 262、彩度 0.14、色调强度 1）下的浅色解析值，真正的规范是 `ui/src/app.css` 里的公式。\n\n气质参照 Windows 11 原生控件、shadcn/ui 的精度与克制、FlClash 的莫奈取色与仪表盘板块：1px 描边的不透明板块平铺在略带色调的底色上，没有卡片阴影；信息密度偏高，数字一律用等宽表格数字。概览是 12 列便当网格，板块大小按重要性不同，拒绝“灰底加一个蓝色强调色、整齐等大卡片”的类别默认。\n\n在 Windows 11 上窗口默认是 Mica 材质，可在 设置 › 外观 切换为 Mica Alt、亚克力或不透明：页面底色与导航栏只盖一层很薄的种子色，透出系统材质；板块保持不透明，保证文字对比度。浅色与深色各一套，跟随系统。",
+    "overview": "整个界面由一个种子色生成。种子默认取 Windows 系统强调色（桌面外壳在页面加载前注入 `window.__VS_ACCENT__`，窗口重新获得焦点时重读）；用户也可以在 设置 › 外观 改用六个预设、自定义颜色，或打开“实时取色”。种子只提供 OKLCH 的色相与彩度（`--seed-h`、`--seed-c`，彩度夹在 0.04–0.16），底色、表面、描边、文字、主色、主色容器、悬停层全部按固定的亮度与彩度比例从它推出。frontmatter 里的数值是 CSS 默认种子（色相 262、彩度 0.14、色调强度 1）下的浅色解析值；真正的规范是 `ui/src/app.css` 里的公式。\n\n实时取色有两个范围，用一个分段选择切换（关闭 / 整张壁纸 / 窗口后方）。整张壁纸：让桌面窗口用 `PrintWindow` 完整重绘后取色，被窗口挡住也不影响，Wallpaper Engine 取当前画面，每 3 秒一次。窗口后方：取样瞬间用 `WDA_EXCLUDEFROMCAPTURE` 把本窗口排除出屏幕截取，读它覆盖的那块屏幕（包括后面的其他应用），每 1.5 秒一次，移动窗口后 200ms 立即重取。每次采样得到一个主色种子和一张 8×5 的颜色场：种子要连续两次取到相近的新颜色（色相差超过 12° 或彩度差超过 0.03 才算新）才切换，避免闪烁；颜色场每格保留色相，亮度统一到主题底色（浅色 0.9、深色 0.25），彩度为原色的 0.85 倍并封顶（浅色 0.11、深色 0.075）再乘色调强度，画成小图后拉伸铺满窗口、四周外扩 60px、模糊 36px，颜色留在它在桌面上的位置，换图时 1.2s 交叉淡入。\n\n气质参照 Windows 11 原生控件、shadcn/ui 的精度与克制、FlClash 的莫奈取色与仪表盘板块：1px 描边的板块平铺在略带色调的底色上，板块没有阴影；信息密度偏高，数字一律用等宽表格数字。导航栏没有自己的底色或分隔线，和内容区共用同一片背景（底色、系统材质或颜色场）。概览是 12 列便当网格，板块按重要性占不同列宽。Windows 11 上窗口默认是 Mica 材质，可切换为 Mica Alt、亚克力或不透明；浅色与深色各一套，跟随系统。",
     "keyCharacteristics": [
-      "一个种子色生成全部界面色，状态色固定不随种子变",
+      "一个种子色生成全部界面色；状态色固定不随种子变；品牌标是唯一使用固定十六进制颜色的元素",
       "表面彩度由用户可调的色调强度（`--tint`，0–2）决定，0 为中性灰",
       "12px 圆角板块、8px 圆角控件、1px 描边，板块无阴影",
-      "76px 左侧图标导航栏，药丸形选中指示",
+      "76px 左侧图标导航栏，与内容区共用背景，选中药丸在各项之间滑动",
+      "悬停与按下统一是一层叠加的主色（10% / 17%），可按的东西按下时略微缩小",
+      "实时取色时窗口背景是一片按桌面位置分布的模糊颜色场，板块 80% 不透明",
       "Segoe UI Variable + 微软雅黑，全局 `tabular-nums`",
       "签名组件是请求时间线：按结果堆叠的每分钟柱，失败带斜纹，档位切换画竖线"
     ],
     "rules": [
       {
         "name": "The One Seed Rule",
-        "body": "界面里任何非状态色都必须写成 `oklch(L calc(var(--seed-c) * k) var(--seed-h))`；不要写死十六进制的品牌色或灰色。",
+        "body": "界面里任何非状态色都必须写成 `oklch(L calc(var(--seed-c) * k) var(--seed-h))`，或由这类变量 `color-mix` 得到；不要写死十六进制的品牌色或灰色。唯一例外是应用图标的 Gemini 四色。",
         "section": "colors"
       },
       {
         "name": "The Fixed Status Rule",
-        "body": "失败红、降级琥珀、成功绿不随种子变化。种子色相与某个状态色相距不到 35° 时，根元素带 `data-seed-near`，链接改用正文色并加下划线，主色不再承担“可点击”的含义。",
+        "body": "失败红、降级琥珀、成功绿不随种子变化。种子色相与某个状态色相距不到 35° 时，根元素带 `data-seed-near`，链接改用正文色并常驻下划线，主色不再承担“可点击”的含义。",
         "section": "colors"
       },
       {
         "name": "The Tint Only Touches Ground Rule",
-        "body": "色调强度只乘在底色、导航栏、表面与描边的彩度上；文字、主色、状态色不受它影响。",
+        "body": "色调强度只乘在底色、表面、描边的彩度和颜色场的彩度上；文字、主色、悬停层、状态色不受它影响。",
+        "section": "colors"
+      },
+      {
+        "name": "The Overlay State Rule",
+        "body": "悬停与按下不换底色，而是叠一层主色（hover 10%、press 17%）；普通按钮是 surface 混 8%（按下 15%）主色、描边混 35% 主色。新加的可点元素沿用这两层，不另造灰色悬停。",
         "section": "colors"
       },
       {
@@ -630,27 +831,32 @@
       },
       {
         "name": "The Flat Panel Rule",
-        "body": "板块、表格、提示条永远没有阴影；阴影只给浮在内容上方的元素（提示框）和焦点 / 选中环。",
+        "body": "板块、表格、提示条永远没有阴影；阴影只给浮在内容上方的元素（提示框、跳到最新）、分段选中段、主按钮悬停和焦点 / 选中环。",
         "section": "elevation"
       },
       {
         "name": "The Opaque Panel Rule",
-        "body": "Mica 只作用于底色与导航栏；承载文字的板块必须保持不透明 surface。",
+        "body": "系统材质只作用于底色；承载文字的板块不透明。实时取色时板块可降到 80% 不透明（背后是已经模糊过的颜色场），但不能更低。",
         "section": "elevation"
       }
     ],
     "dos": [
-      "Do 从 `--seed-h` / `--seed-c` 推出所有非状态色，并让表面、描边的彩度乘上 `--tint`。",
+      "Do 从 `--seed-h` / `--seed-c` 推出所有非状态色，并让底色、表面、描边的彩度乘上 `--tint`。",
       "Do 浅色、深色各给一套亮度；新增颜色时两套都要写。",
+      "Do 悬停用 `--hover`、按下用 `--press`，可按的控件按下时缩到 0.97（导航药丸 0.92）。",
       "Do 用 lucide 线性图标（板块标题 16px、导航 20px / 描边 1.75），状态图标用 OctagonX（失败）、TriangleAlert（降级 / 警告）、CircleCheck（正常）。",
       "Do 让失败在颜色之外还有第二个信号（斜纹、图标、文字）。",
-      "Do 普通过渡用 0.12s；有方向的移动（滑动高亮、竖线画出）用 `cubic-bezier(0.16, 1, 0.3, 1)`；并尊重 `prefers-reduced-motion`（全部过渡与动画关闭）。",
-      "Do 技术值（地址、模型 ID、区域）用等宽字体，旁边给复制按钮。"
+      "Do 颜色过渡用 0.12–0.15s `cubic-bezier(0.2, 0, 0, 1)`；有方向的移动（导航滑块、档位高亮、竖线画出）用 `cubic-bezier(0.16, 1, 0.3, 1)`；尊重 `prefers-reduced-motion`（全部过渡与动画关闭）。",
+      "Do 少量互斥选项用分段选择，选项多或有长说明时用下拉框。",
+      "Do 技术值（地址、模型 ID、区域）用等宽字体，旁边给复制按钮。",
+      "Do 改图标只改 `src-tauri/icons/source/` 下的两份 SVG，再跑 `npm run icons`；24px 及以下用小尺寸版。"
     ],
     "donts": [
       "Don't 给板块、表格或提示条加阴影；层次用表面亮度与 1px 描边表达。",
-      "Don't 让 Mica 透到板块里：只有底色与导航栏可以半透明。",
+      "Don't 让系统材质透到板块里：只有底色可以半透明；颜色场下板块最低 80% 不透明。",
+      "Don't 给导航栏单独的底色或分隔线；它和内容区共用背景。",
       "Don't 用种子色表示成功、失败或降级；状态色固定，种子近状态色时链接退回正文色。",
+      "Don't 在界面里使用图标的 Gemini 四色；品牌四色只属于应用图标。",
       "Don't 把概览做成等大卡片网格；板块按重要性占 4 / 8 / 12 列。",
       "Don't 引入网页字体或全大写加字距的小标签。",
       "Don't 画装饰性的假图表或假指标，图表只画运行时的真实请求。"

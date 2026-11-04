@@ -240,7 +240,6 @@
     font-size: 11px;
     color: var(--text-3);
     writing-mode: vertical-rl;
-    letter-spacing: 0.1em;
   }
 
   main {

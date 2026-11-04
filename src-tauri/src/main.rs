@@ -107,7 +107,7 @@ fn main() {
                 .initialization_script(format!(
                     "window.__VS_ACCENT__ = {accent:?}; window.__VS_MICA__ = {mica};"
                 ));
-            // Windows 11：透明窗口 + Mica，界面的底色与导航栏改为半透明
+            // Windows 11：透明窗口 + Mica（设置里可换成 Mica Alt / 亚克力 / 不透明），界面底色改为半透明
             if mica {
                 builder = builder.transparent(true).effects(
                     tauri::window::EffectsBuilder::new()
