@@ -122,6 +122,64 @@ pub fn open_config_dir(app: AppHandle) -> CmdResult {
     Ok(Value::Null)
 }
 
+/// 背景图片复制到配置目录下的 background.<扩展名>，界面启动时读回来。
+const BACKGROUND_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"];
+const BACKGROUND_MAX_BYTES: u64 = 30 * 1024 * 1024;
+
+fn background_files() -> impl Iterator<Item = std::path::PathBuf> {
+    let dir = app_dir();
+    BACKGROUND_EXTS
+        .iter()
+        .map(move |ext| dir.join(format!("background.{ext}")))
+        .filter(|p| p.is_file())
+}
+
+fn remove_background() -> Result<(), String> {
+    for path in background_files() {
+        std::fs::remove_file(&path).map_err(|e| format!("删除旧背景图片失败：{e}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_background_image(path: String) -> CmdResult {
+    let src = std::path::PathBuf::from(&path);
+    let ext = src
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|e| BACKGROUND_EXTS.contains(&e.as_str()))
+        .ok_or("只支持 PNG、JPG、WebP、GIF、BMP、AVIF 图片")?;
+    let size = std::fs::metadata(&src)
+        .map_err(|e| format!("读取图片失败：{e}"))?
+        .len();
+    if size > BACKGROUND_MAX_BYTES {
+        return Err("图片不能超过 30 MB".into());
+    }
+    let dir = app_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    remove_background()?;
+    std::fs::copy(&src, dir.join(format!("background.{ext}")))
+        .map_err(|e| format!("保存背景图片失败：{e}"))?;
+    Ok(Value::Null)
+}
+
+#[tauri::command]
+pub fn clear_background_image() -> CmdResult {
+    remove_background()?;
+    Ok(Value::Null)
+}
+
+/// 当前背景图片的原始字节；没有设置时返回空。
+#[tauri::command]
+pub fn get_background_image() -> Result<tauri::ipc::Response, String> {
+    let bytes = match background_files().next() {
+        Some(path) => std::fs::read(path).map_err(|e| format!("读取背景图片失败：{e}"))?,
+        None => Vec::new(),
+    };
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 #[tauri::command]
 pub fn get_autostart(app: AppHandle) -> CmdResult {
     let enabled = app.autolaunch().is_enabled().map_err(|e| e.to_string())?;

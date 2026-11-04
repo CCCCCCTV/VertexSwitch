@@ -101,6 +101,8 @@
       {@const intH = (b.interrupted / max) * plotH}
       {@const badH = (b.failed / max) * plotH}
       <g class:dim={hover !== null && hover !== i}>
+        <!-- 每分钟一个浅底座：没有请求的时段读作“0”，而不是图没画出来 -->
+        <rect class="slot" x={x(i)} width={barW} y={PAD.top + plotH - 3} height="3" rx="1.5" />
         <rect class="ok" x={x(i)} width={barW} y={PAD.top + plotH - okH} height={okH} rx="2" />
         <rect class="warn" x={x(i)} width={barW} y={PAD.top + plotH - okH - intH} height={intH} rx="2" />
         <rect class="fail" x={x(i)} width={barW} y={PAD.top + plotH - okH - intH - badH} height={badH} rx="2" />
@@ -218,6 +220,10 @@
   .axis {
     fill: var(--text-3);
     font-size: 11px;
+  }
+
+  rect.slot {
+    fill: var(--border);
   }
 
   rect.ok {

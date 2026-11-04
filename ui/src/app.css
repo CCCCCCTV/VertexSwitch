@@ -51,8 +51,12 @@
   /* 浮起的小控件（跳到最新、选中的标签）；板块本身不加阴影 */
   --shadow: 0 1px 2px oklch(0.2 calc(var(--seed-c) * 0.3) var(--seed-h) / 0.14);
 
-  /* 时间线系列：成功用低彩度的种子色，避免与固定的状态色（红 / 琥珀）混淆 */
-  --series-ok: oklch(0.72 calc(var(--seed-c) * 0.32) var(--seed-h));
+  /*
+   * 时间线系列：成功是调和过的鼠尾草绿（色相 --ok-h 由主题引擎从 155° 往种子色相偏最多 15°），
+   * 彩度比“运行中”胶囊低一档；不用种子色本身，免得暖棕等种子下看着像“未激活”
+   */
+  --ok-h: 155;
+  --series-ok: oklch(0.7 0.095 var(--ok-h));
   --series-warn: var(--warn);
   --series-bad: var(--bad);
 
@@ -94,7 +98,7 @@
     --on-bad: oklch(0.2 0.04 25);
     --shadow: 0 1px 2px oklch(0 0 0 / 0.45);
 
-    --series-ok: oklch(0.5 calc(var(--seed-c) * 0.3) var(--seed-h));
+    --series-ok: oklch(0.64 0.085 var(--ok-h));
     color-scheme: dark;
   }
 }
@@ -117,8 +121,9 @@
   background: transparent;
 }
 
-/* 实时取色：颜色场由 App 铺在窗口背景上（见 App.svelte），板块透出一点 */
-:root[data-field] {
+/* 实时取色的颜色场、背景图片都由 App 铺在窗口背景上（见 App.svelte），板块透出一点 */
+:root[data-field],
+:root[data-bg-image] {
   --panel: color-mix(in oklch, var(--surface) 80%, transparent);
 }
 
@@ -268,6 +273,27 @@ button.link:active:not(:disabled) {
   text-decoration: underline;
   text-underline-offset: 3px;
   transform: none;
+}
+
+/* 跳转链接（“全部请求 ›”）：主色加粗 + 右箭头，悬停出现药丸底，不用下划线 */
+button.more {
+  height: 26px;
+  padding: 0 6px 0 10px;
+  gap: 2px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--link);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+button.more:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+button.more:active:not(:disabled) {
+  background: var(--press);
 }
 
 /* 分段选择（药丸形，选中的一段浮起） */

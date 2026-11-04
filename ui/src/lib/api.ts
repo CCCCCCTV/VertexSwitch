@@ -48,6 +48,11 @@ export interface Api {
   /** 窗口移动或改变大小（窗口后方取色要跟着重取） */
   onWindowMoved(cb: () => void): () => void;
   pickKeyFile(): Promise<string | null>;
+  /** 选一张图片设为窗口背景（复制到配置目录）；取消选择时返回 false */
+  chooseBackgroundImage(): Promise<boolean>;
+  /** 当前背景图片；没有设置时为 null */
+  backgroundImage(): Promise<Blob | null>;
+  clearBackgroundImage(): Promise<void>;
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
   onSettingsChanged(cb: () => void): () => void;
@@ -102,6 +107,22 @@ async function tauriApi(): Promise<Api> {
       });
       return typeof picked === "string" ? picked : null;
     },
+    chooseBackgroundImage: async () => {
+      const picked = await open({
+        title: "选择背景图片",
+        multiple: false,
+        directory: false,
+        filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"] }],
+      });
+      if (typeof picked !== "string") return false;
+      await invoke("set_background_image", { path: picked });
+      return true;
+    },
+    backgroundImage: async () => {
+      const bytes = await invoke<ArrayBuffer>("get_background_image");
+      return bytes.byteLength ? new Blob([bytes]) : null;
+    },
+    clearBackgroundImage: () => invoke("clear_background_image"),
     onLog: (cb) => subscribe("log", cb),
     onRequest: (cb) => subscribe("request", cb),
     onSettingsChanged: (cb) => subscribe("settings-changed", () => cb()),

@@ -11,6 +11,7 @@
     FlaskConical,
     Copy,
     Check,
+    ChevronRight,
   } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { live, refreshStatus } from "../lib/live.svelte";
@@ -205,11 +206,9 @@
         默认档位，Gemini 原生接口与 OpenAI 兼容接口都生效。区域：<span class="mono">{status.gemini_region}</span>
       </p>
       <p class="note own">
-        {#if ownTiers}
-          <button class="link" onclick={() => go("models")}>{ownTiers} 个模型单独设置了档位</button>
-        {:else}
-          <button class="link" onclick={() => go("models")}>按模型单独设置档位</button>
-        {/if}
+        <button class="more" onclick={() => go("models")}>
+          {ownTiers ? `${ownTiers} 个模型单独设置了档位` : "按模型单独设置档位"}<ChevronRight size={15} />
+        </button>
       </p>
       {#if regionNote}<div class="banner warn"><TriangleAlert size={16} />{regionNote}</div>{/if}
       {#if tierError}<div class="banner bad"><OctagonX size={16} />{tierError}</div>{/if}
@@ -218,7 +217,7 @@
     <section class="panel span-4">
       <div class="panel-head">
         <TriangleAlert size={16} /><h2>需要注意</h2>
-        <button class="link end" onclick={() => go("requests")}>全部请求</button>
+        <button class="more end" onclick={() => go("requests")}>全部请求<ChevronRight size={15} /></button>
       </div>
       {#if attention.length}
         <ul class="issues">
@@ -243,12 +242,18 @@
       {#if base}
         <ul class="endpoints">
           {#each [
-            ["Anthropic", base, "ANTHROPIC_BASE_URL"],
-            ["OpenAI 兼容", `${base}/v1`, "base_url"],
-            ["Gemini", base, "api_endpoint"],
-          ] as [name, url, hint]}
+            ["Anthropic", base, "ANTHROPIC_BASE_URL", "Claude Code、Anthropic SDK 读这个环境变量"],
+            ["OpenAI 兼容", `${base}/v1`, "OPENAI_BASE_URL", "OpenAI SDK 读这个环境变量"],
+            ["Gemini", base, "GOOGLE_GEMINI_BASE_URL", "Gemini CLI、JS SDK 读这个环境变量；Python SDK 要在代码里设 http_options.base_url"],
+          ] as [name, url, env, about]}
+            {@const pair = `${env}=${url}`}
             <li>
-              <div class="name">{name}<span class="faint mono">{hint}</span></div>
+              <div class="name">
+                {name}
+                <button class="chip" onclick={() => copy(pair)} title="点击复制 {pair}&#10;{about}">
+                  {#if copied === pair}<Check size={13} />已复制{:else}<span class="mono">{env}</span>{/if}
+                </button>
+              </div>
               <div class="url">
                 <span class="mono">{url}</span>
                 <button class="ghost icon" onclick={() => copy(url)} aria-label="复制 {name} 地址">
@@ -358,7 +363,7 @@
   .tiers {
     position: relative;
     display: grid;
-    gap: 4px;
+    gap: 6px;
   }
 
   .tier-highlight {
@@ -371,6 +376,7 @@
     transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
+  /* 三个档位都是同样的圆角框（未选中的只有一圈细描边），选中的由滑块填满 */
   .tier {
     position: relative;
     display: grid;
@@ -378,9 +384,12 @@
     gap: 10px;
     align-items: start;
     padding: 9px 10px;
+    border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    transition: background 0.12s;
+    transition:
+      background 0.12s,
+      border-color 0.2s;
   }
 
   .tier input {
@@ -396,8 +405,11 @@
   }
 
   .tier.on {
+    border-color: transparent;
     color: var(--on-accent-soft);
-    transition: color 0.2s;
+    transition:
+      color 0.2s,
+      border-color 0.2s;
   }
 
   .tier span {
@@ -502,19 +514,50 @@
     margin: 0;
     padding: 0;
     display: grid;
-    gap: 10px;
+    gap: 8px;
+  }
+
+  /* 每个地址一块浅色内嵌容器，名字、地址、复制按钮在同一块里，横向扫视不错位 */
+  .endpoints li {
+    padding: 7px 6px 6px 12px;
+    border-radius: 10px;
+    background: color-mix(in oklch, var(--surface-2) 70%, transparent);
+    transition: background-color 0.15s;
+  }
+
+  .endpoints li:hover {
+    background: color-mix(in oklch, var(--surface-2) 70%, var(--accent) 8%);
   }
 
   .endpoints .name {
     display: flex;
     gap: 8px;
-    align-items: baseline;
+    align-items: center;
     font-size: 12.5px;
     color: var(--text-2);
   }
 
-  .endpoints .name .faint {
+  /* 环境变量名做成小标签：点一下复制 KEY=VALUE */
+  .chip {
+    height: 20px;
+    padding: 0 8px;
+    gap: 4px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-2);
     font-size: 11px;
+    font-weight: 500;
+  }
+
+  .chip .mono {
+    font-size: 11px;
+  }
+
+  .chip:hover:not(:disabled) {
+    color: var(--on-accent-soft);
+    background: var(--accent-soft);
+    border-color: transparent;
   }
 
   .endpoints .url {
@@ -522,6 +565,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+  }
+
+  /* 跳转链接与板块右缘 / 说明文字左缘对齐 */
+  .panel-head .more {
+    margin-right: -6px;
+  }
+
+  .note.own .more {
+    margin-left: -10px;
   }
 
   button.icon {

@@ -3,7 +3,7 @@
   import { LayoutGrid, ListOrdered, ScrollText, Boxes, Settings2 } from "@lucide/svelte";
   import { api } from "./lib/api";
   import { live, startLive } from "./lib/live.svelte";
-  import { PRESETS, setThemePref, setTint, theme } from "./lib/theme.svelte";
+  import { PRESETS, previewBackground, setThemePref, setTint, theme } from "./lib/theme.svelte";
   import Overview from "./pages/Overview.svelte";
   import Requests from "./pages/Requests.svelte";
   import Logs from "./pages/Logs.svelte";
@@ -44,6 +44,20 @@
       const preset = PRESETS.find((p) => p.id === seed);
       if (preset || /^[0-9a-f]{6}$/i.test(seed ?? "")) {
         setThemePref({ ...theme.pref, source: "custom", seed: preset?.seed ?? `#${seed}` });
+      }
+      // 背景图片：画一张模拟照片的渐变图，走和真图片一样的路径
+      if (params.get("bg") === "1") {
+        const canvas = document.createElement("canvas");
+        canvas.width = 480;
+        canvas.height = 300;
+        const ctx = canvas.getContext("2d")!;
+        const g = ctx.createLinearGradient(0, 0, 480, 300);
+        g.addColorStop(0, "#f2c879");
+        g.addColorStop(0.5, "#e07a8a");
+        g.addColorStop(1, "#4b6fd1");
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 480, 300);
+        canvas.toBlob((blob) => blob && previewBackground(blob));
       }
       const liveScope = params.get("live");
       if (liveScope === "wallpaper" || liveScope === "behind") setThemePref({ ...theme.pref, source: liveScope });
@@ -126,7 +140,18 @@
     pointer-events: none;
     background: var(--field) center / 100% 100% no-repeat;
     filter: blur(36px);
-    transition: background-image 1.2s ease;
+    transition: background-image var(--field-fade, 1.2s) ease;
+  }
+
+  /* 背景图片：盖在颜色场上、内容下面，不透明度在设置 → 外观里调 */
+  :global(:root[data-bg-image]) .shell::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--bg-image) center / cover no-repeat;
+    opacity: var(--bg-image-opacity, 0.35);
   }
 
   /* 导航栏与内容区共用同一片背景，不再单独成一块 */

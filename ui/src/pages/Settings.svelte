@@ -4,10 +4,15 @@
   import { refreshStatus } from "../lib/live.svelte";
   import {
     BACKDROPS,
+    LIVE_INTERVALS,
     LIVE_SCOPES,
     PRESETS,
     TINT_DEFAULT,
+    chooseBackground,
+    clearBackground,
     setBackdrop,
+    setBackgroundOpacity,
+    setLiveInterval,
     setThemePref,
     setTint,
     theme,
@@ -18,6 +23,20 @@
   let draft = $state<Settings | null>(null);
   let info = $state<AppInfo | null>(null);
   const liveScope = $derived(LIVE_SCOPES.find((s) => s.id === theme.pref.source));
+  let bgBusy = $state(false);
+  let bgError = $state("");
+
+  async function background(action: () => Promise<void>) {
+    bgBusy = true;
+    bgError = "";
+    try {
+      await action();
+    } catch (e) {
+      bgError = errorText(e);
+    } finally {
+      bgBusy = false;
+    }
+  }
   let saving = $state(false);
   let message = $state<{ tone: "ok" | "bad" | "warn"; text: string } | null>(null);
   let showKey = $state(false);
@@ -322,9 +341,25 @@
             >
           {/each}
         </div>
+        {#if liveScope}
+          <label class="interval">
+            间隔
+            <select
+              value={theme.pref.liveInterval}
+              onchange={(e) => setLiveInterval(Number(e.currentTarget.value))}
+            >
+              {#each LIVE_INTERVALS as i}<option value={i.ms}>{i.label}</option>{/each}
+            </select>
+          </label>
+        {/if}
       </div>
       <p class="faint small live-hint">
         {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
+        {#if liveScope && theme.pref.liveInterval === 0}
+          <br />无间隔：取完马上取下一次，跟得最紧，但会一直占用一些 CPU{liveScope.id === "behind"
+            ? "；录屏或截图时本窗口可能时隐时现（取样时窗口会被排除出截屏）"
+            : ""}。
+        {/if}
       </p>
       <div class="tint">
         <label for="tint">色调强度</label>
@@ -356,6 +391,36 @@
               ? "；实时取色打开时背景由取到的颜色铺满，材质看不到"
               : ""}</span
           >
+        </div>
+      {/if}
+      <div class="backdrop">
+        <span class="row-label">背景图片</span>
+        {#if theme.bgImage}
+          <span class="thumb" style:background-image={`url("${theme.bgImage}")`} aria-hidden="true"></span>
+        {/if}
+        <button onclick={() => background(chooseBackground)} disabled={bgBusy}>
+          {theme.bgImage ? "更换图片" : "选择图片"}
+        </button>
+        {#if theme.bgImage}
+          <button class="ghost" onclick={() => background(clearBackground)} disabled={bgBusy}>移除</button>
+        {/if}
+        {#if bgError}<span class="msg bad">{bgError}</span>{:else}<span class="faint small">图片会复制到配置目录，铺满窗口背景</span>{/if}
+      </div>
+      {#if theme.bgImage}
+        <div class="tint">
+          <label for="bg-opacity">图片不透明度</label>
+          <span class="faint small">淡</span>
+          <input
+            id="bg-opacity"
+            type="range"
+            min="0.05"
+            max="1"
+            step="0.05"
+            value={theme.pref.bgOpacity}
+            oninput={(e) => setBackgroundOpacity(Number(e.currentTarget.value))}
+          />
+          <span class="faint small">浓</span>
+          <span class="small mono">{Math.round(theme.pref.bgOpacity * 100)}%</span>
         </div>
       {/if}
       <p class="faint small">整个界面的色调都由这个颜色生成，强度只影响底色和面板；浅色 / 深色跟随系统设置。</p>
@@ -595,9 +660,31 @@
     margin-bottom: 10px;
   }
 
-  .backdrop label {
+  .backdrop label,
+  .backdrop .row-label {
     font-weight: 500;
     margin-right: 6px;
+  }
+
+  .thumb {
+    width: 48px;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: center / cover no-repeat;
+  }
+
+  .interval {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+
+  .interval select {
+    width: auto;
+    height: 30px;
   }
 
   .backdrop select {

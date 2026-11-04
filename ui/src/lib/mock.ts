@@ -56,6 +56,7 @@ const models: Models = {
 };
 
 let autostart = false;
+let mockBackground: Blob | null = null;
 const started = Date.now() - 3 * 3600_000 - 12 * 60_000;
 let seq = 0;
 const logs: LogEntry[] = [];
@@ -208,6 +209,23 @@ export const mockApi: Api = {
     }),
   onWindowMoved: () => () => {},
   pickKeyFile: () => delay("C:\\Users\\me\\keys\\service-account.json"),
+  // 预览：用浏览器的文件选择框，图片只留在内存里
+  chooseBackgroundImage: () =>
+    new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.onchange = () => {
+        mockBackground = input.files?.[0] ?? mockBackground;
+        resolve(Boolean(input.files?.length));
+      };
+      input.click();
+    }),
+  backgroundImage: () => Promise.resolve(mockBackground),
+  clearBackgroundImage: () => {
+    mockBackground = null;
+    return delay(undefined);
+  },
   onLog: (cb) => (logListeners.add(cb), () => logListeners.delete(cb)),
   onRequest: (cb) => (requestListeners.add(cb), () => requestListeners.delete(cb)),
   onSettingsChanged: (cb) => (settingsListeners.add(cb), () => settingsListeners.delete(cb)),

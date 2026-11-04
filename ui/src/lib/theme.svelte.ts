@@ -28,13 +28,17 @@ export interface ThemePref {
   tint: number;
   /** 窗口背景材质，只在支持的系统（Windows 11）上起作用 */
   backdrop: Backdrop;
+  /** 实时取色的间隔（毫秒）；0 表示取完马上取下一次 */
+  liveInterval: number;
+  /** 背景图片的不透明度 0–1 */
+  bgOpacity: number;
 }
 
 export const LIVE_SCOPES: { id: LiveScope; label: string; hint: string }[] = [
   {
     id: "wallpaper",
     label: "整张壁纸",
-    hint: "每 3 秒取一次整张壁纸的颜色（Wallpaper Engine 动态壁纸取当前画面），被窗口挡住也不影响",
+    hint: "取整张壁纸的颜色（Wallpaper Engine 动态壁纸取当前画面），被窗口挡住也不影响",
   },
   {
     id: "behind",
@@ -42,6 +46,18 @@ export const LIVE_SCOPES: { id: LiveScope; label: string; hint: string }[] = [
     hint: "取窗口正后方的画面，包括后面的其他应用；左边是红色应用、右边是蓝色应用，背景也左红右蓝。移动窗口时立即重取",
   },
 ];
+
+export const LIVE_INTERVALS = [
+  { ms: 0, label: "无间隔" },
+  { ms: 500, label: "0.5 秒" },
+  { ms: 1000, label: "1 秒" },
+  { ms: 2000, label: "2 秒" },
+  { ms: 5000, label: "5 秒" },
+  { ms: 10_000, label: "10 秒" },
+  { ms: 30_000, label: "30 秒" },
+] as const;
+export const LIVE_INTERVAL_DEFAULT = 2000;
+export const BG_OPACITY_DEFAULT = 0.35;
 
 export const BACKDROPS: { id: Backdrop; label: string; hint: string }[] = [
   { id: "mica", label: "Mica", hint: "系统静态壁纸的模糊色调（不认动态壁纸），最安静" },
@@ -58,8 +74,6 @@ const ACCENT_KEY = "vertexswitch.systemAccent";
 const FALLBACK_SEED = "#3B5BDB";
 /** 上次实时取色的结果：首帧直接用它 */
 const LIVE_KEY = "vertexswitch.liveSample";
-/** 实时取色的采样间隔：整张壁纸变化慢；窗口后方要跟上后面应用的变化 */
-const SAMPLE_MS: Record<LiveScope, number> = { wallpaper: 3000, behind: 1500 };
 const HEX = /^#[0-9a-f]{6}$/i;
 
 const isLive = (source: ThemeSource): source is LiveScope => source === "wallpaper" || source === "behind";
@@ -108,13 +122,25 @@ export function loadPref(): ThemePref {
       if (["system", "custom", "wallpaper", "behind"].includes(p.source) && HEX.test(p.seed)) {
         const tint = typeof p.tint === "number" && p.tint >= 0 && p.tint <= 2 ? p.tint : TINT_DEFAULT;
         const backdrop = BACKDROPS.some((b) => b.id === p.backdrop) ? (p.backdrop as Backdrop) : "mica";
-        return { source: p.source, seed: p.seed, tint, backdrop };
+        const liveInterval = LIVE_INTERVALS.some((i) => i.ms === p.liveInterval)
+          ? (p.liveInterval as number)
+          : LIVE_INTERVAL_DEFAULT;
+        const bgOpacity =
+          typeof p.bgOpacity === "number" && p.bgOpacity >= 0 && p.bgOpacity <= 1 ? p.bgOpacity : BG_OPACITY_DEFAULT;
+        return { source: p.source, seed: p.seed, tint, backdrop, liveInterval, bgOpacity };
       }
     }
   } catch {
     // 存储不可用时用默认值
   }
-  return { source: "system", seed: FALLBACK_SEED, tint: TINT_DEFAULT, backdrop: "mica" };
+  return {
+    source: "system",
+    seed: FALLBACK_SEED,
+    tint: TINT_DEFAULT,
+    backdrop: "mica",
+    liveInterval: LIVE_INTERVAL_DEFAULT,
+    bgOpacity: BG_OPACITY_DEFAULT,
+  };
 }
 
 function savePref(pref: ThemePref) {
@@ -166,6 +192,10 @@ export function applySeed(hex: string) {
   const near = Object.entries(STATUS_HUES).find(([, hue]) => hueDistance(h, hue) < 35);
   if (near) root.dataset.seedNear = near[0];
   else delete root.dataset.seedNear;
+  // Material 3 色彩调和：时间线的“成功”绿往种子色相偏一点（差值的一半，最多 15°），仍一眼是绿色
+  const toward = ((h - STATUS_HUES.ok + 540) % 360) - 180;
+  const okHue = STATUS_HUES.ok + Math.max(-15, Math.min(15, toward / 2));
+  root.style.setProperty("--ok-h", okHue.toFixed(1));
 }
 
 export const theme = $state({
@@ -177,6 +207,8 @@ export const theme = $state({
   seed: FALLBACK_SEED,
   /** 系统支持半透明窗口材质（Windows 11）；桌面程序在页面加载前注入 */
   backdropSupported: Boolean((window as { __VS_MICA__?: boolean }).__VS_MICA__),
+  /** 背景图片（blob 地址）；没有设置时为 null */
+  bgImage: null as string | null,
 });
 
 const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -217,14 +249,55 @@ function applyField() {
   root.style.removeProperty("--field");
 }
 
+/** 背景图片铺在颜色场之上、内容之下，不透明度由用户调 */
+function applyBackgroundImage() {
+  const root = document.documentElement;
+  root.style.setProperty("--bg-image-opacity", String(theme.pref.bgOpacity));
+  if (theme.bgImage) {
+    root.style.setProperty("--bg-image", `url("${theme.bgImage}")`);
+    root.dataset.bgImage = "";
+  } else {
+    root.style.removeProperty("--bg-image");
+    delete root.dataset.bgImage;
+  }
+}
+
+function showBackground(blob: Blob | null) {
+  if (theme.bgImage) URL.revokeObjectURL(theme.bgImage);
+  theme.bgImage = blob ? URL.createObjectURL(blob) : null;
+  applyBackgroundImage();
+}
+
+/** 仅浏览器预览：直接用一张生成的图当背景 */
+export const previewBackground = (blob: Blob) => showBackground(blob);
+
+/** 选图片设为背景；取消选择时什么都不变 */
+export async function chooseBackground() {
+  if (await api.chooseBackgroundImage()) showBackground(await api.backgroundImage());
+}
+
+export async function clearBackground() {
+  await api.clearBackgroundImage();
+  showBackground(null);
+}
+
+export function setBackgroundOpacity(bgOpacity: number) {
+  setThemePref({ ...theme.pref, bgOpacity });
+}
+
 function resolve() {
   const system = theme.systemAccent ?? FALLBACK_SEED;
   const source = theme.pref.source;
   const live = theme.live && theme.live.scope === source ? theme.live : null;
   theme.seed = source === "custom" ? theme.pref.seed : isLive(source) ? (live?.seed ?? system) : system;
   applySeed(theme.seed);
-  document.documentElement.style.setProperty("--tint", String(theme.pref.tint));
+  const root = document.documentElement;
+  root.style.setProperty("--tint", String(theme.pref.tint));
+  // 取色越频繁，颜色场换图的淡入越短，跟得上画面
+  const interval = theme.pref.liveInterval;
+  root.style.setProperty("--field-fade", interval === 0 ? "0.25s" : interval < 2000 ? "0.6s" : "1.2s");
   applyField();
+  applyBackgroundImage();
 }
 
 /** 底色是否半透明，跟着窗口材质走 */
@@ -272,8 +345,9 @@ function fieldDistance(a: string[], b: string[]) {
   return sum / (a.length * 3);
 }
 
-let liveTimer: ReturnType<typeof setInterval> | undefined;
-let liveTimerScope: LiveScope | null = null;
+/** 当前采样循环对应的“范围:间隔”；变了就换一个循环（旧循环看到代号变化后自己退出） */
+let liveKey: string | null = null;
+let liveGeneration = 0;
 let stopMoveWatch: (() => void) | undefined;
 let moveDebounce: ReturnType<typeof setTimeout> | undefined;
 /** 与当前种子色不同、等待下一次采样确认的新颜色：画面在变，连续两次取到相近的颜色才换，避免闪烁 */
@@ -319,20 +393,34 @@ async function sampleLive() {
   resolve();
 }
 
-/** 选了实时取色就定时采样，换成别的来源就停；窗口后方还要在窗口移动后立即重取 */
+/** 等到下一次采样：按间隔等；无间隔时等下一帧（窗口隐藏时浏览器暂停动画帧，循环也就停下） */
+function nextTick(interval: number) {
+  return new Promise<void>((done) =>
+    interval > 0 ? setTimeout(done, interval) : requestAnimationFrame(() => done()),
+  );
+}
+
+/** 选了实时取色就循环采样（上一次取完才等下一次），换成别的来源就停；窗口后方还要在窗口移动后立即重取 */
 function syncLive() {
   const scope = isLive(theme.pref.source) ? theme.pref.source : null;
-  if (scope === liveTimerScope) return;
-  clearInterval(liveTimer);
-  liveTimer = undefined;
-  stopMoveWatch?.();
-  stopMoveWatch = undefined;
+  const key = scope && `${scope}:${theme.pref.liveInterval}`;
+  if (key === liveKey) return;
+  const scopeChanged = scope !== liveKey?.split(":")[0];
+  liveKey = key;
+  const generation = ++liveGeneration;
   candidate = null;
-  liveTimerScope = scope;
+  if (scopeChanged) {
+    stopMoveWatch?.();
+    stopMoveWatch = undefined;
+  }
   if (!scope) return;
-  void sampleLive();
-  liveTimer = setInterval(() => void sampleLive(), SAMPLE_MS[scope]);
-  if (scope === "behind") {
+  void (async () => {
+    while (generation === liveGeneration) {
+      await sampleLive();
+      await nextTick(theme.pref.liveInterval);
+    }
+  })();
+  if (scope === "behind" && !stopMoveWatch) {
     stopMoveWatch = api.onWindowMoved(() => {
       clearTimeout(moveDebounce);
       moveDebounce = setTimeout(() => void sampleLive(), 200);
@@ -372,4 +460,13 @@ export function startTheme() {
   darkQuery.addEventListener("change", () => applyField());
   // 窗口从托盘重新显示时立即取一次
   document.addEventListener("visibilitychange", () => void sampleLive());
+  void api
+    .backgroundImage()
+    .then(showBackground)
+    .catch(() => {});
+}
+
+/** 设置实时取色的间隔（毫秒，0 为无间隔） */
+export function setLiveInterval(liveInterval: number) {
+  setThemePref({ ...theme.pref, liveInterval });
 }
