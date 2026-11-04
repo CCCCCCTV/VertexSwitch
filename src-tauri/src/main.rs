@@ -5,6 +5,7 @@
 // 发布版不弹控制台窗口
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_icon;
 mod backdrop_color;
 mod commands;
 mod host;
@@ -114,7 +115,8 @@ fn main() {
                         .build(),
                 );
             }
-            builder.build()?;
+            let window = builder.build()?;
+            app_icon::apply_to_window(&window);
             tray::create(&handle)?;
             forward(handle.clone(), "log", logs.subscribe());
             forward(

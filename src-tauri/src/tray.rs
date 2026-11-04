@@ -56,11 +56,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     app.manage(TierItems(items));
 
     TrayIconBuilder::with_id(TRAY_ID)
-        .icon(
-            app.default_window_icon()
-                .cloned()
-                .expect("打包时已配置图标"),
-        )
+        .icon(crate::app_icon::tray())
         .tooltip("VertexSwitch")
         .menu(&menu)
         .show_menu_on_left_click(false)
