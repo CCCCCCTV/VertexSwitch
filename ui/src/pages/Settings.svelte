@@ -12,6 +12,7 @@
     clearBackground,
     setBackdrop,
     setBackgroundOpacity,
+    setGlass,
     setLiveInterval,
     setThemePref,
     setTint,
@@ -341,7 +342,7 @@
             >
           {/each}
         </div>
-        {#if liveScope}
+        {#if liveScope || theme.pref.glass}
           <label class="interval">
             间隔
             <select
@@ -354,13 +355,25 @@
         {/if}
       </div>
       <p class="faint small live-hint">
-        {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
-        {#if liveScope && theme.pref.liveInterval === 0}
-          <br />无间隔：取完马上取下一次，跟得最紧，但会一直占用一些 CPU{liveScope.id === "behind"
+        {#if theme.pref.glass}
+          液态玻璃打开时，颜色和画面都取自窗口后方，这里的实时取色暂不生效
+        {:else}
+          {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
+        {/if}
+        {#if (liveScope || theme.pref.glass) && theme.pref.liveInterval === 0}
+          <br />无间隔：取完马上取下一次，跟得最紧，但会一直占用一些 CPU{theme.pref.glass || liveScope?.id === "behind"
             ? "；录屏或截图时本窗口可能时隐时现（取样时窗口会被排除出截屏）"
             : ""}。
         {/if}
       </p>
+      <label class="check inline glass-toggle">
+        <input type="checkbox" checked={theme.pref.glass} onchange={(e) => setGlass(e.currentTarget.checked)} />
+        <span
+          >液态玻璃<small
+            >窗口后方的应用透过玻璃板块显示，边缘有折射和高光，主题色也取自后方应用；按上面的“间隔”重读画面，拖动窗口时会尽快跟上。比普通模式更耗资源</small
+          ></span
+        >
+      </label>
       <div class="tint">
         <label for="tint">色调强度</label>
         <span class="faint small">中性</span>
@@ -478,7 +491,8 @@
   }
 
   /* 实时取色时背后是颜色场：吸顶栏半透明加模糊，颜色连贯，滚过的内容也看不清 */
-  :global(:root[data-field]) header {
+  :global(:root[data-field]) header,
+  :global(:root[data-glass]) header {
     background: oklch(from var(--bg) l c h / 0.35);
     backdrop-filter: blur(28px) saturate(1.2);
   }
@@ -723,6 +737,10 @@
 
   .check.inline {
     padding-top: 0;
+  }
+
+  .glass-toggle {
+    margin: 2px 0 14px;
   }
 
   .live {

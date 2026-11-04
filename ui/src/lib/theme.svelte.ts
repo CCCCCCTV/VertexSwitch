@@ -1,10 +1,12 @@
 // 莫奈式取色：整个界面的色调由一个种子色生成。
 // CSS 里所有颜色都写成 oklch(L C H)，H 与 C 来自 --seed-h / --seed-c 两个变量，
 // 这里只负责把种子色换算成 OKLCH 并写进这两个变量。默认种子是 Windows 系统强调色。
-// 实时取色时还会生成一张“颜色场”（按位置排列的背景色），模糊后铺在窗口背景上。
+// 实时取色时还会生成一张“颜色场”（按位置排列的背景色），模糊后铺在窗口背景上；
+// 液态玻璃则把窗口后方的整幅画面画在最底层，板块做成折射它的玻璃（见 glass.ts）。
 
 import { api } from "./api";
-import type { Backdrop, BackdropSample, LiveScope } from "./types";
+import { startGlass, stopGlass } from "./glass";
+import type { Backdrop, BackdropSample, GlassFrame, LiveScope } from "./types";
 
 export const PRESETS = [
   { id: "blue", label: "靛蓝", seed: "#3B5BDB" },
@@ -32,6 +34,8 @@ export interface ThemePref {
   liveInterval: number;
   /** 背景图片的不透明度 0–1 */
   bgOpacity: number;
+  /** 液态玻璃：窗口后方的画面透过玻璃板块显示，主题色也取自后方 */
+  glass: boolean;
 }
 
 export const LIVE_SCOPES: { id: LiveScope; label: string; hint: string }[] = [
@@ -127,7 +131,7 @@ export function loadPref(): ThemePref {
           : LIVE_INTERVAL_DEFAULT;
         const bgOpacity =
           typeof p.bgOpacity === "number" && p.bgOpacity >= 0 && p.bgOpacity <= 1 ? p.bgOpacity : BG_OPACITY_DEFAULT;
-        return { source: p.source, seed: p.seed, tint, backdrop, liveInterval, bgOpacity };
+        return { source: p.source, seed: p.seed, tint, backdrop, liveInterval, bgOpacity, glass: p.glass === true };
       }
     }
   } catch {
@@ -140,6 +144,7 @@ export function loadPref(): ThemePref {
     backdrop: "mica",
     liveInterval: LIVE_INTERVAL_DEFAULT,
     bgOpacity: BG_OPACITY_DEFAULT,
+    glass: false,
   };
 }
 
@@ -234,10 +239,63 @@ function renderField(live: LiveState, tint: number): string {
   return canvas.toDataURL();
 }
 
+/** 种子色从哪种实时取色来：液态玻璃总是取窗口后方，否则看颜色来源 */
+function colorScope(): LiveScope | null {
+  if (theme.pref.glass) return "behind";
+  return isLive(theme.pref.source) ? theme.pref.source : null;
+}
+
+/** 颜色场的平均亮度（0 黑 – 1 白），液态玻璃据此调玻璃的浓淡，背后再花也看得清字 */
+function fieldLuminance(field: string[]) {
+  const lin = (v: number) => {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  const total = field.reduce((sum, hex) => {
+    const n = parseInt(hex.slice(1), 16);
+    return sum + 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  }, 0);
+  return field.length ? total / field.length : 0.5;
+}
+
+let glassCanvas: HTMLCanvasElement | null = null;
+
+/** App 把铺在最底层的画布交给这里，液态玻璃把窗口后方的画面画进去 */
+export function registerGlassCanvas(canvas: HTMLCanvasElement | null) {
+  glassCanvas = canvas;
+  if (canvas && theme.pref.glass) void sampleGlass();
+}
+
+function drawGlass(frame: GlassFrame) {
+  const canvas = glassCanvas;
+  if (!canvas) return;
+  if (canvas.width !== frame.width || canvas.height !== frame.height) {
+    canvas.width = frame.width;
+    canvas.height = frame.height;
+  }
+  canvas.getContext("2d")?.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
+  canvas.dataset.ready = "";
+}
+
+function applyGlass() {
+  const root = document.documentElement;
+  if (theme.pref.glass) {
+    root.dataset.glass = "";
+    const live = theme.live?.scope === "behind" ? theme.live : null;
+    root.style.setProperty("--glass-lum", (live ? fieldLuminance(live.field) : 0.5).toFixed(3));
+    startGlass();
+  } else {
+    delete root.dataset.glass;
+    root.style.removeProperty("--glass-lum");
+    delete glassCanvas?.dataset.ready;
+    stopGlass();
+  }
+}
+
 function applyField() {
   const root = document.documentElement;
   const live = theme.live;
-  if (isLive(theme.pref.source) && live && live.scope === theme.pref.source) {
+  if (!theme.pref.glass && isLive(theme.pref.source) && live && live.scope === theme.pref.source) {
     const url = renderField(live, theme.pref.tint);
     if (url) {
       root.style.setProperty("--field", `url("${url}")`);
@@ -287,9 +345,9 @@ export function setBackgroundOpacity(bgOpacity: number) {
 
 function resolve() {
   const system = theme.systemAccent ?? FALLBACK_SEED;
-  const source = theme.pref.source;
-  const live = theme.live && theme.live.scope === source ? theme.live : null;
-  theme.seed = source === "custom" ? theme.pref.seed : isLive(source) ? (live?.seed ?? system) : system;
+  const scope = colorScope();
+  const live = theme.live && theme.live.scope === scope ? theme.live : null;
+  theme.seed = scope ? (live?.seed ?? system) : theme.pref.source === "custom" ? theme.pref.seed : system;
   applySeed(theme.seed);
   const root = document.documentElement;
   root.style.setProperty("--tint", String(theme.pref.tint));
@@ -298,6 +356,7 @@ function resolve() {
   root.style.setProperty("--field-fade", interval === 0 ? "0.25s" : interval < 2000 ? "0.6s" : "1.2s");
   applyField();
   applyBackgroundImage();
+  applyGlass();
 }
 
 /** 底色是否半透明，跟着窗口材质走 */
@@ -356,7 +415,7 @@ let sampling = false;
 
 async function sampleLive() {
   const scope = theme.pref.source;
-  if (!isLive(scope) || sampling || document.visibilityState !== "visible") return;
+  if (theme.pref.glass || !isLive(scope) || sampling || document.visibilityState !== "visible") return;
   sampling = true;
   let sample: BackdropSample | null = null;
   try {
@@ -366,8 +425,40 @@ async function sampleLive() {
   } finally {
     sampling = false;
   }
-  if (!validSample(sample) || theme.pref.source !== scope) return;
+  if (colorScope() === scope) acceptSample(sample, scope);
+}
 
+/** 窗口移动时又来一次读屏请求：正在读就记下，读完马上再读一次 */
+let glassAgain = false;
+
+async function sampleGlass() {
+  if (!theme.pref.glass || document.visibilityState !== "visible") return;
+  if (sampling) {
+    glassAgain = true;
+    return;
+  }
+  sampling = true;
+  let frame: GlassFrame | null = null;
+  try {
+    frame = await api.captureGlassFrame(Math.round(innerWidth));
+  } catch {
+    // 读屏失败：保留上一帧
+  } finally {
+    sampling = false;
+  }
+  if (frame && theme.pref.glass) {
+    drawGlass(frame);
+    acceptSample(frame.sample, "behind");
+  }
+  if (glassAgain) {
+    glassAgain = false;
+    void sampleGlass();
+  }
+}
+
+/** 采用一次取色：种子色连续两次相近才换，颜色场变化明显才重画 */
+function acceptSample(sample: BackdropSample | null, scope: LiveScope) {
+  if (!validSample(sample)) return;
   const prev = theme.live && theme.live.scope === scope ? theme.live : null;
   let seed = sample.seed;
   if (prev) {
@@ -400,32 +491,43 @@ function nextTick(interval: number) {
   );
 }
 
-/** 选了实时取色就循环采样（上一次取完才等下一次），换成别的来源就停；窗口后方还要在窗口移动后立即重取 */
+/**
+ * 打开实时取色或液态玻璃就循环读屏（上一次读完才等下一次），都关掉就停。
+ * 窗口后方要在窗口移动后重读：取色等移动停下 0.2 秒再取；液态玻璃要背景跟手，移动中就不停地读。
+ */
 function syncLive() {
-  const scope = isLive(theme.pref.source) ? theme.pref.source : null;
-  const key = scope && `${scope}:${theme.pref.liveInterval}`;
+  const mode = theme.pref.glass ? "glass" : isLive(theme.pref.source) ? theme.pref.source : null;
+  const key = mode && `${mode}:${theme.pref.liveInterval}`;
   if (key === liveKey) return;
-  const scopeChanged = scope !== liveKey?.split(":")[0];
+  const modeChanged = mode !== liveKey?.split(":")[0];
   liveKey = key;
   const generation = ++liveGeneration;
   candidate = null;
-  if (scopeChanged) {
+  if (modeChanged) {
     stopMoveWatch?.();
     stopMoveWatch = undefined;
   }
-  if (!scope) return;
+  if (!mode) return;
+  const sample = mode === "glass" ? sampleGlass : sampleLive;
   void (async () => {
     while (generation === liveGeneration) {
-      await sampleLive();
+      await sample();
       await nextTick(theme.pref.liveInterval);
     }
   })();
-  if (scope === "behind" && !stopMoveWatch) {
+  if (mode === "glass" && !stopMoveWatch) {
+    stopMoveWatch = api.onWindowMoved(() => void sampleGlass());
+  } else if (mode === "behind" && !stopMoveWatch) {
     stopMoveWatch = api.onWindowMoved(() => {
       clearTimeout(moveDebounce);
       moveDebounce = setTimeout(() => void sampleLive(), 200);
     });
   }
+}
+
+/** 液态玻璃开关 */
+export function setGlass(glass: boolean) {
+  setThemePref({ ...theme.pref, glass });
 }
 
 async function refreshSystemAccent() {
@@ -459,7 +561,7 @@ export function startTheme() {
   // 浅色 / 深色切换时颜色场要按新的底色亮度重画
   darkQuery.addEventListener("change", () => applyField());
   // 窗口从托盘重新显示时立即取一次
-  document.addEventListener("visibilitychange", () => void sampleLive());
+  document.addEventListener("visibilitychange", () => void (theme.pref.glass ? sampleGlass() : sampleLive()));
   void api
     .backgroundImage()
     .then(showBackground)

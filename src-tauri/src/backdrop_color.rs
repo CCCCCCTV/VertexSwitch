@@ -50,6 +50,41 @@ pub fn sample(_scope: Scope, _window: isize) -> Option<Sample> {
     None
 }
 
+/// 液态玻璃用的整幅画面：窗口内容区正后方的像素（RGBA，按行），附带同一次读屏的取色结果。
+pub struct Frame {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+    pub sample: Sample,
+}
+
+/// 读一帧窗口后方的画面，宽度不超过 `max_width`（按比例缩小，不放大）。
+#[cfg(windows)]
+pub fn capture_frame(window: isize, max_width: u32) -> Option<Frame> {
+    let (width, height, bgra, grid) = win::capture_client_behind(window as win::Hwnd, max_width)?;
+    Some(Frame {
+        width,
+        height,
+        rgba: to_rgba(bgra),
+        sample: summarize(&grid, Scope::Behind),
+    })
+}
+
+/// GDI 给的是 BGRA 且 alpha 为 0，界面的 ImageData 要不透明的 RGBA
+fn to_rgba(mut bgra: Vec<u8>) -> Vec<u8> {
+    let (pixels, _) = bgra.as_chunks_mut::<4>();
+    for px in pixels {
+        px.swap(0, 2);
+        px[3] = 255;
+    }
+    bgra
+}
+
+#[cfg(not(windows))]
+pub fn capture_frame(_window: isize, _max_width: u32) -> Option<Frame> {
+    None
+}
+
 /// 把 GRID_W × GRID_H 的 BGRA 像素整理成种子色与颜色场
 fn summarize(bgra: &[u8], scope: Scope) -> Sample {
     let mut pixels = Vec::with_capacity(GRID_W * GRID_H);
@@ -167,18 +202,19 @@ mod win {
     use std::ffi::c_void;
     use std::ptr::{null, null_mut};
 
-    use windows_sys::Win32::Foundation::{HWND, RECT};
+    use windows_sys::Win32::Foundation::{HWND, POINT, RECT};
     use windows_sys::Win32::Graphics::Dwm::{
         DWMWA_EXTENDED_FRAME_BOUNDS, DwmFlush, DwmGetWindowAttribute,
     };
     use windows_sys::Win32::Graphics::Gdi::{
-        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleBitmap, CreateCompatibleDC,
-        CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, HALFTONE, HDC, ReleaseDC,
-        SRCCOPY, SelectObject, SetBrushOrgEx, SetStretchBltMode, StretchBlt,
+        BI_RGB, BITMAPINFO, BITMAPINFOHEADER, ClientToScreen, CreateCompatibleBitmap,
+        CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC,
+        HALFTONE, HDC, ReleaseDC, SRCCOPY, SelectObject, SetBrushOrgEx, SetStretchBltMode,
+        StretchBlt,
     };
     use windows_sys::Win32::Storage::Xps::PrintWindow;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, GetWindowRect, PW_RENDERFULLCONTENT, SetWindowDisplayAffinity,
+        FindWindowW, GetClientRect, GetWindowRect, PW_RENDERFULLCONTENT, SetWindowDisplayAffinity,
         WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
     };
 
@@ -190,7 +226,15 @@ mod win {
     ///
     /// SAFETY: src 必须是有效的设备上下文
     unsafe fn shrink(src: HDC, x: i32, y: i32, w: i32, h: i32) -> Option<Vec<u8>> {
-        if w <= 0 || h <= 0 {
+        // SAFETY: 调用方保证 src 有效
+        unsafe { grab(src, x, y, w, h, GRID_W as i32, GRID_H as i32) }
+    }
+
+    /// 把 src 的一块区域缩放到 tw × th 读出来（BGRA，按行）
+    ///
+    /// SAFETY: src 必须是有效的设备上下文
+    unsafe fn grab(src: HDC, x: i32, y: i32, w: i32, h: i32, tw: i32, th: i32) -> Option<Vec<u8>> {
+        if w <= 0 || h <= 0 || tw <= 0 || th <= 0 {
             return None;
         }
         // SAFETY: 标准 GDI 流程，所有句柄在返回前释放；位图内存由 DIB 段持有，读完再删
@@ -199,8 +243,8 @@ mod win {
             let mut info: BITMAPINFO = std::mem::zeroed();
             info.bmiHeader = BITMAPINFOHEADER {
                 biSize: size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: GRID_W as i32,
-                biHeight: -(GRID_H as i32),
+                biWidth: tw,
+                biHeight: -th,
                 biPlanes: 1,
                 biBitCount: 32,
                 biCompression: BI_RGB,
@@ -213,21 +257,9 @@ mod win {
                 let old = SelectObject(mem, dib);
                 SetStretchBltMode(mem, HALFTONE);
                 SetBrushOrgEx(mem, 0, 0, null_mut());
-                let ok = StretchBlt(
-                    mem,
-                    0,
-                    0,
-                    GRID_W as i32,
-                    GRID_H as i32,
-                    src,
-                    x,
-                    y,
-                    w,
-                    h,
-                    SRCCOPY,
-                );
+                let ok = StretchBlt(mem, 0, 0, tw, th, src, x, y, w, h, SRCCOPY);
                 if ok != 0 {
-                    let len = GRID_W * GRID_H * 4;
+                    let len = tw as usize * th as usize * 4;
                     out = Some(std::slice::from_raw_parts(bits as *const u8, len).to_vec());
                 }
                 SelectObject(mem, old);
@@ -309,6 +341,48 @@ mod win {
             out
         }
     }
+
+    /// 液态玻璃：窗口内容区（不含标题栏）正后方的画面，缩到宽不超过 max_width；
+    /// 同一次排除里再读一份取色网格。返回 (宽, 高, 画面 BGRA, 网格 BGRA)。
+    pub fn capture_client_behind(
+        window: HWND,
+        max_width: u32,
+    ) -> Option<(u32, u32, Vec<u8>, Vec<u8>)> {
+        // SAFETY: window 是本进程自己的主窗口；其余同 shrink
+        unsafe {
+            let mut client: RECT = std::mem::zeroed();
+            if GetClientRect(window, &mut client) == 0 {
+                return None;
+            }
+            let (cw, ch) = (client.right - client.left, client.bottom - client.top);
+            if cw <= 0 || ch <= 0 {
+                return None;
+            }
+            let mut origin = POINT { x: 0, y: 0 };
+            if ClientToScreen(window, &mut origin) == 0 {
+                return None;
+            }
+            let scale = (f64::from(max_width) / f64::from(cw)).min(1.0);
+            let tw = ((f64::from(cw) * scale).round() as i32).max(1);
+            let th = ((f64::from(ch) * scale).round() as i32).max(1);
+            if SetWindowDisplayAffinity(window, WDA_EXCLUDEFROMCAPTURE) == 0 {
+                return None;
+            }
+            DwmFlush();
+            DwmFlush();
+            let screen = GetDC(null_mut());
+            let out = if screen.is_null() {
+                None
+            } else {
+                let frame = grab(screen, origin.x, origin.y, cw, ch, tw, th);
+                let grid = shrink(screen, origin.x, origin.y, cw, ch);
+                ReleaseDC(null_mut(), screen);
+                frame.zip(grid)
+            };
+            SetWindowDisplayAffinity(window, WDA_NONE);
+            out.map(|(frame, grid)| (tw as u32, th as u32, frame, grid))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -349,6 +423,14 @@ mod tests {
         let mut px: Vec<([u8; 3], f64)> = vec![([220, 30, 30], 0.5); 100];
         px.extend(vec![([30, 30, 220], 1.0); 100]);
         assert_eq!(dominant(&px), "#1E1EDC");
+    }
+
+    #[test]
+    fn bgra_becomes_opaque_rgba() {
+        assert_eq!(
+            to_rgba(vec![10, 20, 30, 0, 1, 2, 3, 0]),
+            vec![30, 20, 10, 255, 3, 2, 1, 255]
+        );
     }
 
     #[test]

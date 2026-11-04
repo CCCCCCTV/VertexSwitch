@@ -141,3 +141,11 @@ export interface BackdropSample {
   rows: number;
   field: string[];
 }
+
+/** 液态玻璃的一帧：窗口内容区正后方的画面（RGBA）和同一次读屏的取色结果 */
+export interface GlassFrame {
+  width: number;
+  height: number;
+  pixels: Uint8ClampedArray<ArrayBuffer>;
+  sample: BackdropSample;
+}

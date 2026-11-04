@@ -6,6 +6,7 @@ import type {
   AppInfo,
   Backdrop,
   BackdropSample,
+  GlassFrame,
   LiveScope,
   LogEntry,
   Metrics,
@@ -45,6 +46,8 @@ export interface Api {
   setBackdrop(kind: Backdrop): Promise<void>;
   /** 实时取色：取一次种子色与颜色场；读屏失败或不支持时为 null */
   sampleBackdrop(scope: LiveScope): Promise<BackdropSample | null>;
+  /** 液态玻璃：读一帧窗口后方的画面（宽不超过 maxWidth 像素）；读屏失败时为 null */
+  captureGlassFrame(maxWidth: number): Promise<GlassFrame | null>;
   /** 窗口移动或改变大小（窗口后方取色要跟着重取） */
   onWindowMoved(cb: () => void): () => void;
   pickKeyFile(): Promise<string | null>;
@@ -56,6 +59,19 @@ export interface Api {
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
   onSettingsChanged(cb: () => void): () => void;
+}
+
+/** capture_glass_frame 的二进制格式：宽、高、取色 JSON 长度（u32 小端），取色 JSON，RGBA 像素 */
+function parseGlassFrame(bytes: ArrayBuffer): GlassFrame | null {
+  if (bytes.byteLength < 12) return null;
+  const view = new DataView(bytes);
+  const width = view.getUint32(0, true);
+  const height = view.getUint32(4, true);
+  const jsonLength = view.getUint32(8, true);
+  const pixelStart = 12 + jsonLength;
+  if (bytes.byteLength !== pixelStart + width * height * 4) return null;
+  const sample = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 12, jsonLength)));
+  return { width, height, sample, pixels: new Uint8ClampedArray(bytes, pixelStart) };
 }
 
 async function tauriApi(): Promise<Api> {
@@ -93,6 +109,7 @@ async function tauriApi(): Promise<Api> {
     systemAccent: () => invoke("get_system_accent"),
     setBackdrop: (kind) => invoke("set_backdrop", { kind }),
     sampleBackdrop: (scope) => invoke("sample_backdrop", { scope }),
+    captureGlassFrame: async (maxWidth) => parseGlassFrame(await invoke<ArrayBuffer>("capture_glass_frame", { maxWidth })),
     onWindowMoved: (cb) => {
       const win = getCurrentWindow();
       const pending = Promise.all([win.onMoved(() => cb()), win.onResized(() => cb())]);

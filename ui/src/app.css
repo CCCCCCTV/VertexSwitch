@@ -127,6 +127,66 @@
   --panel: color-mix(in oklch, var(--surface) 80%, transparent);
 }
 
+/*
+ * 液态玻璃（设置 → 外观）：窗口后方的画面铺在最底层（App.svelte），板块与导航底座是玻璃：
+ * 先按各自尺寸做边缘折射（--glass-filter，见 lib/glass.ts），再轻模糊、提饱和；
+ * 玻璃浓淡跟着后方画面的亮度走（--glass-lum）：浅色主题下背后越暗玻璃越浓，深色主题反过来，字始终看得清。
+ */
+:root[data-glass] {
+  --glass-lum: 0.5;
+  --glass-fill: color-mix(in oklch, var(--surface) calc(30% + (1 - var(--glass-lum)) * 42%), transparent);
+  --glass-rim: oklch(1 0 0 / 0.7);
+  --glass-gleam: oklch(1 0 0 / 0.26);
+  --glass-shade: oklch(0.25 calc(var(--seed-c) * 0.3) var(--seed-h) / 0.24);
+  --panel: var(--glass-fill);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-glass] {
+    --glass-fill: color-mix(in oklch, var(--surface) calc(34% + var(--glass-lum) * 44%), transparent);
+    --glass-rim: oklch(1 0 0 / 0.22);
+    --glass-gleam: oklch(1 0 0 / 0.08);
+    --glass-shade: oklch(0 0 0 / 0.5);
+  }
+}
+
+:root[data-glass] .panel,
+:root[data-glass] .glass {
+  position: relative;
+  background: var(--glass-fill);
+  border-color: transparent;
+  backdrop-filter: var(--glass-filter, blur(0px)) blur(6px) saturate(1.8) brightness(1.04);
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-rim),
+    inset 1px 0 0 0 color-mix(in oklch, var(--glass-rim) 45%, transparent),
+    inset 0 -1px 0 0 color-mix(in oklch, var(--glass-rim) 25%, transparent),
+    inset 0 0 0 1px color-mix(in oklch, var(--glass-rim) 30%, transparent),
+    0 12px 32px -14px var(--glass-shade);
+}
+
+/* 高光：左上一抹斜光，右下一点反光；画在玻璃底色之上、内容之下 */
+:root[data-glass] .panel::before,
+:root[data-glass] .glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    140deg,
+    var(--glass-gleam) 0%,
+    transparent 28%,
+    transparent 78%,
+    color-mix(in oklch, var(--glass-gleam) 40%, transparent) 100%
+  );
+}
+
+/* 直接压在后方画面上的大标题加一圈柔光 */
+:root[data-glass] main h1 {
+  text-shadow: 0 1px 16px var(--surface);
+}
+
 :root[data-mica-preview] {
   background: linear-gradient(135deg, oklch(0.7 0.12 250), oklch(0.75 0.1 330) 55%, oklch(0.82 0.09 60));
 }
