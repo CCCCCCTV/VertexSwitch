@@ -2,7 +2,6 @@
 
 import type { Api } from "./api";
 import type {
-  GlassFrame,
   LogEntry,
   Models,
   RequestRecord,
@@ -133,48 +132,6 @@ function status(): Status {
   };
 }
 
-/** 预览：画一个假的“窗口后方”——渐变壁纸上左边一个偏红的编辑器、右边一个偏蓝的网页，缓慢漂移 */
-function mockGlassFrame(maxWidth: number): GlassFrame {
-  const width = Math.max(64, Math.min(maxWidth, innerWidth));
-  const height = Math.round((width * innerHeight) / innerWidth);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d")!;
-  const sky = ctx.createLinearGradient(0, 0, width, height);
-  sky.addColorStop(0, "#ff9a8b");
-  sky.addColorStop(0.5, "#a18cd1");
-  sky.addColorStop(1, "#4facfe");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, width, height);
-  const t = Date.now() / 4000;
-  const app = (x: number, y: number, w: number, h: number, bar: string, body: string) => {
-    ctx.fillStyle = body;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, h, 10);
-    ctx.fill();
-    ctx.fillStyle = bar;
-    ctx.beginPath();
-    ctx.roundRect(x, y, w, 34, [10, 10, 0, 0]);
-    ctx.fill();
-    ctx.fillStyle = "#00000040";
-    for (let i = 0; i < 14; i++) ctx.fillRect(x + 24, y + 60 + i * 26, w * (0.35 + ((i * 37) % 50) / 100), 8);
-  };
-  app(width * 0.04 + Math.sin(t) * 24, height * 0.1, width * 0.46, height * 0.75, "#d0453b", "#fff3ef");
-  app(width * 0.54, height * 0.22 + Math.cos(t) * 18, width * 0.42, height * 0.66, "#2f63d8", "#eef3ff");
-  return {
-    width,
-    height,
-    pixels: ctx.getImageData(0, 0, width, height).data,
-    sample: {
-      seed: "#C8424A",
-      cols: 8,
-      rows: 5,
-      field: Array.from({ length: 40 }, (_, i) => (i % 8 < 4 ? "#F4D9D6" : "#D9E2F6")),
-    },
-  };
-}
-
 // JSON Merge Patch：null 表示删掉该项
 function merge(target: any, patch: any) {
   for (const [k, v] of Object.entries(patch)) {
@@ -250,7 +207,6 @@ export const mockApi: Api = {
       rows: 5,
       field: Array.from({ length: 40 }, (_, i) => (i % 8 < 4 ? "#D2484E" : "#3A6FD8")),
     }),
-  captureGlassFrame: async (maxWidth) => mockGlassFrame(maxWidth),
   onWindowMoved: () => () => {},
   pickKeyFile: () => delay("C:\\Users\\me\\keys\\service-account.json"),
   // 预览：用浏览器的文件选择框，图片只留在内存里

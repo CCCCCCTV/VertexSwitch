@@ -92,7 +92,6 @@ fn main() {
             commands::get_system_accent,
             commands::set_backdrop,
             commands::sample_backdrop,
-            commands::capture_glass_frame,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

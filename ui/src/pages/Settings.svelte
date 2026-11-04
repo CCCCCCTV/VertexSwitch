@@ -342,7 +342,7 @@
             >
           {/each}
         </div>
-        {#if liveScope || theme.pref.glass}
+        {#if liveScope}
           <label class="interval">
             间隔
             <select
@@ -355,13 +355,9 @@
         {/if}
       </div>
       <p class="faint small live-hint">
-        {#if theme.pref.glass}
-          液态玻璃打开时，颜色和画面都取自窗口后方，这里的实时取色暂不生效
-        {:else}
-          {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
-        {/if}
-        {#if (liveScope || theme.pref.glass) && theme.pref.liveInterval === 0}
-          <br />无间隔：取完马上取下一次，跟得最紧，但会一直占用一些 CPU{theme.pref.glass || liveScope?.id === "behind"
+        {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
+        {#if liveScope && theme.pref.liveInterval === 0}
+          <br />无间隔：取完马上取下一次，跟得最紧，但会一直占用一些 CPU{liveScope.id === "behind"
             ? "；录屏或截图时本窗口可能时隐时现（取样时窗口会被排除出截屏）"
             : ""}。
         {/if}
@@ -370,7 +366,7 @@
         <input type="checkbox" checked={theme.pref.glass} onchange={(e) => setGlass(e.currentTarget.checked)} />
         <span
           >液态玻璃<small
-            >窗口后方的应用透过玻璃板块显示，边缘有折射和高光，主题色也取自后方应用；按上面的“间隔”重读画面，拖动窗口时会尽快跟上。比普通模式更耗资源</small
+            >侧边栏、板块和状态胶囊变成玻璃，透出并折射本软件的背景（底色、实时取色的颜色场、背景图片），边缘有高光；配合背景图片或实时取色最明显</small
           ></span
         >
       </label>

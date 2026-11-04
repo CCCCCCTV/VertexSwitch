@@ -235,40 +235,6 @@ pub async fn sample_backdrop(window: tauri::WebviewWindow, scope: String) -> Cmd
     serde_json::to_value(result).map_err(|e| e.to_string())
 }
 
-/// 液态玻璃：读一帧窗口内容区正后方的画面（宽不超过 max_width），连同取色结果一起返回。
-///
-/// 二进制格式（小端）：宽 u32、高 u32、取色 JSON 长度 u32、取色 JSON（同 sample_backdrop）、
-/// 宽 × 高 × 4 字节 RGBA。读屏失败或不支持时返回空。
-#[tauri::command]
-pub async fn capture_glass_frame(
-    window: tauri::WebviewWindow,
-    max_width: u32,
-) -> Result<tauri::ipc::Response, String> {
-    #[cfg(windows)]
-    let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
-    #[cfg(not(windows))]
-    let hwnd = {
-        let _ = window;
-        0
-    };
-    let frame = tauri::async_runtime::spawn_blocking(move || {
-        crate::backdrop_color::capture_frame(hwnd, max_width.clamp(64, 4096))
-    })
-    .await
-    .map_err(|e| e.to_string())?;
-    let Some(frame) = frame else {
-        return Ok(tauri::ipc::Response::new(Vec::new()));
-    };
-    let sample = serde_json::to_vec(&frame.sample).map_err(|e| e.to_string())?;
-    let mut out = Vec::with_capacity(12 + sample.len() + frame.rgba.len());
-    out.extend_from_slice(&frame.width.to_le_bytes());
-    out.extend_from_slice(&frame.height.to_le_bytes());
-    out.extend_from_slice(&(sample.len() as u32).to_le_bytes());
-    out.extend_from_slice(&sample);
-    out.extend_from_slice(&frame.rgba);
-    Ok(tauri::ipc::Response::new(out))
-}
-
 /// 切换窗口背景材质（Windows 11）：mica、tabbed（Mica Alt）、acrylic（亚克力）或 none。
 #[tauri::command]
 pub fn set_backdrop(window: tauri::WebviewWindow, kind: String) -> CmdResult {

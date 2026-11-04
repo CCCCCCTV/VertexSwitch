@@ -3,14 +3,7 @@
   import { LayoutGrid, ListOrdered, ScrollText, Boxes, Settings2 } from "@lucide/svelte";
   import { api } from "./lib/api";
   import { live, startLive } from "./lib/live.svelte";
-  import {
-    PRESETS,
-    previewBackground,
-    registerGlassCanvas,
-    setThemePref,
-    setTint,
-    theme,
-  } from "./lib/theme.svelte";
+  import { PRESETS, previewBackground, setThemePref, setTint, theme } from "./lib/theme.svelte";
   import Overview from "./pages/Overview.svelte";
   import Requests from "./pages/Requests.svelte";
   import Logs from "./pages/Logs.svelte";
@@ -40,13 +33,6 @@
   const failedRecent = $derived(
     live.requests.filter((r) => r.outcome !== "ok" && Date.now() - r.ts_ms < 10 * 60_000).length,
   );
-
-  // 液态玻璃：窗口后方的画面画在这块铺满窗口的画布上
-  let glassBg: HTMLCanvasElement;
-  $effect(() => {
-    registerGlassCanvas(glassBg);
-    return () => registerGlassCanvas(null);
-  });
 
   onMount(() => {
     // 仅浏览器预览：#page=logs&seed=rose 直接打开某页、某个种子色（用于截图与评审）
@@ -92,7 +78,6 @@
 </script>
 
 <div class="shell">
-  <canvas class="glass-bg" bind:this={glassBg} aria-hidden="true"></canvas>
   <nav aria-label="主导航">
     <span class="nav-glass glass" aria-hidden="true"></span>
     <img class="logo" src="/logo.svg" alt="VertexSwitch" width="30" height="30" />
@@ -171,45 +156,7 @@
     opacity: var(--bg-image-opacity, 0.35);
   }
 
-  /*
-   * 液态玻璃：窗口后方的画面铺在最底层，第一帧到了再淡入。
-   * 轻轻模糊一下：后方应用里的字不清晰，就不会和本窗口的字混在一起读；
-   * 四周多铺 8px，模糊后边缘不发虚。
-   */
-  .glass-bg {
-    display: none;
-    position: absolute;
-    inset: -8px;
-    width: calc(100% + 16px);
-    height: calc(100% + 16px);
-    z-index: -1;
-    pointer-events: none;
-    filter: blur(3px) saturate(1.15);
-  }
-
-  :global(:root[data-glass]) .glass-bg {
-    display: block;
-    opacity: 0;
-    transition: opacity 0.4s ease;
-  }
-
-  /* data-ready 由主题引擎在画完第一帧后加上 */
-  :global(:root[data-glass]) .glass-bg:global([data-ready]) {
-    opacity: 1;
-  }
-
-  /* 后方画面上薄薄一层底色，页面标题这些直接压在画面上的字也看得清（背景图片在玻璃模式下不显示） */
-  :global(:root[data-glass]) .shell::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background: color-mix(in oklch, var(--bg) 30%, transparent);
-    opacity: 1;
-  }
-
-  /* 导航栏下面垫一块竖条玻璃 */
+  /* 液态玻璃：导航栏下面垫一块竖条玻璃 */
   .nav-glass {
     display: none;
   }
