@@ -3,7 +3,7 @@
   import { LayoutGrid, ListOrdered, ScrollText, Boxes, Settings2 } from "@lucide/svelte";
   import { api } from "./lib/api";
   import { live, startLive } from "./lib/live.svelte";
-  import { PRESETS, setThemePref } from "./lib/theme.svelte";
+  import { PRESETS, setThemePref, setTint, theme } from "./lib/theme.svelte";
   import Overview from "./pages/Overview.svelte";
   import Requests from "./pages/Requests.svelte";
   import Logs from "./pages/Logs.svelte";
@@ -34,7 +34,14 @@
       const seed = params.get("seed");
       const preset = PRESETS.find((p) => p.id === seed);
       if (preset || /^[0-9a-f]{6}$/i.test(seed ?? "")) {
-        setThemePref({ source: "custom", seed: preset?.seed ?? `#${seed}` });
+        setThemePref({ ...theme.pref, source: "custom", seed: preset?.seed ?? `#${seed}` });
+      }
+      const tint = Number(params.get("tint"));
+      if (params.has("tint") && tint >= 0 && tint <= 2) setTint(tint);
+      // 浏览器里没有真正的 Mica：用一张模拟壁纸的渐变检查半透明效果
+      if (params.get("mica") === "1") {
+        document.documentElement.dataset.mica = "";
+        document.documentElement.dataset.micaPreview = "";
       }
       const anchor = params.get("anchor");
       if (anchor) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ block: "center" }), 600);
@@ -159,7 +166,7 @@
     padding: 0 4px;
     border-radius: 999px;
     background: var(--bad);
-    color: #fff;
+    color: var(--on-bad);
     font-size: 10.5px;
     font-weight: 700;
     line-height: 16px;

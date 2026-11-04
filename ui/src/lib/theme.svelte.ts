@@ -18,7 +18,11 @@ export interface ThemePref {
   source: ThemeSource;
   /** source 为 custom 时使用 */
   seed: string;
+  /** 色调强度 0–2：0 接近中性灰，1 为默认，2 最浓 */
+  tint: number;
 }
+
+export const TINT_DEFAULT = 1;
 
 const KEY = "vertexswitch.theme";
 /** 上次读到的系统强调色：首帧直接用它，避免先画成后备色再跳变 */
@@ -42,12 +46,15 @@ export function loadPref(): ThemePref {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw);
-      if ((p.source === "system" || p.source === "custom") && /^#[0-9a-f]{6}$/i.test(p.seed)) return p;
+      if ((p.source === "system" || p.source === "custom") && /^#[0-9a-f]{6}$/i.test(p.seed)) {
+        const tint = typeof p.tint === "number" && p.tint >= 0 && p.tint <= 2 ? p.tint : TINT_DEFAULT;
+        return { source: p.source, seed: p.seed, tint };
+      }
     }
   } catch {
     // 存储不可用时用默认值
   }
-  return { source: "system", seed: FALLBACK_SEED };
+  return { source: "system", seed: FALLBACK_SEED, tint: TINT_DEFAULT };
 }
 
 function savePref(pref: ThemePref) {
@@ -112,6 +119,12 @@ function resolve() {
   theme.seed =
     theme.pref.source === "system" ? (theme.systemAccent ?? FALLBACK_SEED) : theme.pref.seed;
   applySeed(theme.seed);
+  document.documentElement.style.setProperty("--tint", String(theme.pref.tint));
+}
+
+/** 只改色调强度，保留颜色来源 */
+export function setTint(tint: number) {
+  setThemePref({ ...theme.pref, tint });
 }
 
 export function setThemePref(pref: ThemePref) {
@@ -139,6 +152,8 @@ async function refreshSystemAccent() {
 
 /** 启动时调用；窗口重新获得焦点时重读系统强调色（用户可能刚在 Windows 设置里改过）。 */
 export function startTheme() {
+  // 桌面程序在 Windows 11 上启用了 Mica：底色与导航栏改为半透明
+  if ((window as { __VS_MICA__?: boolean }).__VS_MICA__) document.documentElement.dataset.mica = "";
   resolve();
   void refreshSystemAccent();
   window.addEventListener("focus", () => void refreshSystemAccent());

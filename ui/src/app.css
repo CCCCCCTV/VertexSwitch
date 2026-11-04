@@ -5,19 +5,21 @@
 :root {
   --seed-h: 262;
   --seed-c: 0.14;
+  /* 色调强度（设置 → 外观的滑块，0–2）：只作用于底色、表面、描边 */
+  --tint: 1;
 
   --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   --font-display: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   --mono: "Cascadia Mono", "Consolas", ui-monospace, monospace;
 
   /* 表面：浅色，带一点种子色调 */
-  --bg: oklch(0.966 calc(var(--seed-c) * 0.26) var(--seed-h));
-  --rail: oklch(0.945 calc(var(--seed-c) * 0.34) var(--seed-h));
-  --surface: oklch(0.993 calc(var(--seed-c) * 0.08) var(--seed-h));
-  --surface-2: oklch(0.952 calc(var(--seed-c) * 0.28) var(--seed-h));
-  --surface-3: oklch(0.92 calc(var(--seed-c) * 0.36) var(--seed-h));
-  --border: oklch(0.89 calc(var(--seed-c) * 0.22) var(--seed-h));
-  --border-strong: oklch(0.8 calc(var(--seed-c) * 0.18) var(--seed-h));
+  --bg: oklch(0.966 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h));
+  --rail: oklch(0.945 calc(var(--seed-c) * 0.34 * var(--tint)) var(--seed-h));
+  --surface: oklch(0.993 calc(var(--seed-c) * 0.08 * var(--tint)) var(--seed-h));
+  --surface-2: oklch(0.952 calc(var(--seed-c) * 0.28 * var(--tint)) var(--seed-h));
+  --surface-3: oklch(0.92 calc(var(--seed-c) * 0.36 * var(--tint)) var(--seed-h));
+  --border: oklch(0.89 calc(var(--seed-c) * 0.22 * var(--tint)) var(--seed-h));
+  --border-strong: oklch(0.8 calc(var(--seed-c) * 0.18 * var(--tint)) var(--seed-h));
 
   /* 文字：同色相，低彩度 */
   --text: oklch(0.24 calc(var(--seed-c) * 0.12) var(--seed-h));
@@ -40,6 +42,9 @@
   --warn-soft: oklch(0.95 0.055 85);
   --bad: oklch(0.53 0.19 27);
   --bad-soft: oklch(0.94 0.04 25);
+  --on-bad: oklch(0.99 0.005 25);
+  /* 浮起的小控件（跳到最新、选中的标签）；板块本身不加阴影 */
+  --shadow: 0 1px 2px oklch(0.2 calc(var(--seed-c) * 0.3) var(--seed-h) / 0.14);
 
   /* 时间线系列：成功用低彩度的种子色，避免与固定的状态色（红 / 琥珀）混淆 */
   --series-ok: oklch(0.72 calc(var(--seed-c) * 0.32) var(--seed-h));
@@ -57,13 +62,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: oklch(0.17 calc(var(--seed-c) * 0.2) var(--seed-h));
-    --rail: oklch(0.195 calc(var(--seed-c) * 0.26) var(--seed-h));
-    --surface: oklch(0.21 calc(var(--seed-c) * 0.2) var(--seed-h));
-    --surface-2: oklch(0.245 calc(var(--seed-c) * 0.16) var(--seed-h));
-    --surface-3: oklch(0.29 calc(var(--seed-c) * 0.2) var(--seed-h));
-    --border: oklch(0.3 calc(var(--seed-c) * 0.14) var(--seed-h));
-    --border-strong: oklch(0.4 calc(var(--seed-c) * 0.18) var(--seed-h));
+    --bg: oklch(0.17 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h));
+    --rail: oklch(0.195 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h));
+    --surface: oklch(0.21 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h));
+    --surface-2: oklch(0.245 calc(var(--seed-c) * 0.16 * var(--tint)) var(--seed-h));
+    --surface-3: oklch(0.29 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h));
+    --border: oklch(0.3 calc(var(--seed-c) * 0.14 * var(--tint)) var(--seed-h));
+    --border-strong: oklch(0.4 calc(var(--seed-c) * 0.18 * var(--tint)) var(--seed-h));
 
     --text: oklch(0.94 calc(var(--seed-c) * 0.06) var(--seed-h));
     --text-2: oklch(0.76 calc(var(--seed-c) * 0.1) var(--seed-h));
@@ -82,10 +87,36 @@
     --warn-soft: oklch(0.32 0.06 75);
     --bad: oklch(0.74 0.15 25);
     --bad-soft: oklch(0.32 0.07 25);
+    --on-bad: oklch(0.2 0.04 25);
+    --shadow: 0 1px 2px oklch(0 0 0 / 0.45);
 
     --series-ok: oklch(0.5 calc(var(--seed-c) * 0.3) var(--seed-h));
     color-scheme: dark;
   }
+}
+
+/*
+ * Mica（Windows 11）：窗口本身是系统的半透明材质，只把页面底色与导航栏改为半透明，
+ * 面板保持不透明以保证文字对比度。浏览器预览用一张模拟壁纸的渐变代替。
+ */
+:root[data-mica] {
+  --bg: oklch(0.966 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.55);
+  --rail: oklch(0.945 calc(var(--seed-c) * 0.34 * var(--tint)) var(--seed-h) / 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-mica] {
+    --bg: oklch(0.17 calc(var(--seed-c) * 0.2 * var(--tint)) var(--seed-h) / 0.55);
+    --rail: oklch(0.195 calc(var(--seed-c) * 0.26 * var(--tint)) var(--seed-h) / 0.35);
+  }
+}
+
+:root[data-mica] {
+  background: transparent;
+}
+
+:root[data-mica-preview] {
+  background: linear-gradient(135deg, oklch(0.7 0.12 250), oklch(0.75 0.1 330) 55%, oklch(0.82 0.09 60));
 }
 
 * {

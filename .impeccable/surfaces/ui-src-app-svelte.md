@@ -5,6 +5,13 @@ primary_target: "ui/src/App.svelte"
 related_targets: ["ui/src/pages/Overview.svelte","ui/src/pages/Requests.svelte","ui/src/pages/Logs.svelte","ui/src/pages/Models.svelte","ui/src/pages/Settings.svelte"]
 ---
 
+---
+version: 1
+slug: "ui-src-app-svelte"
+primary_target: "ui/src/App.svelte"
+related_targets: ["ui/src/pages/Overview.svelte","ui/src/pages/Requests.svelte","ui/src/pages/Logs.svelte","ui/src/pages/Models.svelte","ui/src/pages/Settings.svelte"]
+---
+
 # Surface brief：VertexSwitch 管理界面（概览 / 请求 / 日志 / 模型 / 设置）
 
 Scope：桌面程序主窗口的全部页面。Mode：Operate。
@@ -17,7 +24,7 @@ Direction 来源：用户在方向轮里否掉了掷出的方向，选择“Wind
 
 THESIS：一个跟着系统强调色变色的 Windows 控制台——整个界面的色调由一个种子色生成（默认取 Windows 强调色），概览是大小不一的功能板块；拒绝“灰底加一个蓝色强调色、整齐等大卡片”的类别默认。
 
-OWN-WORLD：OKLCH 色调体系：底色、表面、描边、导航选中、主按钮全部由种子色的色相生成（表面低彩度 0.006–0.02，主色 0.12–0.16），浅色 / 深色各一套；状态色（失败红、降级琥珀、成功绿）固定不随种子变。圆角 12px 板块、8px 控件、1px 描边无阴影堆叠；Segoe UI Variable + 微软雅黑，数字一律等宽表格数字。导航栏用药丸形选中指示。
+OWN-WORLD：OKLCH 色调体系：底色、表面、描边、导航选中、主按钮全部由种子色的色相生成（表面彩度由用户可调的“色调强度”决定：0 为中性灰，默认 1 时底色约 0.036、导航栏约 0.048，最高 2；用户 2026-11-04 明确选择了可调而非固定的低彩度；主色 0.12–0.16），浅色 / 深色各一套；Windows 11 上窗口为 Mica 材质，底色与导航栏半透明、面板不透明（用户 2026-11-04 选择）；状态色（失败红、降级琥珀、成功绿）固定不随种子变。圆角 12px 板块、8px 控件、1px 描边无阴影堆叠；Segoe UI Variable + 微软雅黑，数字一律等宽表格数字。导航栏用药丸形选中指示。
 
 STORY：用户一眼看到服务、认证、当前档位是否正常；在档位板块里直接切换；看时间线确认切换生效、有没有失败和降级；需要细节时去请求 / 日志页。
 

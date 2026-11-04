@@ -91,6 +91,7 @@ fn main() {
             // 主窗口在这里创建（配置里 create: false），以便在页面加载前注入系统强调色，
             // 界面第一帧就用正确的色调，不会先画成后备色再跳变
             let accent = commands::system_accent().unwrap_or_default();
+            let mica = commands::supports_mica();
             let window_config = app
                 .config()
                 .app
@@ -98,9 +99,19 @@ fn main() {
                 .first()
                 .cloned()
                 .expect("tauri.conf.json 里定义了主窗口");
-            tauri::WebviewWindowBuilder::from_config(&handle, &window_config)?
-                .initialization_script(format!("window.__VS_ACCENT__ = {accent:?};"))
-                .build()?;
+            let mut builder = tauri::WebviewWindowBuilder::from_config(&handle, &window_config)?
+                .initialization_script(format!(
+                    "window.__VS_ACCENT__ = {accent:?}; window.__VS_MICA__ = {mica};"
+                ));
+            // Windows 11：透明窗口 + Mica，界面的底色与导航栏改为半透明
+            if mica {
+                builder = builder.transparent(true).effects(
+                    tauri::window::EffectsBuilder::new()
+                        .effect(tauri::window::Effect::Mica)
+                        .build(),
+                );
+            }
+            builder.build()?;
             tray::create(&handle)?;
             forward(handle.clone(), "log", logs.subscribe());
             forward(

@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api, errorText } from "../lib/api";
   import { refreshStatus } from "../lib/live.svelte";
-  import { PRESETS, setThemePref, theme } from "../lib/theme.svelte";
+  import { PRESETS, TINT_DEFAULT, setThemePref, setTint, theme } from "../lib/theme.svelte";
   import type { AppInfo, Settings } from "../lib/types";
 
   let original = $state<Settings | null>(null);
@@ -256,7 +256,7 @@
           aria-checked={theme.pref.source === "system"}
           class="seed system"
           class:on={theme.pref.source === "system"}
-          onclick={() => setThemePref({ source: "system", seed: theme.pref.seed })}
+          onclick={() => setThemePref({ ...theme.pref, source: "system" })}
         >
           <span class="swatch" style:background={theme.systemAccent ?? "var(--accent)"}></span>
           跟随 Windows 强调色
@@ -269,7 +269,7 @@
             title={p.label}
             class="seed"
             class:on={theme.pref.source === "custom" && theme.pref.seed.toLowerCase() === p.seed.toLowerCase()}
-            onclick={() => setThemePref({ source: "custom", seed: p.seed })}
+            onclick={() => setThemePref({ ...theme.pref, source: "custom", seed: p.seed })}
           >
             <span class="swatch" style:background={p.seed}></span>
           </button>
@@ -278,13 +278,28 @@
           <input
             type="color"
             value={theme.seed}
-            oninput={(e) => setThemePref({ source: "custom", seed: e.currentTarget.value })}
+            oninput={(e) => setThemePref({ ...theme.pref, source: "custom", seed: e.currentTarget.value })}
             aria-label="自定义主题色"
           />
           自定义
         </label>
       </div>
-      <p class="faint small">整个界面的色调都由这个颜色生成；浅色 / 深色跟随系统设置。</p>
+      <div class="tint">
+        <label for="tint">色调强度</label>
+        <span class="faint small">中性</span>
+        <input
+          id="tint"
+          type="range"
+          min="0"
+          max="2"
+          step="0.05"
+          value={theme.pref.tint}
+          oninput={(e) => setTint(Number(e.currentTarget.value))}
+        />
+        <span class="faint small">浓</span>
+        <button class="ghost" onclick={() => setTint(TINT_DEFAULT)} disabled={theme.pref.tint === TINT_DEFAULT}>恢复默认</button>
+      </div>
+      <p class="faint small">整个界面的色调都由这个颜色生成，强度只影响底色和面板；浅色 / 深色跟随系统设置。</p>
     </section>
 
     <section class="panel">
@@ -330,6 +345,11 @@
     padding: 22px 28px 12px;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
+  }
+
+  /* Mica 下底色半透明：吸顶栏加模糊，滚过的内容不会透出来 */
+  :global(:root[data-mica]) header {
+    backdrop-filter: blur(24px) saturate(1.2);
   }
 
   h1 {
@@ -431,15 +451,21 @@
     font-size: 15px;
   }
 
+  /* 用描边画的折叠箭头，不用字符图标 */
   details summary::before {
-    content: "▸";
+    content: "";
     display: inline-block;
-    width: 16px;
-    color: var(--text-3);
+    width: 6px;
+    height: 6px;
+    margin: 0 10px 2px 2px;
+    border: solid var(--text-3);
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(-45deg);
+    transition: transform 0.18s cubic-bezier(0.2, 0, 0, 1);
   }
 
   details[open] summary::before {
-    content: "▾";
+    transform: rotate(45deg);
   }
 
   .small {
@@ -485,6 +511,25 @@
     background: var(--surface);
     cursor: pointer;
     font-weight: 500;
+  }
+
+  .tint {
+    display: grid;
+    grid-template-columns: auto auto minmax(160px, 320px) auto auto;
+    justify-content: start;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+
+  .tint label {
+    font-weight: 500;
+    margin-right: 6px;
+  }
+
+  .tint input[type="range"] {
+    accent-color: var(--accent);
+    width: 100%;
   }
 
   .seed.custom input {

@@ -171,3 +171,21 @@ pub fn system_accent() -> Option<String> {
 pub fn system_accent() -> Option<String> {
     None
 }
+
+/// Windows 11（内部版本 ≥ 22000）才有 Mica；其他系统返回 false，窗口保持不透明。
+#[cfg(windows)]
+pub fn supports_mica() -> bool {
+    use winreg::RegKey;
+    use winreg::enums::HKEY_LOCAL_MACHINE;
+    RegKey::predef(HKEY_LOCAL_MACHINE)
+        .open_subkey(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+        .and_then(|k| k.get_value::<String, _>("CurrentBuildNumber"))
+        .ok()
+        .and_then(|b| b.parse::<u32>().ok())
+        .is_some_and(|build| build >= 22000)
+}
+
+#[cfg(not(windows))]
+pub fn supports_mica() -> bool {
+    false
+}
