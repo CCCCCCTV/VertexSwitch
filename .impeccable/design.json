@@ -733,7 +733,7 @@
       "kind": "chip",
       "refersTo": "pill-ok",
       "description": "页面标题旁的服务状态；ok / warn / bad / accent 变体。",
-      "html": "<span class=\"ds-pill ds-pill-ok\"><span class=\"ds-dot\"></span>运行中 127.0.0.1:8788</span> <span class=\"ds-pill\">已运行 3 小时</span> <span class=\"ds-pill ds-pill-bad\">Google 认证失败</span>",
+      "html": "<span class=\"ds-pill ds-pill-ok\"><span class=\"ds-dot\"></span>运行中 127.0.0.1:8787</span> <span class=\"ds-pill\">已运行 3 小时</span> <span class=\"ds-pill ds-pill-bad\">Google 认证失败</span>",
       "css": ".ds-pill{display:inline-flex;align-items:center;gap:5px;height:22px;border-radius:999px;padding:0 9px;font:600 12px var(--font);white-space:nowrap;background:var(--surface-2);color:var(--text-2)}.ds-pill-ok{background:var(--ok-soft);color:var(--ok)}.ds-pill-bad{background:var(--bad-soft);color:var(--bad)}.ds-dot{width:8px;height:8px;border-radius:50%;background:currentColor}"
     },
     {

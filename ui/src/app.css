@@ -129,8 +129,8 @@
 
 /*
  * 液态玻璃（设置 → 外观）：侧边栏底座、板块和页头的状态胶囊是玻璃，透出并折射本软件自己的背景
- * （底色、实时取色的颜色场、背景图片）。板块与侧边栏先按各自尺寸做边缘折射（--glass-filter，见 lib/glass.ts），
- * 再轻模糊、提饱和；玻璃浓淡跟着背景亮度走（--glass-lum）：浅色主题下背景越暗玻璃越浓，深色主题反过来，字始终看得清。
+ * （底色、实时取色的颜色场、背景图片）。背后有颜色场或背景图片时，板块与侧边栏先按各自尺寸做边缘折射
+ * （--glass-filter，见 lib/glass.ts）再轻模糊；提饱和、提亮始终都做；玻璃浓淡跟着背景亮度走（--glass-lum）：浅色主题下背景越暗玻璃越浓，深色主题反过来，字始终看得清。
  */
 :root[data-glass] {
   --glass-lum: 0.5;
@@ -155,13 +155,22 @@
   position: relative;
   background: var(--glass-fill);
   border-color: transparent;
-  backdrop-filter: var(--glass-filter, blur(0px)) blur(6px) saturate(1.8) brightness(1.04);
+  /*
+   * 背后只有均匀的底色时，折射和模糊看不出区别，却要在滚动的每一帧重算（240Hz 屏幕上从满帧掉到约 170 帧）；
+   * 这时只提饱和、提亮，玻璃的浓淡由它们决定，几乎不花时间。背后有画面时的完整滤镜见下一条。
+   */
+  backdrop-filter: saturate(1.8) brightness(1.04);
   box-shadow:
     inset 0 1px 0 0 var(--glass-rim),
     inset 1px 0 0 0 color-mix(in oklch, var(--glass-rim) 45%, transparent),
     inset 0 -1px 0 0 color-mix(in oklch, var(--glass-rim) 25%, transparent),
     inset 0 0 0 1px color-mix(in oklch, var(--glass-rim) 30%, transparent),
     0 12px 32px -14px var(--glass-shade);
+}
+
+/* 背后有实时取色的颜色场或背景图片时，才做边缘折射和模糊 */
+:root[data-glass]:is([data-field], [data-bg-image]) :is(.panel, .glass) {
+  backdrop-filter: var(--glass-filter, blur(0px)) blur(6px) saturate(1.8) brightness(1.04);
 }
 
 /* 高光：左上一抹斜光，右下一点反光；画在玻璃底色之上、内容之下 */

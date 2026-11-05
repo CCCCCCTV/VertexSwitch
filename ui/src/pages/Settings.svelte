@@ -54,6 +54,34 @@
   let autostart = $state<boolean | null>(null);
   let systemMessage = $state<{ tone: "ok" | "bad"; text: string } | null>(null);
 
+  // 繁忙重试的等待算式：交给核心解析，显示每次大约等几秒；写错时显示原因
+  const WAIT_EXAMPLES = ["2^(n-1)", "5", "min(30, 3*n)"] as const;
+  let waitPreview = $state<number[]>([]);
+  let waitError = $state("");
+  let waitSeq = 0;
+  $effect(() => {
+    const expr = draft?.retry.busy_wait;
+    const count = Math.min(Math.max(Math.trunc(Number(draft?.retry.busy_attempts)) || 1, 1), 10);
+    if (expr === undefined) return;
+    const seq = ++waitSeq;
+    const timer = setTimeout(() => {
+      api.previewBusyWait(expr, count).then(
+        (waits) => {
+          if (seq !== waitSeq) return;
+          waitPreview = waits;
+          waitError = "";
+        },
+        (e) => {
+          if (seq !== waitSeq) return;
+          waitPreview = [];
+          waitError = errorText(e);
+        },
+      );
+    }, 150);
+    return () => clearTimeout(timer);
+  });
+  const seconds = (v: number) => String(v < 10 ? +v.toFixed(2) : Math.round(v));
+
   /** 只包含改动字段的合并补丁（RFC 7396）。数组整体替换。 */
   function diff(a: any, b: any): any {
     const out: any = {};
@@ -264,6 +292,39 @@
         </div>
         <small>{t("settings.apiKeyHint")}</small>
       </label>
+      <div class="two">
+        <label class="check">
+          <input type="checkbox" bind:checked={draft.retry.busy} />
+          <span>{t("settings.busyRetry")}<small>{t("settings.busyRetryHint")}</small></span>
+        </label>
+        <label class="field">
+          <span>{t("settings.busyAttempts")}</span>
+          <input type="number" min="1" max="10" bind:value={draft.retry.busy_attempts} disabled={!draft.retry.busy} />
+          <small>{t("settings.busyAttemptsHint")}</small>
+        </label>
+        <label class="field">
+          <span>{t("settings.busyWait")}</span>
+          <input type="text" class="mono" bind:value={draft.retry.busy_wait} disabled={!draft.retry.busy}
+            spellcheck="false" autocomplete="off" placeholder="2^(n-1)" aria-invalid={waitError ? "true" : undefined}
+          />
+          {#if waitError}
+            <small class="wait-error">{waitError}</small>
+          {:else if waitPreview.length}
+            <small>{t("settings.busyWaitPreview", { list: waitPreview.map(seconds).join(" → ") })}</small>
+          {/if}
+        </label>
+        <div class="field">
+          <span>{t("settings.busyWaitSyntax")}</span>
+          <small>{t("settings.busyWaitHint")}</small>
+          <div class="examples">
+            {#each WAIT_EXAMPLES as example}
+              <button class="example mono" disabled={!draft.retry.busy} title={t(`settings.busyWaitExample.${example}`)}
+                onclick={() => draft && (draft.retry.busy_wait = example)}>{example}</button
+              >
+            {/each}
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="panel">
@@ -605,6 +666,28 @@
   .with-btn {
     display: flex;
     gap: 8px;
+  }
+
+  .wait-error {
+    color: var(--bad);
+  }
+
+  input[aria-invalid="true"] {
+    border-color: var(--bad);
+  }
+
+  /* 等待算式的示例：点一下填进输入框 */
+  .examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 2px;
+  }
+
+  .example {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
   }
 
   .with-btn input {

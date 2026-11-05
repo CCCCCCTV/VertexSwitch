@@ -23,6 +23,7 @@ The proxy core (`crates/vertexswitch-core`) implements:
 - OpenAI Chat Completions: the Gemini compatible endpoint, MaaS open models, local Ollama, and OpenAI→Claude translation (including tool calls and streaming)
 - Model lists: `/v1/models` (Anthropic / OpenAI format) and `/v1beta/models` (Gemini format)
 - Admin API `/admin/api/*`: status, config read/write (applied immediately), model table, logs and request records (with live SSE streams), metrics and test requests; config and model table files reload automatically
+- Automatic retries when upstream is busy (429 resource exhausted / rate limited, 503, Claude's 529 overloaded): up to 3 retries by default, waiting about 1, 2 and 4 s with random jitter and honouring `Retry-After`; under Settings → Proxy server you can turn it off, change the count, and set the wait as a number or a formula of the retry number `n` (e.g. `5`, `min(30, 3*n)`); stops as soon as the client disconnects
 - `/metrics`: Prometheus metrics
 - Desktop app (`src-tauri` + `ui`): stays in the tray (closing the window hides it; the tray menu switches the Gemini tier),
   with Overview / Requests / Logs / Models / Settings pages in Chinese or English; the proxy core runs in the same process
@@ -41,13 +42,13 @@ The app checks GitHub for a newer version after startup and once a day (only the
 
 ## Connect your clients
 
-The proxy listens on `http://127.0.0.1:8788` by default (you can change the port under Settings). The Endpoints card on the Overview page lists these addresses; click one to copy it:
+The proxy listens on `http://127.0.0.1:8787` by default (you can change the port under Settings). The Endpoints card on the Overview page lists these addresses; click one to copy it:
 
 | Protocol | Environment variable | Address | Read by |
 | --- | --- | --- | --- |
-| Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8788` | Claude Code, Anthropic SDK |
-| OpenAI compatible | `OPENAI_BASE_URL` | `http://127.0.0.1:8788/v1` | OpenAI SDK |
-| Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8788` | Gemini CLI, JS SDK (in the Python SDK, set `http_options.base_url` in code) |
+| Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8787` | Claude Code, Anthropic SDK |
+| OpenAI compatible | `OPENAI_BASE_URL` | `http://127.0.0.1:8787/v1` | OpenAI SDK |
+| Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8787` | Gemini CLI, JS SDK (in the Python SDK, set `http_options.base_url` in code) |
 
 When the API key under Settings (`server.api_key`) is empty, the proxy doesn't check client keys; if a client insists on a key, any value works. Once you set an API key, clients must send it as their API key (`Authorization: Bearer`, `x-api-key`, `x-goog-api-key` or the `key` query parameter all work).
 
@@ -67,7 +68,8 @@ npx tauri build               # also builds the installer: target\release\bundle
 ## Run the proxy core from the command line
 
 ```powershell
-cargo run --release -p vertexswitch-core -- --port 8788
+cargo run --release -p vertexswitch-core                 # port from the config file (default 8787)
+cargo run --release -p vertexswitch-core -- --port 8788  # another port while the desktop app is running
 ```
 
 The config file is `%APPDATA%\VertexSwitch\config.toml` (defaults are used when it doesn't exist). Example:
@@ -94,6 +96,11 @@ base_url = "http://127.0.0.1:11434"
 
 [server]
 api_key = ""           # when set, clients must send this key
+
+[retry]
+busy = true            # retry when upstream is busy (429 / 503 / 529)
+busy_attempts = 3      # max retries (1-10)
+busy_wait = "2^(n-1)"  # seconds before retry n: a number or a formula with + - * / ^, brackets, min(), max()
 ```
 
 The model table is built in. To change it, copy `crates/vertexswitch-core/data/models.toml` to
@@ -111,7 +118,7 @@ Only accepts connections from this computer and requires the admin token. The to
 ```powershell
 # First click "Copy" under Settings → System (or run vertexswitch-core admin-token from a source build)
 $h = @{ Authorization = "Bearer " + (Get-Clipboard) }
-$api = "http://127.0.0.1:8788/admin/api"
+$api = "http://127.0.0.1:8787/admin/api"
 
 Invoke-RestMethod "$api/status" -Headers $h
 # Change the tier: applied immediately and written back to the config file

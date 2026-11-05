@@ -109,6 +109,18 @@ pub async fn send_test(host: Host<'_>, model: String) -> CmdResult {
         .map_err(err)
 }
 
+/// 设置页预览繁忙重试的等待：第 1..=count 次重试前各等几秒（未加随机浮动）；算式写错时返回原因。
+#[tauri::command]
+pub fn preview_busy_wait(expr: String, count: u32) -> CmdResult {
+    use vertexswitch_core::transport::MAX_BUSY_RETRIES;
+    use vertexswitch_core::wait_formula::WaitFormula;
+    let formula = WaitFormula::parse(&expr)?;
+    let waits: Vec<f64> = (1..=count.clamp(1, MAX_BUSY_RETRIES))
+        .map(|n| formula.seconds(n))
+        .collect();
+    Ok(json!(waits))
+}
+
 #[tauri::command]
 pub fn get_app_info(host: Host<'_>) -> CmdResult {
     Ok(json!({

@@ -60,7 +60,7 @@
     return "";
   });
 
-  // 运行状况：最近 30 分钟的失败请求与档位降级告警
+  // 运行状况：最近 30 分钟的失败请求、档位降级告警与“上游繁忙、重试后成功”
   const attention = $derived.by(() => {
     const since = Date.now() - 30 * 60_000;
     const items: { ts: number; tone: "bad" | "warn"; title: string; detail: string }[] = [];
@@ -74,10 +74,16 @@
       });
     }
     for (const e of live.logs) {
-      // 降级告警来自核心日志的 kind 字段：请求前改用了 Standard，或上游实际按别的档位处理
+      // 都来自核心日志的 kind 字段：降级是请求前改用了 Standard，或上游实际按别的档位处理；
+      // 繁忙重试只列最终成功的（重试用完仍失败的请求已经在上面作为失败请求列出）
       const kind = e.fields.kind;
-      if (e.ts_ms < since || (kind !== "tier_fallback" && kind !== "tier_mismatch")) continue;
-      items.push({ ts: e.ts_ms, tone: "warn", title: t("overview.downgrade", { model: e.fields.model ?? "" }), detail: e.message });
+      if (e.ts_ms < since) continue;
+      if (kind === "tier_fallback" || kind === "tier_mismatch") {
+        items.push({ ts: e.ts_ms, tone: "warn", title: t("overview.downgrade", { model: e.fields.model ?? "" }), detail: e.message });
+      } else if (kind === "upstream_retry_ok") {
+        const model = e.fields.model ? ` · ${e.fields.model}` : "";
+        items.push({ ts: e.ts_ms, tone: "warn", title: t("overview.retried") + model, detail: e.message });
+      }
     }
     return items.sort((a, b) => b.ts - a.ts).slice(0, 5);
   });

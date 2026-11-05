@@ -174,6 +174,27 @@ async fn config_changes_that_need_restart_or_are_invalid() {
     // 无效修改不影响当前配置
     let (_, current) = json(h.admin(Method::GET, "/admin/api/config")).await;
     assert_eq!(current["server"]["port"], 9999);
+
+    // 繁忙重试的等待算式写错：400 并说明原因；写对则生效
+    let (status, body) = json(
+        h.admin(Method::PATCH, "/admin/api/config")
+            .json(&json!({"retry": {"busy_wait": "3n"}})),
+    )
+    .await;
+    assert_eq!(status, 400, "{body}");
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("retry.busy_wait") && message.contains("3*n"),
+        "{body}"
+    );
+    let (status, _) = json(
+        h.admin(Method::PATCH, "/admin/api/config")
+            .json(&json!({"retry": {"busy_wait": "min(30, 3*n)"}})),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (_, current) = json(h.admin(Method::GET, "/admin/api/config")).await;
+    assert_eq!(current["retry"]["busy_wait"], "min(30, 3*n)");
 }
 
 #[tokio::test]

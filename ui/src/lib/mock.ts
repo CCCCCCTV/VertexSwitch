@@ -13,7 +13,7 @@ import type {
 } from "./types";
 
 const settings: Settings = {
-  server: { host: "127.0.0.1", port: 8788, api_key: "", keep_alive_seconds: 75 },
+  server: { host: "127.0.0.1", port: 8787, api_key: "", keep_alive_seconds: 75 },
   google: {
     credentials_file: "C:\\Users\\me\\keys\\service-account.json",
     project_id: "",
@@ -21,7 +21,14 @@ const settings: Settings = {
     token_refresh_minutes: 50,
   },
   timeouts: { connect: 10, read: 600, stream_idle: 900, write: 60, pool: 10 },
-  retry: { attempts: 2, backoff_seconds: 0.4, quota_hang_seconds: 20 },
+  retry: {
+    attempts: 2,
+    backoff_seconds: 0.4,
+    quota_hang_seconds: 20,
+    busy: true,
+    busy_attempts: 3,
+    busy_wait: "2^(n-1)",
+  },
   claude: { anthropic_version: "vertex-2023-10-16", drop_body_fields: ["context_management"] },
   gemini: {
     region: "",
@@ -119,7 +126,7 @@ let seeded = false;
 function seedLogs() {
   if (seeded) return;
   seeded = true;
-  log("INFO", tr("VertexSwitch 0.1.0 监听 http://127.0.0.1:8788", "VertexSwitch 0.1.0 listening on http://127.0.0.1:8788"));
+  log("INFO", tr("VertexSwitch 0.1.0 监听 http://127.0.0.1:8787", "VertexSwitch 0.1.0 listening on http://127.0.0.1:8787"));
   tokenRefreshed();
   if (emptyPreview) return;
   log(
@@ -130,6 +137,21 @@ function seedLogs() {
     ),
     "vertexswitch_core::frontends::gemini",
     { kind: "tier_mismatch", model: "gemini-3.5-flash" },
+  );
+  log(
+    "WARN",
+    tr(
+      "Vertex AI 返回 429（繁忙），1.1 秒后第 1 次重试（最多 3 次）",
+      "Vertex AI returned 429 (busy); retry 1 of 3 in 1.1s",
+    ),
+    "vertexswitch_core::transport",
+    { kind: "upstream_retry", model: "gemini-3.5-pro", status: "429" },
+  );
+  log(
+    "INFO",
+    tr("Vertex AI 在第 1 次重试后成功", "Vertex AI succeeded on retry 1"),
+    "vertexswitch_core::transport",
+    { kind: "upstream_retry_ok", model: "gemini-3.5-pro", retries: "1" },
   );
 }
 
@@ -210,6 +232,35 @@ export const mockApi: Api = {
     new Promise((r) =>
       setTimeout(() => r({ ok: true, status: 200, latency_ms: 812, reply: `pong（预览：${model}）`, error: null }), 800),
     ),
+  // 预览用的简化版，真实程序由核心解析（规则见 crates/vertexswitch-core/src/wait_formula.rs）
+  previewBusyWait: (expr, count) => {
+    const src = expr
+      .replace(/（/g, "(")
+      .replace(/）/g, ")")
+      .replace(/，/g, ",")
+      .replace(/×/g, "*")
+      .replace(/÷/g, "/")
+      .replace(/＋/g, "+")
+      .replace(/－/g, "-")
+      .replace(/\*\*/g, "^")
+      .toLowerCase();
+    if (!src.trim()) return Promise.reject(tr("等待时间是空的", "The wait time is empty"));
+    if (!/^(?:[\d\s.+\-*/^(),n]|min|max)*$/.test(src))
+      return Promise.reject(tr("有不认识的字符或名字", "Contains characters or names that aren't allowed"));
+    // 两个值之间缺运算符（如 3n、2(n+1)）
+    if (/(\d|n|\))\s*(n|\()|(n|\))\s*\d|\d\s+\d/.test(src.replace(/min|max/g, "f")))
+      return Promise.reject(tr("两个数之间要写运算符，比如 3*n", "Put an operator between values, e.g. 3*n"));
+    try {
+      const f = new Function("n", "min", "max", `return (${src.replace(/\^/g, "**")});`);
+      const waits = Array.from({ length: Math.min(Math.max(count, 1), 10) }, (_, i) =>
+        Math.min(Math.max(Number(f(i + 1, Math.min, Math.max)), 0), 300),
+      );
+      if (waits.some((w) => !Number.isFinite(w))) throw new Error();
+      return delay(waits);
+    } catch {
+      return Promise.reject(tr("等待时间写得不对", "The wait time isn't valid"));
+    }
+  },
   appInfo: () =>
     delay({
       version: "0.1.0",

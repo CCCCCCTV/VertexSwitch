@@ -23,6 +23,7 @@
 - OpenAI Chat Completions：Gemini 兼容接口、MaaS 开放模型、本地 Ollama、OpenAI→Claude 转换（含工具调用与流式）
 - 模型列表：`/v1/models`（Anthropic / OpenAI 格式）、`/v1beta/models`（Gemini 格式）
 - 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
+- 上游繁忙（429 资源耗尽 / 限流、503、Claude 的 529 过载）时自动重试：默认最多 3 次、依次约等 1、2、4 秒，带随机抖动、遵守 `Retry-After`；可在“设置 → 代理服务”关掉、改次数，等待时间可以写成数字或关于第几次重试 `n` 的算式（如 `5`、`min(30, 3*n)`）；客户端断开即停止
 - `/metrics`：Prometheus 指标
 - 桌面程序（`src-tauri` + `ui`）：托盘常驻（关窗口即隐藏，托盘菜单可切换 Gemini 档位）、
   概览 / 请求 / 日志 / 模型 / 设置五个页面（中文 / English），代理核心在同一进程内运行
@@ -41,13 +42,13 @@
 
 ## 接入客户端
 
-代理默认监听 `http://127.0.0.1:8788`（端口可在“设置”里改）。“概览”页的“接入地址”卡片列出了下面这些地址，点一下就能复制：
+代理默认监听 `http://127.0.0.1:8787`（端口可在“设置”里改）。“概览”页的“接入地址”卡片列出了下面这些地址，点一下就能复制：
 
 | 协议 | 环境变量 | 地址 | 谁会读 |
 | --- | --- | --- | --- |
-| Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8788` | Claude Code、Anthropic SDK |
-| OpenAI 兼容 | `OPENAI_BASE_URL` | `http://127.0.0.1:8788/v1` | OpenAI SDK |
-| Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8788` | Gemini CLI、JS SDK（Python SDK 要在代码里设 `http_options.base_url`） |
+| Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8787` | Claude Code、Anthropic SDK |
+| OpenAI 兼容 | `OPENAI_BASE_URL` | `http://127.0.0.1:8787/v1` | OpenAI SDK |
+| Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8787` | Gemini CLI、JS SDK（Python SDK 要在代码里设 `http_options.base_url`） |
 
 “设置”里的 API key（`server.api_key`）留空时，代理不检查客户端的 key；客户端如果必须填 key，随便填一个即可。设置了 API key 后，客户端要把它作为 API key 发送（`Authorization: Bearer`、`x-api-key`、`x-goog-api-key` 或查询参数 `key` 都可以）。
 
@@ -67,7 +68,8 @@ npx tauri build               # 另外生成安装包：target\release\bundle\ns
 ## 命令行运行代理核心
 
 ```powershell
-cargo run --release -p vertexswitch-core -- --port 8788
+cargo run --release -p vertexswitch-core                 # 端口按配置文件（默认 8787）
+cargo run --release -p vertexswitch-core -- --port 8788  # 桌面程序同时在运行时换个端口
 ```
 
 配置文件位于 `%APPDATA%\VertexSwitch\config.toml`（不存在时使用默认值），示例：
@@ -94,6 +96,11 @@ base_url = "http://127.0.0.1:11434"
 
 [server]
 api_key = ""           # 非空时客户端须携带此 key
+
+[retry]
+busy = true            # 上游繁忙（429 / 503 / 529）时自动重试
+busy_attempts = 3      # 最多重试几次（1–10）
+busy_wait = "2^(n-1)"  # 第 n 次重试前等几秒：数字或算式，可用 + - * / ^、括号、min()、max()
 ```
 
 模型表默认内置；要修改，把 `crates/vertexswitch-core/data/models.toml` 复制到
@@ -111,7 +118,7 @@ api_key = ""           # 非空时客户端须携带此 key
 ```powershell
 # 先在界面“设置 → 系统”点“复制”（或用源码构建的 vertexswitch-core admin-token）
 $h = @{ Authorization = "Bearer " + (Get-Clipboard) }
-$api = "http://127.0.0.1:8788/admin/api"
+$api = "http://127.0.0.1:8787/admin/api"
 
 Invoke-RestMethod "$api/status" -Headers $h
 # 改档位：立即生效并写回配置文件

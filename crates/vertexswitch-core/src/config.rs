@@ -102,7 +102,7 @@ impl Default for ServerSettings {
     fn default() -> Self {
         Self {
             host: "127.0.0.1".into(),
-            port: 8788,
+            port: 8787,
             api_key: String::new(),
             keep_alive_seconds: 75,
         }
@@ -168,6 +168,12 @@ pub struct RetrySettings {
     pub backoff_seconds: f64,
     /// 上游挂住超过这个时长后无响应断开，视为配额耗尽，不再重试
     pub quota_hang_seconds: f64,
+    /// 上游繁忙（429 / 503 / 529；500 只重试一次）时自动重试（SPEC §4）
+    pub busy: bool,
+    /// 繁忙重试最多几次（上限见 transport::MAX_BUSY_RETRIES）
+    pub busy_attempts: u32,
+    /// 繁忙重试前等待的秒数：关于 n（第几次重试，从 1 开始）的算式，见 wait_formula
+    pub busy_wait: String,
 }
 
 impl Default for RetrySettings {
@@ -176,6 +182,9 @@ impl Default for RetrySettings {
             attempts: 2,
             backoff_seconds: 0.4,
             quota_hang_seconds: 20.0,
+            busy: true,
+            busy_attempts: 3,
+            busy_wait: crate::wait_formula::DEFAULT.into(),
         }
     }
 }
@@ -308,7 +317,7 @@ impl Settings {
         }
     }
 
-    /// serde 管不到的取值范围：档位名、OpenAI 转发方式。
+    /// serde 管不到的取值范围：档位名、OpenAI 转发方式、繁忙重试的等待算式。
     pub fn validate(&self) -> Result<(), String> {
         let g = &self.gemini;
         let tier_ok = |t: &str| crate::tiers::Tier::parse(t).is_some();
@@ -330,6 +339,12 @@ impl Settings {
                 "gemini.openai_native 只能是 auto / always / never，不是 {:?}",
                 "gemini.openai_native must be auto / always / never, not {:?}",
                 g.openai_native
+            ));
+        }
+        if let Err(e) = crate::wait_formula::WaitFormula::parse(&self.retry.busy_wait) {
+            return Err(tr!(
+                "retry.busy_wait（繁忙重试的等待时间）有误：{e}",
+                "retry.busy_wait (wait before busy retries) is invalid: {e}"
             ));
         }
         Ok(())
@@ -375,7 +390,7 @@ mod tests {
     fn missing_file_gives_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let s = Settings::load(&dir.path().join("nope.toml")).unwrap();
-        assert_eq!(s.server.port, 8788);
+        assert_eq!(s.server.port, 8787);
         assert_eq!(s.google.region, "global");
         assert_eq!(s.gemini.flex_unsupported_models, ["gemini-4-argon"]);
     }
@@ -399,7 +414,7 @@ mod tests {
         let s = Settings::load(&path).unwrap();
         assert_eq!(s.gemini.tier, "flex");
         assert_eq!(s.gemini.flex_server_timeout, 1800);
-        assert_eq!(s.server.port, 8788);
+        assert_eq!(s.server.port, 8787);
     }
 
     #[test]

@@ -49,8 +49,160 @@ fn transport(quota_hang: f64, read: f64, idle: f64) -> Transport {
             attempts: 2,
             backoff_seconds: 0.0,
             quota_hang_seconds: quota_hang,
+            busy_wait: "0".into(),
+            ..RetrySettings::default()
         },
     )
+}
+
+/// 繁忙重试测试用：busy 开关、次数上限，等待为 0。
+fn busy_transport(busy: bool, busy_attempts: u32) -> Transport {
+    Transport::new(
+        TimeoutSettings::default(),
+        RetrySettings {
+            busy,
+            busy_attempts,
+            busy_wait: "0".into(),
+            ..RetrySettings::default()
+        },
+    )
+}
+
+/// 第 n 个连接（从 0 数）收到 `respond(n)` 返回的状态行与附加头，正文是一小段 JSON，随后关闭连接。
+async fn status_server(
+    respond: impl Fn(usize) -> (&'static str, &'static str) + Send + Sync + 'static,
+) -> (String, Arc<AtomicUsize>) {
+    let seen = Arc::new(AtomicUsize::new(0));
+    let respond = Arc::new(respond);
+    raw_server(move |mut socket| {
+        let n = seen.fetch_add(1, Ordering::SeqCst);
+        let (status, extra) = respond(n);
+        async move {
+            let body = r#"{"error":{"code":0}}"#;
+            let head = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n{extra}\r\n",
+                body.len()
+            );
+            let _ = socket.write_all(head.as_bytes()).await;
+            let _ = socket.write_all(body.as_bytes()).await;
+        }
+    })
+    .await
+}
+
+#[tokio::test]
+async fn busy_429_is_retried_until_success() {
+    let (url, count) = status_server(|n| {
+        if n < 2 {
+            ("429 Too Many Requests", "")
+        } else {
+            ("200 OK", "")
+        }
+    })
+    .await;
+    let response = busy_transport(true, 3)
+        .open(&req(&url, false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(count.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
+async fn busy_retries_stop_at_the_limit_and_return_the_last_error() {
+    let (url, count) = status_server(|_| ("503 Service Unavailable", "")).await;
+    let response = busy_transport(true, 3)
+        .open(&req(&url, true))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 503);
+    assert_eq!(count.load(Ordering::SeqCst), 4);
+}
+
+#[tokio::test]
+async fn busy_retry_can_be_turned_off() {
+    let (url, count) = status_server(|_| ("429 Too Many Requests", "")).await;
+    let response = busy_transport(false, 3)
+        .open(&req(&url, false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 429);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn busy_limit_is_capped() {
+    let (url, count) = status_server(|_| ("529 Overloaded", "")).await;
+    let response = busy_transport(true, 1000)
+        .open(&req(&url, false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 529);
+    assert_eq!(count.load(Ordering::SeqCst), 11);
+}
+
+#[tokio::test]
+async fn status_500_is_retried_only_once() {
+    let (url, count) = status_server(|_| ("500 Internal Server Error", "")).await;
+    let response = busy_transport(true, 3)
+        .open(&req(&url, false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 500);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn client_errors_are_not_retried() {
+    for status in [
+        "400 Bad Request",
+        "401 Unauthorized",
+        "403 Forbidden",
+        "404 Not Found",
+    ] {
+        let (url, count) = status_server(move |_| (status, "")).await;
+        let response = busy_transport(true, 3)
+            .open(&req(&url, false))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status().as_u16(),
+            status[..3].parse::<u16>().unwrap()
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 1, "{status}");
+    }
+}
+
+#[tokio::test]
+async fn retry_after_is_honoured_and_long_ones_are_not_waited_for() {
+    let (url, count) = status_server(|n| {
+        if n == 0 {
+            ("429 Too Many Requests", "retry-after: 1\r\n")
+        } else {
+            ("200 OK", "")
+        }
+    })
+    .await;
+    let started = std::time::Instant::now();
+    let response = busy_transport(true, 3)
+        .open(&req(&url, false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert!(
+        started.elapsed() >= Duration::from_millis(950),
+        "{:?}",
+        started.elapsed()
+    );
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+
+    let (url, count) = status_server(|_| ("429 Too Many Requests", "retry-after: 120\r\n")).await;
+    let response = busy_transport(true, 3)
+        .open(&req(&url, false))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 429);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 
 fn req(url: &str, stream: bool) -> UpstreamRequest<'static> {

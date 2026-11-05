@@ -18,6 +18,7 @@ pub mod secrets;
 pub mod tiers;
 pub mod translate;
 pub mod transport;
+pub mod wait_formula;
 
 pub use app::{AppState, SharedState, router, serve, serve_until, start_background};
 

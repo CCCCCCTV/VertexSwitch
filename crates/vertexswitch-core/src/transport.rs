@@ -13,8 +13,65 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use crate::config::{RetrySettings, TimeoutSettings};
 use crate::errors::{ProxyError, ProxyResult};
 use crate::tr;
+use crate::wait_formula::{MAX_WAIT_SECONDS, WaitFormula};
 
 pub const VERTEX: &str = "Vertex AI";
+
+/// 繁忙重试次数的上限（配置写得再大也按这个算）
+pub const MAX_BUSY_RETRIES: u32 = 10;
+/// 日志字段 kind：上游繁忙，即将重试 / 重试后成功（界面“运行状况”按它识别）
+pub const LOG_KIND_RETRY: &str = "upstream_retry";
+pub const LOG_KIND_RETRY_OK: &str = "upstream_retry_ok";
+/// 上游 `Retry-After` 要求等的秒数超过这个值、也超过自己算出的等待时，不重试，直接交给客户端
+const RETRY_AFTER_CAP: f64 = 30.0;
+/// 一次尝试本身超过这么久才返回繁忙时不再重试
+const BUSY_RETRY_MAX_ELAPSED: Duration = Duration::from_secs(60);
+
+/// 值得等一会儿再试的状态码：429 限流 / 资源耗尽、503 暂不可用、529 过载；500 只重试一次。
+fn is_busy(status: u16, retried_500: bool) -> bool {
+    matches!(status, 429 | 503 | 529) || (status == 500 && !retried_500)
+}
+
+/// 第 `retried + 1` 次重试前等多久：按等待算式算出秒数，再乘 0.75 ~ 1.25 的随机系数；
+/// `Retry-After`（秒）更长时按它，但它超过 30 秒且超过算出的秒数时返回 None（不重试）。
+/// 结果不超过 [`MAX_WAIT_SECONDS`]。
+fn busy_wait(formula: &WaitFormula, retried: u32, headers: &HeaderMap) -> Option<Duration> {
+    let wanted = formula.seconds(retried + 1);
+    let mut wait = wanted * jitter();
+    if let Some(after) = headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite() && *v >= 0.0)
+    {
+        if after > RETRY_AFTER_CAP.max(wanted) {
+            return None;
+        }
+        wait = wait.max(after);
+    }
+    Some(Duration::from_secs_f64(wait.min(MAX_WAIT_SECONDS)))
+}
+
+/// 0.75 ~ 1.25 之间的随机系数，让同时被限流的请求错开重试。
+fn jitter() -> f64 {
+    use std::hash::{BuildHasher, Hasher};
+    let x = std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish();
+    0.75 + (x % 10_000) as f64 / 20_000.0
+}
+
+/// 上游地址里的模型名（`.../models/{model}:{action}`），没有时为空。
+fn model_in_url(url: &str) -> String {
+    url.split_once("/models/")
+        .map(|(_, rest)| {
+            rest.split([':', '/', '?'])
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .unwrap_or_default()
+}
 
 /// 一次上游请求。
 pub struct UpstreamRequest<'a> {
@@ -54,6 +111,7 @@ pub struct Transport {
     pub client: reqwest::Client,
     timeouts: TimeoutSettings,
     retry: RetrySettings,
+    busy_wait: WaitFormula,
 }
 
 impl Transport {
@@ -63,10 +121,13 @@ impl Transport {
             .pool_idle_timeout(Duration::from_secs(60))
             .build()
             .expect("HTTP 客户端配置合法");
+        // 配置在载入 / 修改时已校验过；万一不合法就用默认算式
+        let busy_wait = WaitFormula::parse(&retry.busy_wait).unwrap_or_default();
         Self {
             client,
             timeouts,
             retry,
+            busy_wait,
         }
     }
 
@@ -81,8 +142,81 @@ impl Transport {
     }
 
     /// 发出请求并返回已收到响应头、尚未读取正文的响应。
+    ///
+    /// 上游繁忙（429 / 503 / 529，500 只算一次）时按配置等一会儿再发：等待按 `busy_wait` 算式算出
+    /// 并带 ±25% 抖动，上游给了 `Retry-After` 时至少等这么久。还没给客户端发出任何字节，
+    /// 所以对流式请求同样适用。客户端断开时整个请求被丢弃，重试随之停止。
     pub async fn open(&self, req: &UpstreamRequest<'_>) -> ProxyResult<reqwest::Response> {
         let headers = header_map(&req.headers)?;
+        let limit = if self.retry.busy {
+            self.retry.busy_attempts.min(MAX_BUSY_RETRIES)
+        } else {
+            0
+        };
+        let upstream = req.upstream;
+        let model = model_in_url(&req.url);
+        let mut retried = 0;
+        let mut retried_500 = false;
+        loop {
+            let started = Instant::now();
+            let response = self.send(req, &headers).await?;
+            let status = response.status().as_u16();
+            let busy = is_busy(status, retried_500);
+            // 这次尝试本身已经等了很久（如 Flex 排队到超时）时再来一遍只会让客户端白等更久
+            let wait = if busy && retried < limit && started.elapsed() <= BUSY_RETRY_MAX_ELAPSED {
+                busy_wait(&self.busy_wait, retried, response.headers())
+            } else {
+                None
+            };
+            let Some(wait) = wait else {
+                if retried > 0 && response.status().is_success() {
+                    tracing::info!(
+                        kind = LOG_KIND_RETRY_OK,
+                        model = %model,
+                        retries = retried,
+                        "{}",
+                        tr!(
+                            "{upstream} 在第 {retried} 次重试后成功",
+                            "{upstream} succeeded on retry {retried}"
+                        )
+                    );
+                } else if retried > 0 {
+                    tracing::warn!(
+                        model = %model,
+                        "{}",
+                        tr!(
+                            "{upstream} 重试 {retried} 次后仍返回 {status}，交给客户端处理",
+                            "{upstream} still returned {status} after retry {retried}; passing it to the client"
+                        )
+                    );
+                }
+                return Ok(response);
+            };
+            retried += 1;
+            retried_500 |= status == 500;
+            tracing::warn!(
+                kind = LOG_KIND_RETRY,
+                model = %model,
+                status,
+                "{}",
+                tr!(
+                    "{upstream} 返回 {status}（繁忙），{:.1} 秒后第 {retried} 次重试（最多 {limit} 次）",
+                    "{upstream} returned {status} (busy); retry {retried} of {limit} in {:.1}s",
+                    wait.as_secs_f64()
+                )
+            );
+            // 读掉错误正文好让连接复用；读不完也无所谓
+            let _ = tokio::time::timeout(Duration::from_secs(5), response.bytes()).await;
+            tokio::time::sleep(wait).await;
+        }
+    }
+
+    /// 发一次请求拿到响应头；连接层出错且还没收到任何响应时按 `attempts` 重试。
+    async fn send(
+        &self,
+        req: &UpstreamRequest<'_>,
+        headers: &HeaderMap,
+    ) -> ProxyResult<reqwest::Response> {
         let wait = self.header_timeout(req);
         let attempts = self.retry.attempts + 1;
         let upstream = req.upstream;
@@ -250,4 +384,89 @@ fn describe(error: &reqwest::Error) -> String {
         source = inner.source();
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn retry_after(value: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(
+            reqwest::header::RETRY_AFTER,
+            HeaderValue::from_str(value).unwrap(),
+        );
+        h
+    }
+
+    #[test]
+    fn busy_statuses() {
+        for status in [429, 503, 529] {
+            assert!(is_busy(status, false) && is_busy(status, true), "{status}");
+        }
+        assert!(is_busy(500, false));
+        assert!(!is_busy(500, true));
+        for status in [200, 400, 401, 403, 404, 413, 502, 504] {
+            assert!(!is_busy(status, false), "{status}");
+        }
+    }
+
+    fn formula(text: &str) -> WaitFormula {
+        WaitFormula::parse(text).unwrap()
+    }
+
+    #[test]
+    fn wait_follows_the_formula_with_jitter() {
+        let none = HeaderMap::new();
+        let default = WaitFormula::default();
+        for _ in 0..50 {
+            let first = busy_wait(&default, 0, &none).unwrap().as_secs_f64();
+            assert!((0.75..=1.25).contains(&first), "{first}");
+            let third = busy_wait(&default, 2, &none).unwrap().as_secs_f64();
+            assert!((3.0..=5.0).contains(&third), "{third}");
+            let fixed = busy_wait(&formula("5"), 3, &none).unwrap().as_secs_f64();
+            assert!((3.75..=6.25).contains(&fixed), "{fixed}");
+            let huge = busy_wait(&formula("1000"), 0, &none).unwrap().as_secs_f64();
+            assert!(huge <= MAX_WAIT_SECONDS, "{huge}");
+        }
+        assert_eq!(busy_wait(&formula("0"), 3, &none), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn retry_after_sets_a_floor_or_skips_the_retry() {
+        let zero = formula("0");
+        assert_eq!(
+            busy_wait(&zero, 0, &retry_after("7")),
+            Some(Duration::from_secs(7))
+        );
+        assert_eq!(busy_wait(&zero, 0, &retry_after("120")), None);
+        // 自己本来就打算等很久时，上游要求的长等待也接受
+        let wait = busy_wait(&formula("200"), 0, &retry_after("120")).unwrap();
+        assert!(wait >= Duration::from_secs(150), "{wait:?}");
+        // HTTP 日期格式不认，按自己的算式
+        let date = retry_after("Wed, 21 Oct 2026 07:28:00 GMT");
+        assert_eq!(busy_wait(&zero, 0, &date), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn model_from_upstream_url() {
+        assert_eq!(
+            model_in_url(
+                "https://h/v1/projects/p/locations/global/publishers/google/models/gemini-3.5-flash:streamGenerateContent?alt=sse"
+            ),
+            "gemini-3.5-flash"
+        );
+        assert_eq!(
+            model_in_url(
+                "https://h/v1/projects/p/locations/global/publishers/anthropic/models/claude-x:rawPredict"
+            ),
+            "claude-x"
+        );
+        assert_eq!(
+            model_in_url(
+                "https://h/v1beta1/projects/p/locations/global/endpoints/openapi/chat/completions"
+            ),
+            ""
+        );
+    }
 }

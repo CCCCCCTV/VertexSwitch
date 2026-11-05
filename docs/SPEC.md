@@ -11,7 +11,7 @@
 
 | 段 | 键 | 默认 | 说明 |
 | --- | --- | --- | --- |
-| server | host / port | `127.0.0.1` / `8788` | 开发期用 8788（旧代理占用 8787） |
+| server | host / port | `127.0.0.1` / `8787` | 0.1.1 及以前默认 8788；配置文件里写了端口的（在界面里保存过设置就会写上）不受影响 |
 | server | api_key | `""` | 非空时除 `/health` 外都要鉴权 |
 | server | keep_alive_seconds | 75 | 服务端 keep-alive，避免和客户端连接池竞争（Python/uvicorn 需要；Rust 版 hyper 默认不主动关闭空闲连接，该项暂不使用） |
 | google | credentials_file | `""` | 为空时退回 `GOOGLE_APPLICATION_CREDENTIALS` |
@@ -19,7 +19,8 @@
 | google | region | `global` | Claude 默认区域，也是其他后端的兜底区域 |
 | google | token_refresh_minutes | 50 | |
 | timeouts | connect / read / stream_idle / write / pool | 10 / 600 / 900 / 60 / 10 秒 | read=非流式整体等待；stream_idle=流式两段数据间最长空闲 |
-| retry | attempts / backoff_seconds / quota_hang_seconds | 2 / 0.4 / 20 | 见 §4 |
+| retry | attempts / backoff_seconds / quota_hang_seconds | 2 / 0.4 / 20 | 连接错误重试，见 §4 |
+| retry | busy / busy_attempts / busy_wait | `true` / 3 / `"2^(n-1)"` | 上游繁忙重试，见 §4；界面“设置 → 代理服务”可开关、改次数（1–10，核心按最多 10 次算）和等待算式 |
 | claude | anthropic_version | `vertex-2023-10-16` | |
 | claude | drop_body_fields | `["context_management"]` | 转发前删掉的顶层字段；Vertex 是否仍拒绝 context_management **未核实** |
 | gemini | region | `""` | 为空沿用 google.region（Flex 只支持 global，所以常需单独设） |
@@ -75,6 +76,7 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 - ReadTimeout（等响应头超时）→ 504，不重试。WriteTimeout → 504。
 - 重试用尽 → 502 "无法连接 {上游名}（已重试 N 次）"。
 - 读正文时出错：ReadTimeout → 504；其他 → 502。
+- **上游繁忙重试**（`retry.busy`，默认开，最多 `busy_attempts` = 3 次，上限 10）：响应头的状态码是 429（限流 / 资源耗尽）、503、529（Claude 过载）时，读掉错误正文、等一会儿再发同一个请求；500 只重试一次；400 / 401 / 403 / 404 等不重试。等待 = `busy_wait` 算式对第 n 次重试（从 1 开始）算出的秒数 × 0.75~1.25 的随机系数，单次不超过 300 秒；上游给了 `Retry-After`（秒）时至少等这么久，它超过 30 秒且超过算出的秒数时不重试。算式（`wait_formula.rs`）：数字、`n`、`+ - * / ^`（`^` 也可写 `**`，右结合，比负号优先：`-2^2` = -4）、括号、`min(…)`、`max(…)`，全角括号 / 逗号 / `× ÷ ＋ －` 当作半角；一个数字就是每次等这么久；结果为负按 0 算、超过 300 按 300 算；第 1~10 次中任何一次算不出有限数（如 `1/(n-1)`）即无效。载入配置与修改配置时校验，无效则拒绝（400，说明哪里写错）；设置页通过 `preview_busy_wait` 命令用同一个解析器实时预览每次的秒数。这次尝试本身超过 60 秒才返回繁忙（如 Flex 排队到超时）时不再重试。还没给客户端发出任何字节，所以流式请求同样适用；客户端断开时请求被丢弃，重试随之停止。重试用完仍繁忙时，把最后一次的上游响应原样交给客户端。每次重试记一条 WARN 日志（`kind = upstream_retry`，带 `model`、`status`），重试后成功记一条 INFO（`kind = upstream_retry_ok`，带 `model`、`retries`）。`model` 取自上游地址里的 `/models/{m}:`，OpenAI 兼容接口等地址里没有模型时为空。
 - 状态码约定：504 = 等上游超时；502 = 上游连接/响应坏了。
 
 ## 5. 错误格式（按入口协议）
@@ -203,7 +205,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 
 - 命令行模式输出 UTF-8（实测：Windows 重定向时默认 ANSI 代码页导致中文乱码）
 - 档位降级、trafficType 不符、配额耗尽、上游断流 → WARNING
-- 管理接口的日志条目：`seq, ts_ms, level, target, message, fields`；`fields` 是事件附带的字段（字符串表）。档位告警带 `model`（上游 ID）与 `kind`：`tier_fallback`（不支持该档位，请求前改用 Standard；含 OpenAI 入口 `openai_native = never` 时带不了档位头）或 `tier_mismatch`（trafficType 不符）
+- 管理接口的日志条目：`seq, ts_ms, level, target, message, fields`；`fields` 是事件附带的字段（字符串表）。档位告警带 `model`（上游 ID）与 `kind`：`tier_fallback`（不支持该档位，请求前改用 Standard；含 OpenAI 入口 `openai_native = never` 时带不了档位头）或 `tier_mismatch`（trafficType 不符）；上游繁忙重试的日志见 §4（`upstream_retry` / `upstream_retry_ok`）
 - 日志、代理自己产生的错误信息按界面语言写中文或英文（配置目录的 `language` 文件，`zh` / `en`，由外壳在界面切换语言时写入，启动时读取；没有该文件时用中文）。上游的错误原样透传
 - 桌面程序同时把日志写进配置目录的 `logs\vertexswitch.log`（超过 5 MB 轮换，留一份 `.log.1`），panic 也记录
 - 不记录请求/响应正文（含真实对话）

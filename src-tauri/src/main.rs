@@ -107,6 +107,7 @@ fn main() {
             commands::get_requests,
             commands::get_metrics,
             commands::send_test,
+            commands::preview_busy_wait,
             commands::get_app_info,
             commands::open_config_dir,
             commands::open_log_dir,

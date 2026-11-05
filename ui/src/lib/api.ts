@@ -36,6 +36,8 @@ export interface Api {
   requests(since: number, limit: number): Promise<RequestRecord[]>;
   metrics(): Promise<Metrics>;
   sendTest(model: string): Promise<TestResult>;
+  /** 繁忙重试的等待算式：第 1..count 次重试前各等几秒；算式有误时 reject 原因 */
+  previewBusyWait(expr: string, count: number): Promise<number[]>;
   appInfo(): Promise<AppInfo>;
   openConfigDir(): Promise<void>;
   /** 打开日志文件所在的文件夹 */
@@ -97,6 +99,7 @@ async function tauriApi(): Promise<Api> {
     requests: (since, limit) => invoke("get_requests", { since, limit }),
     metrics: () => invoke("get_metrics"),
     sendTest: (model) => invoke("send_test", { model }),
+    previewBusyWait: (expr, count) => invoke("preview_busy_wait", { expr, count }),
     appInfo: () => invoke("get_app_info"),
     openConfigDir: () => invoke("open_config_dir"),
     openLogDir: () => invoke("open_log_dir"),

@@ -35,7 +35,14 @@ export interface Settings {
     token_refresh_minutes: number;
   };
   timeouts: { connect: number; read: number; stream_idle: number; write: number; pool: number };
-  retry: { attempts: number; backoff_seconds: number; quota_hang_seconds: number };
+  retry: {
+    attempts: number;
+    backoff_seconds: number;
+    quota_hang_seconds: number;
+    busy: boolean;
+    busy_attempts: number;
+    busy_wait: string;
+  };
   claude: { anthropic_version: string; drop_body_fields: string[] };
   gemini: {
     region: string;

@@ -40,6 +40,7 @@ impl Harness {
 pub fn settings() -> Settings {
     let mut s = Settings::default();
     s.retry.backoff_seconds = 0.0;
+    s.retry.busy_wait = "0".into();
     s
 }
 
