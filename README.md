@@ -13,7 +13,7 @@
 
 ## 状态
 
-开发中（见 `docs/HANDOFF.md` 第 8 节里程碑）。行为规格见 `docs/SPEC.md`。
+已发布，安装包在 [Releases](https://github.com/CCCCCCTV/VertexSwitch/releases/latest)，仍在持续更新。行为规格见 `docs/SPEC.md`，开发背景与里程碑见 `docs/HANDOFF.md`。
 
 代理核心（`crates/vertexswitch-core`）已实现：
 
@@ -26,12 +26,11 @@
 - `/metrics`：Prometheus 指标
 - 桌面程序（`src-tauri` + `ui`）：托盘常驻（关窗口即隐藏，托盘菜单可切换 Gemini 档位）、
   概览 / 请求 / 日志 / 模型 / 设置五个页面（中文 / English），代理核心在同一进程内运行
-
 - 安装包（当前用户安装，不需要管理员）、单实例、开机自启（只在托盘运行）
 
 ## 安装
 
-从 GitHub Release 下载 `VertexSwitch_x.y.z_x64-setup.exe` 运行即可，安装到当前用户目录，不需要管理员权限。
+从 [GitHub Releases](https://github.com/CCCCCCTV/VertexSwitch/releases/latest) 下载 `VertexSwitch_x.y.z_x64-setup.exe` 运行即可，安装到当前用户目录，不需要管理员权限。
 卸载时保留配置目录 `%APPDATA%\VertexSwitch`。
 
 每个 Release 附有 `SHA256SUMS.txt`，发布说明里有可直接粘贴的 PowerShell 核对命令（输出 True 即下载的文件完整）。
@@ -39,6 +38,18 @@
 首次启动后在“设置”里选择服务账号密钥文件即可使用。
 
 程序启动后和每天会查一次 GitHub 上有没有新版本（只发送程序名和版本号，可在“设置 → 系统”里关掉）。日志同时写在 `%APPDATA%\VertexSwitch\logs` 里。
+
+## 接入客户端
+
+代理默认监听 `http://127.0.0.1:8788`（端口可在“设置”里改）。“概览”页的“接入地址”卡片列出了下面这些地址，点一下就能复制：
+
+| 协议 | 环境变量 | 地址 | 谁会读 |
+| --- | --- | --- | --- |
+| Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8788` | Claude Code、Anthropic SDK |
+| OpenAI 兼容 | `OPENAI_BASE_URL` | `http://127.0.0.1:8788/v1` | OpenAI SDK |
+| Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8788` | Gemini CLI、JS SDK（Python SDK 要在代码里设 `http_options.base_url`） |
+
+“设置”里的 API key（`server.api_key`）留空时，代理不检查客户端的 key；客户端如果必须填 key，随便填一个即可。设置了 API key 后，客户端要把它作为 API key 发送（`Authorization: Bearer`、`x-api-key`、`x-goog-api-key` 或查询参数 `key` 都可以）。
 
 ## 从源码构建桌面程序
 

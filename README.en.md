@@ -13,7 +13,7 @@ Implemented from scratch based on the official Google Cloud Vertex AI documentat
 
 ## Status
 
-In development (milestones in section 8 of `docs/HANDOFF.md`). The behavior spec is `docs/SPEC.md`.
+Released: installers are on the [Releases](https://github.com/CCCCCCTV/VertexSwitch/releases/latest) page, and the app is still being updated. The behavior spec is `docs/SPEC.md`; background and milestones are in `docs/HANDOFF.md`.
 
 The proxy core (`crates/vertexswitch-core`) implements:
 
@@ -26,12 +26,11 @@ The proxy core (`crates/vertexswitch-core`) implements:
 - `/metrics`: Prometheus metrics
 - Desktop app (`src-tauri` + `ui`): stays in the tray (closing the window hides it; the tray menu switches the Gemini tier),
   with Overview / Requests / Logs / Models / Settings pages in Chinese or English; the proxy core runs in the same process
-
 - Installer (per-user, no admin rights needed), single instance, start at login (tray only)
 
 ## Install
 
-Download `VertexSwitch_x.y.z_x64-setup.exe` from GitHub Releases and run it. It installs into your user profile and doesn't need admin rights.
+Download `VertexSwitch_x.y.z_x64-setup.exe` from [GitHub Releases](https://github.com/CCCCCCTV/VertexSwitch/releases/latest) and run it. It installs into your user profile and doesn't need admin rights.
 Uninstalling keeps the config folder `%APPDATA%\VertexSwitch`.
 
 Every release includes `SHA256SUMS.txt`, and the release notes have a PowerShell command you can paste to verify the download (it prints True when the file is intact).
@@ -39,6 +38,18 @@ Every release includes `SHA256SUMS.txt`, and the release notes have a PowerShell
 After the first launch, pick your service account key file under Settings and you're ready to go.
 
 The app checks GitHub for a newer version after startup and once a day (only the app name and version are sent; turn it off under Settings → System). Logs are also written to `%APPDATA%\VertexSwitch\logs`.
+
+## Connect your clients
+
+The proxy listens on `http://127.0.0.1:8788` by default (you can change the port under Settings). The Endpoints card on the Overview page lists these addresses; click one to copy it:
+
+| Protocol | Environment variable | Address | Read by |
+| --- | --- | --- | --- |
+| Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8788` | Claude Code, Anthropic SDK |
+| OpenAI compatible | `OPENAI_BASE_URL` | `http://127.0.0.1:8788/v1` | OpenAI SDK |
+| Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8788` | Gemini CLI, JS SDK (in the Python SDK, set `http_options.base_url` in code) |
+
+When the API key under Settings (`server.api_key`) is empty, the proxy doesn't check client keys; if a client insists on a key, any value works. Once you set an API key, clients must send it as their API key (`Authorization: Bearer`, `x-api-key`, `x-goog-api-key` or the `key` query parameter all work).
 
 ## Build the desktop app from source
 
