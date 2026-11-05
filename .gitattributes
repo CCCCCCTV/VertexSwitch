@@ -13,6 +13,7 @@
 *.rs text eol=lf
 *.lock text eol=lf
 *.yml text eol=lf
+*.sh text eol=lf
 *.ts text eol=lf
 *.svelte text eol=lf
 *.css text eol=lf
