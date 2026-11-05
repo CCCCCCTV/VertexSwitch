@@ -66,7 +66,7 @@ export const en: Record<MessageKey, string> = {
     "The Gemini region is {region}. Flex only works in global, so requests set to Flex run as Standard.",
   "overview.regionPriority":
     "The Gemini region is {region}. Priority only works in global / us / eu, so requests set to Priority run as Standard.",
-  "overview.attention": "Needs attention",
+  "overview.health": "Health",
   "overview.allRequests": "All requests",
   "overview.clientGone": "Client disconnected early",
   "overview.streamCut": "Stream interrupted",

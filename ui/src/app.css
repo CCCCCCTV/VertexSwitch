@@ -542,6 +542,11 @@ input[type="checkbox"]:checked::after {
   color: var(--text);
 }
 
+/* 标题行挤的时候也不压缩图标，否则标题会比别的卡片往左偏一点 */
+.panel-head svg {
+  flex-shrink: 0;
+}
+
 .panel-head .end {
   margin-left: auto;
 }

@@ -13,6 +13,7 @@
     Check,
     ChevronRight,
     ShieldCheck,
+    HeartPulse,
     X,
   } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
@@ -59,7 +60,7 @@
     return "";
   });
 
-  // 需要注意：最近 30 分钟的失败请求与档位降级告警
+  // 运行状况：最近 30 分钟的失败请求与档位降级告警
   const attention = $derived.by(() => {
     const since = Date.now() - 30 * 60_000;
     const items: { ts: number; tone: "bad" | "warn"; title: string; detail: string }[] = [];
@@ -295,8 +296,11 @@
     </section>
 
     <section class="panel span-4">
+      <!-- 标题固定为中性的“运行状况”；有失败或降级时图标换成告警色三角，平时是脉搏 -->
       <div class="panel-head">
-        <TriangleAlert size={16} /><h2>{t("overview.attention")}</h2>
+        {#if attention.length}<span class="head-warn"><TriangleAlert size={16} /></span>{:else}<HeartPulse
+            size={16}
+          />{/if}<h2>{t("overview.health")}</h2>
         <button class="more end" onclick={() => go("requests")}
           >{t("overview.allRequests")}<ChevronRight size={15} /></button
         >
@@ -360,7 +364,7 @@
       {/if}
     </section>
 
-    <section class="panel span-4">
+    <section class="panel span-4 usage-panel">
       <div class="panel-head"><Gauge size={16} /><h2>{t("overview.usage")}</h2><span class="end faint">{t("overview.thisRun")}</span></div>
       {#if !metrics}
         <div class="empty">{t("common.loading")}</div>
@@ -393,7 +397,8 @@
             </tbody>
           </table>
         {:else}
-          <p class="faint small">{t("overview.usageEmpty")}</p>
+          <!-- 虚线框占住明细表的位置，有数据后表格接上来 -->
+          <div class="usage-empty">{t("overview.usageEmpty")}</div>
         {/if}
       {/if}
     </section>
@@ -589,7 +594,7 @@
     margin-top: -4px;
   }
 
-  /* 需要注意 */
+  /* 运行状况 */
   .issues {
     list-style: none;
     margin: 0;
@@ -709,6 +714,30 @@
 
   .totals {
     margin-bottom: 12px;
+  }
+
+  .head-warn {
+    display: inline-flex;
+    color: var(--warn);
+  }
+
+  /* 用量卡片竖向排列，空状态的占位框撑满剩下的高度，和左边两张卡片一样满 */
+  .usage-panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .usage-empty {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    min-height: 72px;
+    padding: 12px 16px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+    color: var(--text-3);
+    font-size: 12.5px;
+    text-align: center;
   }
 
   /* 接入地址 */

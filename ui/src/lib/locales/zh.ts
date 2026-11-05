@@ -67,7 +67,7 @@ export const zh = {
   "overview.regionFlex": "Gemini 区域是 {region}，Flex 只支持 global，设为 Flex 的请求会按 Standard 处理。",
   "overview.regionPriority":
     "Gemini 区域是 {region}，Priority 只支持 global / us / eu，设为 Priority 的请求会按 Standard 处理。",
-  "overview.attention": "需要注意",
+  "overview.health": "运行状况",
   "overview.allRequests": "全部请求",
   "overview.clientGone": "客户端提前断开",
   "overview.streamCut": "流式响应中断",
