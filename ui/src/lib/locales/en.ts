@@ -263,7 +263,7 @@ export const en: Record<MessageKey, string> = {
   "settings.bgImage": "Background image",
   "settings.changeImage": "Change image",
   "settings.chooseImage": "Choose image",
-  "settings.remove": "Remove",
+  "settings.removeImage": "Remove image",
   "settings.bgImageHint": "The image is copied to the config folder and fills the window background",
   "settings.bgOpacity": "Image opacity",
   "settings.themeNote":

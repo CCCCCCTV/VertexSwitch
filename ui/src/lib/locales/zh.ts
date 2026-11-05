@@ -268,7 +268,7 @@ export const zh = {
   "settings.bgImage": "背景图片",
   "settings.changeImage": "更换图片",
   "settings.chooseImage": "选择图片",
-  "settings.remove": "移除",
+  "settings.removeImage": "删除图片",
   "settings.bgImageHint": "图片会复制到配置目录，铺满窗口背景",
   "settings.bgOpacity": "图片不透明度",
   "settings.themeNote": "整个界面的色调都由这个颜色生成，强度只影响底色和面板；浅色 / 深色跟随系统设置。",

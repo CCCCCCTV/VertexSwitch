@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { Trash2 } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { i18n, setLangPref, t, type LangPref } from "../lib/i18n.svelte";
   import { refreshStatus } from "../lib/live.svelte";
@@ -417,8 +418,8 @@
           {theme.bgImage ? t("settings.changeImage") : t("settings.chooseImage")}
         </button>
         {#if theme.bgImage}
-          <button class="ghost" onclick={() => background(clearBackground)} disabled={bgBusy}
-            >{t("settings.remove")}</button
+          <button onclick={() => background(clearBackground)} disabled={bgBusy}
+            ><Trash2 size={15} />{t("settings.removeImage")}</button
           >
         {/if}
         {#if bgError}<span class="msg bad">{bgError}</span>{:else}<span class="faint small">{t("settings.bgImageHint")}</span>{/if}
@@ -724,11 +725,18 @@
   }
 
   .thumb {
+    flex-shrink: 0;
     width: 48px;
     height: 30px;
     border-radius: 6px;
     border: 1px solid var(--border);
     background: center / cover no-repeat;
+  }
+
+  /* 窗口窄时按钮也不折行、不被压扁 */
+  .backdrop button {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .interval {
