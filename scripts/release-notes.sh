@@ -8,7 +8,7 @@ cd "$1"
 sha256sum -- *-setup.exe | sed 's/ \*/  /' > SHA256SUMS.txt
 
 {
-  echo "Windows 安装包（当前用户安装，不需要管理员权限）。安装包未签名，首次运行时 SmartScreen 可能提示，选择“仍要运行”。"
+  echo "Windows 安装包（当前用户安装，不需要管理员权限）。"
   echo
   echo "### SHA256"
   echo
