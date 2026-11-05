@@ -17,7 +17,7 @@ struct Fixture {
 }
 
 async fn fixture(server: &MockServer) -> Fixture {
-    let private = rsa::RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
+    let private = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).unwrap();
     let private_pem = private.to_pkcs8_pem(LineEnding::LF).unwrap().to_string();
     let public_pem = private
         .to_public_key()

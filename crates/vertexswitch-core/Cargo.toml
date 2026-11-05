@@ -33,8 +33,8 @@ workspace = true
 
 [dev-dependencies]
 form_urlencoded = "1.2.2"
-rand = "0.8"
-rsa = { version = "0.9.10", features = ["pem"] }
+# 测试里生成临时私钥；getrandom 让 rsa 自带的 rand_core 提供系统随机数（OsRng），不必另引 rand
+rsa = { version = "0.9.10", features = ["pem", "getrandom"] }
 tempfile = "3.27.0"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
 wiremock = "0.6.5"

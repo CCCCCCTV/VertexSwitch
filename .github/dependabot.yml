@@ -15,6 +15,10 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    ignore:
+      # svelte-check 目前只支持 TypeScript 5 / 6，等它支持 7 再升
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
