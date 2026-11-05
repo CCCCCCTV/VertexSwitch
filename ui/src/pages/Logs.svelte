@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { api } from "../lib/api";
   import { live } from "../lib/live.svelte";
   import { time } from "../lib/format";
   import { t } from "../lib/i18n.svelte";
@@ -28,10 +29,13 @@
 
 <header>
   <h1>{t("nav.logs")}</h1>
-  <div class="chips" role="radiogroup" aria-label={t("logs.level")}>
-    <button class:on={level === "all"} onclick={() => (level = "all")}>{t("logs.all")}</button>
-    <button class:on={level === "WARN"} onclick={() => (level = "WARN")}>{t("logs.warn")}</button>
-    <button class:on={level === "ERROR"} onclick={() => (level = "ERROR")}>{t("logs.error")}</button>
+  <div class="tools">
+    <button class="link" title={t("logs.openFolderHint")} onclick={() => api.openLogDir()}>{t("logs.openFolder")}</button>
+    <div class="chips" role="radiogroup" aria-label={t("logs.level")}>
+      <button class:on={level === "all"} onclick={() => (level = "all")}>{t("logs.all")}</button>
+      <button class:on={level === "WARN"} onclick={() => (level = "WARN")}>{t("logs.warn")}</button>
+      <button class:on={level === "ERROR"} onclick={() => (level = "ERROR")}>{t("logs.error")}</button>
+    </div>
   </div>
 </header>
 
@@ -60,6 +64,12 @@
 
   h1 {
     font-size: 22px;
+  }
+
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
 
   .chips {

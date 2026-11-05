@@ -5,6 +5,7 @@
   import { i18n, setLangPref, t } from "./lib/i18n.svelte";
   import { live, startLive } from "./lib/live.svelte";
   import { PRESETS, previewBackground, setThemePref, setTint, theme } from "./lib/theme.svelte";
+  import { startUpdateChecks, update } from "./lib/update.svelte";
   import Overview from "./pages/Overview.svelte";
   import Requests from "./pages/Requests.svelte";
   import Logs from "./pages/Logs.svelte";
@@ -82,6 +83,7 @@
       if (anchor) setTimeout(() => document.getElementById(anchor)?.scrollIntoView({ block: "center" }), 600);
     }
     void startLive();
+    startUpdateChecks();
     requestAnimationFrame(() => (gliderReady = true));
   });
 </script>
@@ -107,6 +109,8 @@
             <p.icon size={20} strokeWidth={1.75} />
             {#if p.id === "requests" && failedRecent > 0}
               <span class="badge" aria-label={t("nav.failedBadge", { n: failedRecent })}>{failedRecent}</span>
+            {:else if p.id === "settings" && update.info?.newer}
+              <span class="dot" role="img" aria-label={t("nav.updateBadge")} title={t("nav.updateBadge")}></span>
             {/if}
           </span>
           <span class="label">{t(`nav.${p.id}`)}</span>
@@ -291,6 +295,17 @@
     font-size: 10.5px;
     font-weight: 700;
     line-height: 16px;
+  }
+
+  .dot {
+    position: absolute;
+    top: -1px;
+    right: 9px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--surface);
   }
 
   .preview {

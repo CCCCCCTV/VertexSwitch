@@ -15,6 +15,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 futures-util = "0.3.34"
+# 检查更新（与核心用同一版本，不额外编译）
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tauri = { version = "2", features = ["image-png", "tray-icon"] }
@@ -26,6 +28,11 @@ tokio = { version = "1.54.1", features = ["sync", "time"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 vertexswitch-core = { version = "0.1.0", path = "../crates/vertexswitch-core" }
+
+[dev-dependencies]
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros"] }
+wiremock = "0.6.5"
 
 # 与工作区相同，只是 unsafe 从 forbid 放宽到 deny：实时取色读屏、按缩放取图标帧要直接调 Win32，
 # 只在 backdrop_color::win、app_icon::win、title_bar::win 三个模块里单独允许

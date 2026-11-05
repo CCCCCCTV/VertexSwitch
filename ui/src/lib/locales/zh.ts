@@ -16,6 +16,7 @@ export const zh = {
   "nav.models": "模型",
   "nav.settings": "设置",
   "nav.failedBadge": "最近 10 分钟 {n} 个失败",
+  "nav.updateBadge": "有新版本",
   "nav.preview": "预览",
   "nav.previewTitle": "浏览器预览：示例数据，不连接核心",
 
@@ -130,6 +131,8 @@ export const zh = {
   "logs.error": "仅错误",
   "logs.empty": "暂无日志。",
   "logs.jump": "回到最新 ↓",
+  "logs.openFolder": "打开日志文件夹",
+  "logs.openFolderHint": "日志同时保存在配置目录的 logs 文件夹里，程序关掉后也能查看",
 
   // 模型
   "models.maas": "开放模型（MaaS）",
@@ -278,6 +281,8 @@ export const zh = {
   "settings.autostartHint": "登录 Windows 后在托盘里运行，不弹出窗口；立即生效，不需要点保存",
   "settings.autostartOn": "已开启开机自启（启动后只在托盘运行）",
   "settings.autostartOff": "已关闭开机自启",
+  "settings.autoUpdate": "自动检查更新",
+  "settings.autoUpdateHint": "启动后和每天查一次 GitHub 上的最新版本，只发送程序名和版本号；不会自动下载安装",
   "settings.configFile": "配置文件",
   "settings.openFolder": "打开目录",
   "settings.adminToken": "管理 token",
@@ -285,6 +290,12 @@ export const zh = {
   "settings.copy": "复制",
   "settings.tokenCopied": "管理 token 已复制到剪贴板",
   "settings.version": "版本",
+  "update.check": "检查更新",
+  "update.checking": "正在检查…",
+  "update.latest": "已是最新版本",
+  "update.noRelease": "还没有发布过版本",
+  "update.available": "有新版本 {version}",
+  "update.download": "前往下载",
 
   // 文件选择框
   "dialog.keyFile": "选择服务账号密钥文件",

@@ -1,6 +1,6 @@
 //! 托盘图标与菜单：打开主界面、切换 Gemini 档位、退出。文字跟随界面语言（见 [`vertexswitch_core::i18n`]）。
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
@@ -37,6 +37,8 @@ pub struct TrayMenu {
     tier_menu: Submenu<Wry>,
     quit: MenuItem<Wry>,
     tiers: Vec<(&'static str, CheckMenuItem<Wry>)>,
+    /// 上次写到托盘上的提示文字（含档位）；没变就不再通知系统
+    shown: Mutex<String>,
 }
 
 pub fn show_main(app: &AppHandle) {
@@ -84,6 +86,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         tier_menu,
         quit,
         tiers,
+        shown: Mutex::new(String::new()),
     });
 
     TrayIconBuilder::with_id(TRAY_ID)
@@ -131,7 +134,8 @@ fn set_tier(app: &AppHandle, tier: String) {
             )
         ),
     }
-    sync(app, &host.state);
+    // 点菜单项时系统已自行切换了它的勾选，配置没变也要重新写一遍
+    update(app, &host.state, true);
 }
 
 /// 界面语言变了：菜单文字换成新语言，提示文字也跟着刷新。
@@ -147,22 +151,35 @@ pub fn relabel(app: &AppHandle, state: &SharedState) {
     sync(app, state);
 }
 
-/// 让勾选状态与提示文字跟上当前配置（配置也可能由界面或文件热加载修改）。
+/// 让勾选状态与提示文字跟上当前配置（配置也可能由界面或文件热加载修改）；没变化时什么也不做。
 pub fn sync(app: &AppHandle, state: &SharedState) {
+    update(app, state, false);
+}
+
+fn update(app: &AppHandle, state: &SharedState, force: bool) {
+    let Some(menu) = app.try_state::<TrayMenu>() else {
+        return;
+    };
     let runtime = state.runtime();
     let settings = &runtime.settings;
     let tier = settings.gemini.tier.as_str();
-    if let Some(menu) = app.try_state::<TrayMenu>() {
-        for (id, item) in &menu.tiers {
-            let _ = item.set_checked(*id == tier);
+    let tooltip = format!(
+        "VertexSwitch\n{}:{}\n{}{tier}",
+        settings.server.host,
+        settings.server.port,
+        tr("Gemini 默认档位：", "Gemini default tier: "),
+    );
+    {
+        let mut shown = menu.shown.lock().expect("锁未中毒");
+        if !force && *shown == tooltip {
+            return;
         }
+        shown.clone_from(&tooltip);
+    }
+    for (id, item) in &menu.tiers {
+        let _ = item.set_checked(*id == tier);
     }
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_tooltip(Some(format!(
-            "VertexSwitch\n{}:{}\n{}{tier}",
-            settings.server.host,
-            settings.server.port,
-            tr("Gemini 默认档位：", "Gemini default tier: "),
-        )));
+        let _ = tray.set_tooltip(Some(tooltip));
     }
 }

@@ -123,6 +123,14 @@ export interface TestResult {
   error: { message?: string } | null;
 }
 
+/** 检查更新的结果：latest 为 GitHub 上最新发布的版本（还没有发布过时为 null） */
+export interface UpdateInfo {
+  current: string;
+  latest: string | null;
+  url: string | null;
+  newer: boolean;
+}
+
 export interface AppInfo {
   version: string;
   config_dir: string;

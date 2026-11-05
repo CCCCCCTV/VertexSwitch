@@ -44,7 +44,7 @@ export const LIVE_SCOPES = ["wallpaper", "behind"] as const satisfies readonly L
 
 /** 实时取色的间隔（毫秒）；0 表示取完马上取下一次 */
 export const LIVE_INTERVALS = [0, 500, 1000, 2000, 5000, 10_000, 30_000] as const;
-export const LIVE_INTERVAL_DEFAULT = 2000;
+export const LIVE_INTERVAL_DEFAULT = 1000;
 export const BG_OPACITY_DEFAULT = 0.35;
 
 // 窗口材质；名字与说明见词典 backdrop.<id> / backdrop.<id>.hint

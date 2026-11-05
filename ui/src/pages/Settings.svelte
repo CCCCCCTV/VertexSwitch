@@ -20,6 +20,7 @@
     theme,
   } from "../lib/theme.svelte";
   import { TIERS } from "../lib/format";
+  import { checkUpdate, setAutoCheck, update } from "../lib/update.svelte";
   import type { AppInfo, Backdrop, Settings } from "../lib/types";
 
   let original = $state<Settings | null>(null);
@@ -470,6 +471,10 @@
         />
         <span>{t("settings.autostart")}<small>{t("settings.autostartHint")}</small></span>
       </label>
+      <label class="check inline">
+        <input type="checkbox" checked={update.auto} onchange={(e) => setAutoCheck(e.currentTarget.checked)} />
+        <span>{t("settings.autoUpdate")}<small>{t("settings.autoUpdateHint")}</small></span>
+      </label>
       {#if info}
         <dl class="facts">
           <dt>{t("settings.configFile")}</dt>
@@ -482,7 +487,23 @@
             <button class="link" onclick={copyAdminToken}>{t("settings.copy")}</button>
           </dd>
           <dt>{t("settings.version")}</dt>
-          <dd>{info.version}</dd>
+          <dd>
+            {info.version}
+            {#if update.info?.newer && update.info.url}
+              {@const url = update.info.url}
+              <span class="update-new">{t("update.available", { version: update.info.latest ?? "" })}</span>
+              <button class="link" onclick={() => api.openReleasePage(url)}>{t("update.download")}</button>
+            {:else}
+              <button class="link" disabled={update.checking} onclick={checkUpdate}
+                >{update.checking ? t("update.checking") : t("update.check")}</button
+              >
+              {#if update.error}
+                <span class="update-status update-error">{update.error}</span>
+              {:else if update.info && !update.checking}
+                <span class="update-status faint">{update.info.latest ? t("update.latest") : t("update.noRelease")}</span>
+              {/if}
+            {/if}
+          </dd>
         </dl>
       {/if}
     </section>
@@ -798,5 +819,18 @@
 
   .facts dd {
     margin: 0;
+  }
+
+  .update-new {
+    margin: 0 10px 0 8px;
+    font-weight: 600;
+  }
+
+  .update-status {
+    margin-left: 8px;
+  }
+
+  .update-error {
+    color: var(--bad);
   }
 </style>

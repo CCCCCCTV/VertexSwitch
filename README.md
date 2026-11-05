@@ -1,5 +1,7 @@
 # VertexSwitch
 
+中文 | [English](README.en.md)
+
 桌面上的 Vertex AI 多协议代理，带图形界面（Rust + Tauri）。
 
 - 本地提供 Anthropic Messages、Gemini generateContent、OpenAI Chat Completions 三种接口，统一转发到 Google Cloud Vertex AI
@@ -23,7 +25,7 @@
 - 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
 - `/metrics`：Prometheus 指标
 - 桌面程序（`src-tauri` + `ui`）：托盘常驻（关窗口即隐藏，托盘菜单可切换 Gemini 档位）、
-  概览 / 请求 / 日志 / 模型 / 设置五个页面，代理核心在同一进程内运行
+  概览 / 请求 / 日志 / 模型 / 设置五个页面（中文 / English），代理核心在同一进程内运行
 
 - 安装包（当前用户安装，不需要管理员）、单实例、开机自启（只在托盘运行）
 
@@ -35,6 +37,8 @@
 每个 Release 附有 `SHA256SUMS.txt`，发布说明里有可直接粘贴的 PowerShell 核对命令（输出 True 即下载的文件完整）。
 
 首次启动后在“设置”里选择服务账号密钥文件即可使用。
+
+程序启动后和每天会查一次 GitHub 上有没有新版本（只发送程序名和版本号，可在“设置 → 系统”里关掉）。日志同时写在 `%APPDATA%\VertexSwitch\logs` 里。
 
 ## 从源码构建桌面程序
 

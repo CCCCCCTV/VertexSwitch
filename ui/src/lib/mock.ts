@@ -9,6 +9,7 @@ import type {
   Settings,
   Status,
   Tier,
+  UpdateInfo,
 } from "./types";
 
 const settings: Settings = {
@@ -255,6 +256,15 @@ export const mockApi: Api = {
     return delay(undefined);
   },
   setLanguage: () => delay(undefined),
+  openLogDir: () => delay(undefined),
+  // #update=1：预览“有新版本”的样子
+  checkUpdate: () =>
+    delay<UpdateInfo>(
+      new URLSearchParams(location.hash.slice(1)).get("update") === "1"
+        ? { current: "0.1.0", latest: "0.2.0", url: "https://github.com/CCCCCCTV/VertexSwitch/releases/tag/v0.2.0", newer: true }
+        : { current: "0.1.0", latest: "0.1.0", url: "https://github.com/CCCCCCTV/VertexSwitch/releases/tag/v0.1.0", newer: false },
+    ),
+  openReleasePage: () => delay(undefined),
   onLog: (cb) => (logListeners.add(cb), () => logListeners.delete(cb)),
   onRequest: (cb) => (requestListeners.add(cb), () => requestListeners.delete(cb)),
   onSettingsChanged: (cb) => (settingsListeners.add(cb), () => settingsListeners.delete(cb)),

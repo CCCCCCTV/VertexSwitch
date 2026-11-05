@@ -17,6 +17,7 @@ export const en: Record<MessageKey, string> = {
   "nav.models": "Models",
   "nav.settings": "Settings",
   "nav.failedBadge": "{n} failed in the last 10 minutes",
+  "nav.updateBadge": "Update available",
   "nav.preview": "Preview",
   "nav.previewTitle": "Browser preview: sample data, not connected to the core",
 
@@ -126,6 +127,8 @@ export const en: Record<MessageKey, string> = {
   "logs.error": "Errors only",
   "logs.empty": "No logs yet.",
   "logs.jump": "Jump to latest ↓",
+  "logs.openFolder": "Open log folder",
+  "logs.openFolderHint": "Logs are also saved in the logs folder of the config directory, so you can read them after the app closes",
 
   "models.maas": "Open models (MaaS)",
   "models.reloaded": "Reloaded: {n} alias|Reloaded: {n} aliases",
@@ -274,6 +277,8 @@ export const en: Record<MessageKey, string> = {
     "Runs in the tray after you sign in to Windows, without opening the window. Applies instantly; no need to save",
   "settings.autostartOn": "Start at login is on (runs in the tray)",
   "settings.autostartOff": "Start at login is off",
+  "settings.autoUpdate": "Check for updates automatically",
+  "settings.autoUpdateHint": "Checks GitHub for the latest version after startup and once a day, sending only the app name and version. Nothing is downloaded or installed automatically",
   "settings.configFile": "Config file",
   "settings.openFolder": "Open folder",
   "settings.adminToken": "Admin token",
@@ -281,6 +286,12 @@ export const en: Record<MessageKey, string> = {
   "settings.copy": "Copy",
   "settings.tokenCopied": "Admin token copied to clipboard",
   "settings.version": "Version",
+  "update.check": "Check for updates",
+  "update.checking": "Checking…",
+  "update.latest": "You're up to date",
+  "update.noRelease": "No release published yet",
+  "update.available": "Version {version} is available",
+  "update.download": "Download",
 
   "dialog.keyFile": "Choose a service account key file",
   "dialog.bgImage": "Choose a background image",

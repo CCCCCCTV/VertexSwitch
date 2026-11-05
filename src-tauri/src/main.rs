@@ -9,8 +9,10 @@ mod app_icon;
 mod backdrop_color;
 mod commands;
 mod host;
+mod log_file;
 mod title_bar;
 mod tray;
+mod update;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,16 +25,37 @@ use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use vertexswitch_core::admin::broadcast_stream;
 use vertexswitch_core::logs::{LogHub, LogLayer};
+use vertexswitch_core::tr;
 
 use crate::host::CoreHost;
+use crate::log_file::LogFile;
 
 fn init_logging() -> Arc<LogHub> {
     let logs = Arc::new(LogHub::new(1000));
+    let file = LogFile::open(&log_file::dir());
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().with_ansi(false))
+        // 正式版没有控制台：同样的内容写进配置目录的 logs 文件夹
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(move || file.clone()),
+        )
         .with(LogLayer::new(logs.clone()))
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
         .init();
+    // 崩溃信息也记下来（日志页和日志文件里都能看到）
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!(
+            "{}",
+            tr!(
+                "内部错误（panic）：{info}",
+                "Internal error (panic): {info}"
+            )
+        );
+        default_hook(info);
+    }));
     logs
 }
 
@@ -86,6 +109,9 @@ fn main() {
             commands::send_test,
             commands::get_app_info,
             commands::open_config_dir,
+            commands::open_log_dir,
+            commands::check_update,
+            commands::open_release_page,
             commands::set_background_image,
             commands::clear_background_image,
             commands::get_background_image,

@@ -16,6 +16,7 @@ import type {
   Status,
   TestResult,
   Tier,
+  UpdateInfo,
 } from "./types";
 import { mockApi } from "./mock";
 import { t, type Lang } from "./i18n.svelte";
@@ -37,6 +38,12 @@ export interface Api {
   sendTest(model: string): Promise<TestResult>;
   appInfo(): Promise<AppInfo>;
   openConfigDir(): Promise<void>;
+  /** 打开日志文件所在的文件夹 */
+  openLogDir(): Promise<void>;
+  /** 查 GitHub 上的最新版本 */
+  checkUpdate(): Promise<UpdateInfo>;
+  /** 在浏览器里打开新版本的发布页 */
+  openReleasePage(url: string): Promise<void>;
   getAutostart(): Promise<{ enabled: boolean }>;
   setAutostart(enabled: boolean): Promise<{ enabled: boolean }>;
   adminToken(): Promise<{ token: string }>;
@@ -92,6 +99,9 @@ async function tauriApi(): Promise<Api> {
     sendTest: (model) => invoke("send_test", { model }),
     appInfo: () => invoke("get_app_info"),
     openConfigDir: () => invoke("open_config_dir"),
+    openLogDir: () => invoke("open_log_dir"),
+    checkUpdate: () => invoke("check_update"),
+    openReleasePage: (url) => invoke("open_release_page", { url }),
     getAutostart: () => invoke("get_autostart"),
     setAutostart: (enabled) => invoke("set_autostart", { enabled }),
     adminToken: () => invoke("get_admin_token"),

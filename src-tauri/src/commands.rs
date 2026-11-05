@@ -13,7 +13,7 @@ use vertexswitch_core::i18n::{self, tr};
 use vertexswitch_core::secrets::TokenLocation;
 
 use crate::host::CoreHost;
-use crate::tray;
+use crate::{log_file, tray, update};
 
 type Host<'a> = State<'a, Arc<CoreHost>>;
 type CmdResult = Result<Value, String>;
@@ -131,10 +131,38 @@ pub fn set_language(app: AppHandle, host: Host<'_>, lang: String) -> CmdResult {
 
 #[tauri::command]
 pub fn open_config_dir(app: AppHandle) -> CmdResult {
-    let dir = app_dir();
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    open_dir(&app, &app_dir())
+}
+
+/// 日志文件所在的文件夹（配置目录下的 logs）。
+#[tauri::command]
+pub fn open_log_dir(app: AppHandle) -> CmdResult {
+    open_dir(&app, &log_file::dir())
+}
+
+fn open_dir(app: &AppHandle, dir: &std::path::Path) -> CmdResult {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     app.opener()
         .open_path(dir.display().to_string(), None::<&str>)
+        .map_err(|e| e.to_string())?;
+    Ok(Value::Null)
+}
+
+/// 查 GitHub 上的最新版本。
+#[tauri::command]
+pub async fn check_update() -> CmdResult {
+    let info = update::check(update::LATEST_URL, vertexswitch_core::VERSION).await?;
+    serde_json::to_value(info).map_err(|e| e.to_string())
+}
+
+/// 在浏览器里打开新版本的发布页（只接受本仓库的发布页地址）。
+#[tauri::command]
+pub fn open_release_page(app: AppHandle, url: String) -> CmdResult {
+    if !url.starts_with(update::RELEASES_PREFIX) {
+        return Err(format!("not a release page: {url}"));
+    }
+    app.opener()
+        .open_url(url, None::<&str>)
         .map_err(|e| e.to_string())?;
     Ok(Value::Null)
 }
