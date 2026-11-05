@@ -40,7 +40,7 @@
       "icons/icon.ico"
     ],
     "publisher": "CCCCCCTV",
-    "copyright": "MIT License",
+    "copyright": "Copyright © 2026 CCCCCCTV",
     "category": "DeveloperTool",
     "shortDescription": "Vertex AI 多协议代理",
     "longDescription": "在本机提供 Anthropic / Gemini / OpenAI 接口，用 Google Cloud 服务账号转发到 Vertex AI。",
