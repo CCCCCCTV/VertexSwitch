@@ -109,6 +109,38 @@ async fn busy_429_is_retried_until_success() {
 }
 
 #[tokio::test]
+async fn slow_busy_responses_are_retried_too() {
+    // 本机实测：Standard 请求被 Vertex 挂了 81 秒才回 429，这种也要重试（这里用 0.5 秒代表“慢”）
+    let seen = Arc::new(AtomicUsize::new(0));
+    let (url, count) = raw_server(move |mut socket| {
+        let n = seen.fetch_add(1, Ordering::SeqCst);
+        async move {
+            let status = if n == 0 {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                "429 Too Many Requests"
+            } else {
+                "200 OK"
+            };
+            let head = format!(
+                "HTTP/1.1 {status}
+content-length: 2
+connection: close
+
+{{}}"
+            );
+            let _ = socket.write_all(head.as_bytes()).await;
+        }
+    })
+    .await;
+    let response = busy_transport(true, 3)
+        .open(&req(&url, true))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn busy_retries_stop_at_the_limit_and_return_the_last_error() {
     let (url, count) = status_server(|_| ("503 Service Unavailable", "")).await;
     let response = busy_transport(true, 3)

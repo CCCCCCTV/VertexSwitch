@@ -24,8 +24,6 @@ pub const LOG_KIND_RETRY: &str = "upstream_retry";
 pub const LOG_KIND_RETRY_OK: &str = "upstream_retry_ok";
 /// 上游 `Retry-After` 要求等的秒数超过这个值、也超过自己算出的等待时，不重试，直接交给客户端
 const RETRY_AFTER_CAP: f64 = 30.0;
-/// 一次尝试本身超过这么久才返回繁忙时不再重试
-const BUSY_RETRY_MAX_ELAPSED: Duration = Duration::from_secs(60);
 
 /// 值得等一会儿再试的状态码：429 限流 / 资源耗尽、503 暂不可用、529 过载；500 只重试一次。
 fn is_busy(status: u16, retried_500: bool) -> bool {
@@ -59,6 +57,24 @@ fn jitter() -> f64 {
         .build_hasher()
         .finish();
     0.75 + (x % 10_000) as f64 / 20_000.0
+}
+
+/// 日志里的模型名：先看上游地址（`.../models/{model}:{action}`）；OpenAI 兼容接口等地址里没有时
+/// 读请求体的 `model`，去掉 `google/` 这类发布方前缀；都没有时为空。
+fn upstream_model(url: &str, body: &[u8]) -> String {
+    let from_url = model_in_url(url);
+    if !from_url.is_empty() {
+        return from_url;
+    }
+    #[derive(serde::Deserialize)]
+    struct Body {
+        model: Option<String>,
+    }
+    serde_json::from_slice::<Body>(body)
+        .ok()
+        .and_then(|b| b.model)
+        .map(|m| m.rsplit('/').next().unwrap_or_default().to_string())
+        .unwrap_or_default()
 }
 
 /// 上游地址里的模型名（`.../models/{model}:{action}`），没有时为空。
@@ -145,7 +161,8 @@ impl Transport {
     ///
     /// 上游繁忙（429 / 503 / 529，500 只算一次）时按配置等一会儿再发：等待按 `busy_wait` 算式算出
     /// 并带 ±25% 抖动，上游给了 `Retry-After` 时至少等这么久。还没给客户端发出任何字节，
-    /// 所以对流式请求同样适用。客户端断开时整个请求被丢弃，重试随之停止。
+    /// 所以对流式请求同样适用。不管上游过了多久才返回繁忙都会重试（Standard 也可能先挂一分多钟再回 429）；
+    /// 最多等多久由客户端决定：客户端断开时整个请求被丢弃，重试随之停止。
     pub async fn open(&self, req: &UpstreamRequest<'_>) -> ProxyResult<reqwest::Response> {
         let headers = header_map(&req.headers)?;
         let limit = if self.retry.busy {
@@ -154,16 +171,20 @@ impl Transport {
             0
         };
         let upstream = req.upstream;
-        let model = model_in_url(&req.url);
+        // 只在要写日志时才解析请求体取模型名
+        let mut model_cache: Option<String> = None;
+        let mut model = || {
+            model_cache
+                .get_or_insert_with(|| upstream_model(&req.url, &req.body))
+                .clone()
+        };
         let mut retried = 0;
         let mut retried_500 = false;
         loop {
-            let started = Instant::now();
             let response = self.send(req, &headers).await?;
             let status = response.status().as_u16();
             let busy = is_busy(status, retried_500);
-            // 这次尝试本身已经等了很久（如 Flex 排队到超时）时再来一遍只会让客户端白等更久
-            let wait = if busy && retried < limit && started.elapsed() <= BUSY_RETRY_MAX_ELAPSED {
+            let wait = if busy && retried < limit {
                 busy_wait(&self.busy_wait, retried, response.headers())
             } else {
                 None
@@ -172,7 +193,7 @@ impl Transport {
                 if retried > 0 && response.status().is_success() {
                     tracing::info!(
                         kind = LOG_KIND_RETRY_OK,
-                        model = %model,
+                        model = %model(),
                         retries = retried,
                         "{}",
                         tr!(
@@ -182,7 +203,7 @@ impl Transport {
                     );
                 } else if retried > 0 {
                     tracing::warn!(
-                        model = %model,
+                        model = %model(),
                         "{}",
                         tr!(
                             "{upstream} 重试 {retried} 次后仍返回 {status}，交给客户端处理",
@@ -196,7 +217,7 @@ impl Transport {
             retried_500 |= status == 500;
             tracing::warn!(
                 kind = LOG_KIND_RETRY,
-                model = %model,
+                model = %model(),
                 status,
                 "{}",
                 tr!(
@@ -446,6 +467,30 @@ mod tests {
         // HTTP 日期格式不认，按自己的算式
         let date = retry_after("Wed, 21 Oct 2026 07:28:00 GMT");
         assert_eq!(busy_wait(&zero, 0, &date), Some(Duration::ZERO));
+    }
+
+    #[test]
+    fn model_from_the_body_when_the_url_has_none() {
+        let compat =
+            "https://h/v1beta1/projects/p/locations/global/endpoints/openapi/chat/completions";
+        assert_eq!(
+            upstream_model(
+                compat,
+                br#"{"model":"google/gemini-4-argon","messages":[]}"#
+            ),
+            "gemini-4-argon"
+        );
+        assert_eq!(upstream_model(compat, br#"{"model":"qwen3"}"#), "qwen3");
+        assert_eq!(upstream_model(compat, br#"{"messages":[]}"#), "");
+        assert_eq!(upstream_model(compat, b"not json"), "");
+        // 地址里有模型时以地址为准
+        assert_eq!(
+            upstream_model(
+                "https://h/v1/projects/p/locations/global/publishers/google/models/gemini-3.5-flash:generateContent",
+                br#"{"model":"other"}"#
+            ),
+            "gemini-3.5-flash"
+        );
     }
 
     #[test]
