@@ -17,7 +17,8 @@
   } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { live, refreshStatus } from "../lib/live.svelte";
-  import { TIER_INFO, duration, time, tokens, uptime } from "../lib/format";
+  import { TIERS, TIER_LABEL, duration, time, tokens, uptime } from "../lib/format";
+  import { t } from "../lib/i18n.svelte";
   import type { Metrics, Models, TestResult, Tier } from "../lib/types";
   import Timeline from "../components/Timeline.svelte";
 
@@ -34,9 +35,8 @@
   let copied = $state("");
   // 档位选中底色：一块高亮在选项之间滑动（档位切换是这个界面最重要的操作）
   let tierRows: HTMLLabelElement[] = $state([]);
-  const tierIds = Object.keys(TIER_INFO) as Tier[];
   const highlight = $derived.by(() => {
-    const i = tierIds.indexOf((live.status?.gemini_tier ?? "standard") as Tier);
+    const i = TIERS.indexOf((live.status?.gemini_tier ?? "standard") as Tier);
     const row = tierRows[i];
     return row ? { top: row.offsetTop, height: row.offsetHeight } : null;
   });
@@ -53,9 +53,9 @@
     const r = status.gemini_region;
     const used = new Set([status.gemini_tier, ...Object.values(status.gemini_model_tiers ?? {})]);
     if (used.has("flex") && r !== "global")
-      return `Gemini 区域是 ${r}，Flex 只支持 global，设为 Flex 的请求会按 Standard 处理。`;
+      return t("overview.regionFlex", { region: r });
     if (used.has("priority") && !["global", "us", "eu"].includes(r))
-      return `Gemini 区域是 ${r}，Priority 只支持 global / us / eu，设为 Priority 的请求会按 Standard 处理。`;
+      return t("overview.regionPriority", { region: r });
     return "";
   });
 
@@ -69,14 +69,15 @@
         ts: r.ts_ms,
         tone: r.outcome === "error" ? "bad" : "warn",
         title: `${r.status} · ${r.model ?? r.path}`,
-        detail: r.error ?? (r.outcome === "cancelled" ? "客户端提前断开" : "流式响应中断"),
+        detail: r.error ?? t(r.outcome === "cancelled" ? "overview.clientGone" : "overview.streamCut"),
       });
     }
     for (const e of live.logs) {
       if (e.ts_ms < since || e.level === "INFO") continue;
+      // 降级告警来自核心日志（核心的文字不翻译，按中文关键字识别）
       if (!e.message.includes("实际按") && !e.message.includes("已改用 Standard")) continue;
       const [model, detail] = e.message.split("：");
-      items.push({ ts: e.ts_ms, tone: "warn", title: `档位降级 · ${model}`, detail: detail ?? e.message });
+      items.push({ ts: e.ts_ms, tone: "warn", title: t("overview.downgrade", { model }), detail: detail ?? e.message });
     }
     return items.sort((a, b) => b.ts - a.ts).slice(0, 5);
   });
@@ -170,38 +171,42 @@
 </script>
 
 <header>
-  <h1>概览</h1>
+  <h1>{t("nav.overview")}</h1>
   {#if status}
     <div class="chips">
       {#if status.server.running}
-        <span class="pill ok"><span class="dot"></span>运行中 <span class="mono">{status.server.addr}</span></span>
+        <span class="pill ok"
+          ><span class="dot"></span>{t("overview.running")} <span class="mono">{status.server.addr}</span></span
+        >
       {:else}
-        <span class="pill bad"><span class="dot"></span>未在监听</span>
+        <span class="pill bad"><span class="dot"></span>{t("overview.notListening")}</span>
       {/if}
       {#if status.google_token === "ok"}
-        <span class="pill">Google 认证正常 · <span class="mono">{status.project_id}</span></span>
+        <span class="pill">{t("overview.googleOk")} · <span class="mono">{status.project_id}</span></span>
       {:else}
-        <span class="pill bad" title={status.google_token}>Google 认证失败</span>
+        <span class="pill bad" title={status.google_token}>{t("overview.googleFailed")}</span>
       {/if}
-      <span class="pill">已运行 {uptime(status.uptime_secs)}</span>
+      <span class="pill">{t("overview.uptime", { d: uptime(status.uptime_secs) })}</span>
     </div>
     <button class="test-btn" aria-haspopup="dialog" onclick={() => testDialog?.showModal()}>
-      <FlaskConical size={15} />测试连接
+      <FlaskConical size={15} />{t("overview.test")}
     </button>
     <dialog class="test-dialog" bind:this={testDialog} aria-labelledby="test-title" onclick={closeOnBackdrop}>
       <div class="dialog-body">
         <div class="dialog-head">
           <FlaskConical size={18} />
-          <h2 id="test-title">测试连接</h2>
-          <button class="ghost close" onclick={() => testDialog?.close()} aria-label="关闭"><X size={16} /></button>
+          <h2 id="test-title">{t("overview.test")}</h2>
+          <button class="ghost close" onclick={() => testDialog?.close()} aria-label={t("common.close")}
+            ><X size={16} /></button
+          >
         </div>
-        <p class="faint small">用选中的模型发一个最小请求，确认认证、网络和档位都通。会真实调用 Vertex AI，产生少量费用（最多 32 个输出 token）。</p>
+        <p class="faint small">{t("overview.testIntro")}</p>
         <div class="test-row">
-          <select bind:value={testModel} aria-label="测试用模型" disabled={!testModels.length}>
+          <select bind:value={testModel} aria-label={t("overview.testModel")} disabled={!testModels.length}>
             {#each testModels as m}<option value={m}>{m}</option>{/each}
           </select>
           <button class="primary" onclick={runTest} disabled={testing || !status.server.running}>
-            {testing ? "请求中…" : "发送"}
+            {testing ? t("overview.sending") : t("overview.send")}
           </button>
         </div>
         {#if testError}
@@ -209,9 +214,16 @@
         {:else if testResult}
           <p class="result" class:ok={testResult.ok} class:bad={!testResult.ok}>
             {#if testResult.ok}
-              <CircleCheck size={16} /><span>{duration(testResult.latency_ms)} · 回复：{testResult.reply}</span>
+              <CircleCheck size={16} /><span
+                >{t("overview.reply", { time: duration(testResult.latency_ms), reply: testResult.reply ?? "" })}</span
+              >
             {:else}
-              <OctagonX size={16} /><span>HTTP {testResult.status}：{testResult.error?.message ?? "未知错误"}</span>
+              <OctagonX size={16} /><span
+                >{t("overview.httpError", {
+                  status: testResult.status,
+                  message: testResult.error?.message ?? t("overview.unknownError"),
+                })}</span
+              >
             {/if}
           </p>
         {/if}
@@ -221,54 +233,62 @@
 </header>
 
 {#if live.statusError}
-  <div class="banner bad spaced"><OctagonX size={16} />无法连接内置核心：{live.statusError}</div>
+  <div class="banner bad spaced"><OctagonX size={16} />{t("overview.coreUnreachable", { error: live.statusError })}</div>
 {:else if !status}
-  <div class="empty">正在加载…</div>
+  <div class="empty">{t("common.loading")}</div>
 {:else}
   {#if status.server.error}
     <div class="banner bad spaced">
       <OctagonX size={16} />
-      <span>{status.server.error}。<button class="link" onclick={() => go("settings")}>到设置里改监听端口</button></span>
+      <span
+        >{t("overview.serverError", { error: status.server.error })}<button class="link" onclick={() => go("settings")}
+          >{t("overview.fixPort")}</button
+        ></span
+      >
     </div>
   {/if}
   {#if status.google_token !== "ok"}
     <div class="banner bad spaced">
       <OctagonX size={16} />
-      <span>Google 认证失败：{status.google_token}。<button class="link" onclick={() => go("settings")}>检查密钥文件</button></span>
+      <span
+        >{t("overview.authFailed", { error: status.google_token })}<button class="link" onclick={() => go("settings")}
+          >{t("overview.checkKey")}</button
+        ></span
+      >
     </div>
   {/if}
 
   <div class="bento">
     <section class="panel span-8">
-      <div class="panel-head"><Activity size={16} /><h2>请求时间线</h2><span class="end faint">最近 30 分钟</span></div>
+      <div class="panel-head"><Activity size={16} /><h2>{t("overview.timeline")}</h2><span class="end faint">{t("overview.last30")}</span></div>
       <Timeline />
     </section>
 
     <section class="panel span-4">
-      <div class="panel-head"><Route size={16} /><h2>Gemini 服务档位</h2></div>
-      <div class="tiers" role="radiogroup" aria-label="Gemini 服务档位">
+      <div class="panel-head"><Route size={16} /><h2>{t("overview.tiers")}</h2></div>
+      <div class="tiers" role="radiogroup" aria-label={t("overview.tiers")}>
         {#if highlight}
           <span class="tier-highlight" style:transform="translateY({highlight.top}px)" style:height="{highlight.height}px"></span>
         {/if}
-        {#each Object.entries(TIER_INFO) as [id, info], i}
+        {#each TIERS as id, i}
           <label class="tier" class:on={status.gemini_tier === id} bind:this={tierRows[i]}>
             <input
               type="radio"
               name="tier"
               checked={status.gemini_tier === id}
               disabled={tierBusy}
-              onchange={() => setTier(id as Tier)}
+              onchange={() => setTier(id)}
             />
-            <span><b>{info.label}</b><small>{info.hint}</small></span>
+            <span><b>{TIER_LABEL[id]}</b><small>{t(`tier.${id}.hint`)}</small></span>
           </label>
         {/each}
       </div>
       <p class="note faint">
-        默认档位，Gemini 原生接口与 OpenAI 兼容接口都生效。区域：<span class="mono">{status.gemini_region}</span>
+        {t("overview.tierNote")}<span class="mono">{status.gemini_region}</span>
       </p>
       <p class="note own">
         <button class="more" onclick={() => go("models")}>
-          {ownTiers ? `${ownTiers} 个模型单独设置了档位` : "按模型单独设置档位"}<ChevronRight size={15} />
+          {ownTiers ? t("overview.ownTiers", { n: ownTiers }) : t("overview.setPerModel")}<ChevronRight size={15} />
         </button>
       </p>
       {#if regionNote}<div class="banner warn"><TriangleAlert size={16} />{regionNote}</div>{/if}
@@ -277,8 +297,10 @@
 
     <section class="panel span-4">
       <div class="panel-head">
-        <TriangleAlert size={16} /><h2>需要注意</h2>
-        <button class="more end" onclick={() => go("requests")}>全部请求<ChevronRight size={15} /></button>
+        <TriangleAlert size={16} /><h2>{t("overview.attention")}</h2>
+        <button class="more end" onclick={() => go("requests")}
+          >{t("overview.allRequests")}<ChevronRight size={15} /></button
+        >
       </div>
       {#if attention.length}
         <ul class="issues">
@@ -296,36 +318,38 @@
       {:else}
         <div class="calm">
           <span class="calm-icon"><ShieldCheck size={26} strokeWidth={1.75} /></span>
-          <b>一切正常</b>
-          <small>最近 30 分钟没有失败或降级</small>
+          <b>{t("overview.allClear")}</b>
+          <small>{t("overview.allClearHint")}</small>
         </div>
         <dl class="baseline">
-          <div><dt>进行中</dt><dd>{status.in_flight}</dd></div>
-          <div title="最近 30 分钟的请求数"><dt>最近请求</dt><dd>{recent.count}</dd></div>
-          <div><dt>平均耗时</dt><dd>{recent.avg === null ? "—" : duration(recent.avg)}</dd></div>
+          <div><dt>{t("overview.inFlight")}</dt><dd>{status.in_flight}</dd></div>
+          <div title={t("overview.recentTitle")}><dt>{t("overview.recent")}</dt><dd>{recent.count}</dd></div>
+          <div><dt>{t("overview.avgTime")}</dt><dd>{recent.avg === null ? "—" : duration(recent.avg)}</dd></div>
         </dl>
       {/if}
     </section>
 
     <section class="panel span-4">
-      <div class="panel-head"><Link size={16} /><h2>接入地址</h2></div>
+      <div class="panel-head"><Link size={16} /><h2>{t("overview.endpoints")}</h2></div>
       {#if base}
         <ul class="endpoints">
           {#each [
-            ["Anthropic", base, "ANTHROPIC_BASE_URL", "Claude Code、Anthropic SDK 读这个环境变量"],
-            ["OpenAI 兼容", `${base}/v1`, "OPENAI_BASE_URL", "OpenAI SDK 读这个环境变量"],
-            ["Gemini", base, "GOOGLE_GEMINI_BASE_URL", "Gemini CLI、JS SDK 读这个环境变量；Python SDK 要在代码里设 http_options.base_url"],
+            ["Anthropic", base, "ANTHROPIC_BASE_URL", t("overview.envAnthropic")],
+            [t("overview.openaiCompat"), `${base}/v1`, "OPENAI_BASE_URL", t("overview.envOpenai")],
+            ["Gemini", base, "GOOGLE_GEMINI_BASE_URL", t("overview.envGemini")],
           ] as [name, url, env, about]}
             {@const pair = `${env}=${url}`}
             <li>
               <div class="name">
                 {name}
-                <button class="chip" onclick={() => copy(pair)} title="点击复制 {pair}&#10;{about}">
-                  {#if copied === pair}<Check size={13} />已复制{:else}<span class="mono">{env}</span>{/if}
+                <button class="chip" onclick={() => copy(pair)} title={t("overview.copyPair", { pair, about })}>
+                  {#if copied === pair}<Check size={13} />{t("overview.copied")}{:else}<span class="mono">{env}</span>{/if}
                 </button>
               </div>
               <!-- 整行是一个只读的代码框，点哪里都复制地址 -->
-              <button class="url" onclick={() => copy(url)} title="点击复制" aria-label="复制 {name} 地址 {url}">
+              <button class="url" onclick={() => copy(url)} title={t("overview.clickToCopy")}
+                aria-label={t("overview.copyUrl", { name, url })}
+              >
                 <span class="mono">{url}</span>
                 {#if copied === url}<Check size={15} />{:else}<Copy size={15} />{/if}
               </button>
@@ -333,24 +357,31 @@
           {/each}
         </ul>
       {:else}
-        <p class="faint">服务未在监听。</p>
+        <p class="faint">{t("overview.notListeningNote")}</p>
       {/if}
     </section>
 
     <section class="panel span-4">
-      <div class="panel-head"><Gauge size={16} /><h2>用量</h2><span class="end faint">本次运行</span></div>
+      <div class="panel-head"><Gauge size={16} /><h2>{t("overview.usage")}</h2><span class="end faint">{t("overview.thisRun")}</span></div>
       {#if !metrics}
-        <div class="empty">正在加载…</div>
+        <div class="empty">{t("common.loading")}</div>
       {:else}
         <!-- 三个总数始终显示（没转发过就是 0），一眼知道这里统计什么 -->
         <div class="totals">
-          <div><span>请求</span><b>{totals.requests}</b></div>
-          <div><span>输入 token</span><b>{tokens(totals.input)}</b></div>
-          <div><span>输出 token</span><b>{tokens(totals.output)}</b></div>
+          <div><span>{t("common.requests")}</span><b>{totals.requests}</b></div>
+          <div><span>{t("overview.inputTokens")}</span><b>{tokens(totals.input)}</b></div>
+          <div><span>{t("overview.outputTokens")}</span><b>{tokens(totals.output)}</b></div>
         </div>
         {#if usage.length}
           <table class="usage">
-            <thead><tr><th>后端</th><th class="num">请求</th><th class="num">输入</th><th class="num">输出</th></tr></thead>
+            <thead>
+              <tr>
+                <th>{t("overview.backend")}</th>
+                <th class="num">{t("common.requests")}</th>
+                <th class="num">{t("common.input")}</th>
+                <th class="num">{t("common.output")}</th>
+              </tr>
+            </thead>
             <tbody>
               {#each usage as row}
                 <tr>
@@ -363,7 +394,7 @@
             </tbody>
           </table>
         {:else}
-          <p class="faint small">转发过请求后，这里按后端列出明细。</p>
+          <p class="faint small">{t("overview.usageEmpty")}</p>
         {/if}
       {/if}
     </section>

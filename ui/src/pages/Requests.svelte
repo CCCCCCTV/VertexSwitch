@@ -1,6 +1,7 @@
 <script lang="ts">
   import { live } from "../lib/live.svelte";
-  import { OUTCOME_INFO, duration, time, tokens } from "../lib/format";
+  import { OUTCOME_TONE, duration, time, tokens } from "../lib/format";
+  import { t } from "../lib/i18n.svelte";
 
   let filter = $state<"all" | "failed">("all");
   let query = $state("");
@@ -17,13 +18,17 @@
 </script>
 
 <header>
-  <h1>请求</h1>
+  <h1>{t("nav.requests")}</h1>
   <div class="tools">
-    <div class="chips" role="radiogroup" aria-label="筛选">
-      <button class:on={filter === "all"} onclick={() => (filter = "all")}>全部 {live.requests.length}</button>
-      <button class:on={filter === "failed"} onclick={() => (filter = "failed")}>失败 {failed}</button>
+    <div class="chips" role="radiogroup" aria-label={t("requests.filter")}>
+      <button class:on={filter === "all"} onclick={() => (filter = "all")}
+        >{t("requests.all", { n: live.requests.length })}</button
+      >
+      <button class:on={filter === "failed"} onclick={() => (filter = "failed")}
+        >{t("requests.failed", { n: failed })}</button
+      >
     </div>
-    <input type="text" placeholder="按模型或路径筛选" bind:value={query} aria-label="按模型或路径筛选" />
+    <input type="text" placeholder={t("requests.search")} bind:value={query} aria-label={t("requests.search")} />
   </div>
 </header>
 
@@ -32,8 +37,14 @@
     <table>
       <thead>
         <tr>
-          <th>时间</th><th>入口</th><th>模型</th><th class="tier-col">档位</th><th>状态</th>
-          <th class="num">耗时</th><th class="num">输入</th><th class="num">输出</th>
+          <th>{t("requests.time")}</th>
+          <th>{t("requests.protocol")}</th>
+          <th>{t("requests.model")}</th>
+          <th class="tier-col">{t("requests.tier")}</th>
+          <th>{t("requests.status")}</th>
+          <th class="num">{t("requests.duration")}</th>
+          <th class="num">{t("common.input")}</th>
+          <th class="num">{t("common.output")}</th>
         </tr>
       </thead>
       <tbody>
@@ -41,7 +52,7 @@
           <tr>
             <td class="mono faint nowrap">{time(r.ts_ms)}</td>
             <td class="nowrap">
-              <span class="proto">{r.protocol}</span>{#if r.stream}<span class="pill">流式</span>{/if}
+              <span class="proto">{r.protocol}</span>{#if r.stream}<span class="pill">{t("requests.stream")}</span>{/if}
             </td>
             <td class="model">
               <div class="mono ellipsis" title={r.model ?? undefined}>{r.model ?? "—"}</div>
@@ -49,8 +60,8 @@
             </td>
             <td class="tier-col">{#if r.tier}<span class="pill accent">{r.tier}</span>{:else}<span class="faint">—</span>{/if}</td>
             <td>
-              <span class="pill {OUTCOME_INFO[r.outcome].tone}">
-                {r.status} {OUTCOME_INFO[r.outcome].label}
+              <span class="pill {OUTCOME_TONE[r.outcome]}">
+                {r.status} {t(`outcome.${r.outcome}`)}
               </span>
             </td>
             <td class="num nowrap">{duration(r.duration_ms)}</td>
@@ -61,10 +72,10 @@
       </tbody>
     </table>
   {:else}
-    <div class="empty">{live.requests.length ? "没有符合条件的请求。" : "还没有请求。客户端发来请求后会实时显示在这里。"}</div>
+    <div class="empty">{t(live.requests.length ? "requests.noMatch" : "requests.empty")}</div>
   {/if}
 </div>
-<p class="faint hint">保留最近 500 条，仅在本次运行期间。不记录请求和响应内容。</p>
+<p class="faint hint">{t("requests.hint")}</p>
 
 <style>
   header {

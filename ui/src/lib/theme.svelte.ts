@@ -8,13 +8,14 @@ import { api } from "./api";
 import { startGlass, stopGlass } from "./glass";
 import type { Backdrop, BackdropSample, LiveScope } from "./types";
 
+// 预设种子色；名字见词典 preset.<id>
 export const PRESETS = [
-  { id: "blue", label: "靛蓝", seed: "#3B5BDB" },
-  { id: "teal", label: "青绿", seed: "#0CA678" },
-  { id: "violet", label: "紫罗兰", seed: "#7048E8" },
-  { id: "rose", label: "玫瑰", seed: "#D6336C" },
-  { id: "amber", label: "琥珀", seed: "#E67700" },
-  { id: "graphite", label: "石墨", seed: "#5C677D" },
+  { id: "blue", seed: "#3B5BDB" },
+  { id: "teal", seed: "#0CA678" },
+  { id: "violet", seed: "#7048E8" },
+  { id: "rose", seed: "#D6336C" },
+  { id: "amber", seed: "#E67700" },
+  { id: "graphite", seed: "#5C677D" },
 ] as const;
 
 /**
@@ -38,37 +39,16 @@ export interface ThemePref {
   glass: boolean;
 }
 
-export const LIVE_SCOPES: { id: LiveScope; label: string; hint: string }[] = [
-  {
-    id: "wallpaper",
-    label: "整张壁纸",
-    hint: "取整张壁纸的颜色（Wallpaper Engine 动态壁纸取当前画面），被窗口挡住也不影响",
-  },
-  {
-    id: "behind",
-    label: "窗口后方",
-    hint: "取窗口正后方的画面，包括后面的其他应用；左边是红色应用、右边是蓝色应用，背景也左红右蓝。移动窗口时立即重取",
-  },
-];
+// 实时取色范围；名字与说明见词典 live.<id> / live.<id>.hint
+export const LIVE_SCOPES = ["wallpaper", "behind"] as const satisfies readonly LiveScope[];
 
-export const LIVE_INTERVALS = [
-  { ms: 0, label: "无间隔" },
-  { ms: 500, label: "0.5 秒" },
-  { ms: 1000, label: "1 秒" },
-  { ms: 2000, label: "2 秒" },
-  { ms: 5000, label: "5 秒" },
-  { ms: 10_000, label: "10 秒" },
-  { ms: 30_000, label: "30 秒" },
-] as const;
+/** 实时取色的间隔（毫秒）；0 表示取完马上取下一次 */
+export const LIVE_INTERVALS = [0, 500, 1000, 2000, 5000, 10_000, 30_000] as const;
 export const LIVE_INTERVAL_DEFAULT = 2000;
 export const BG_OPACITY_DEFAULT = 0.35;
 
-export const BACKDROPS: { id: Backdrop; label: string; hint: string }[] = [
-  { id: "mica", label: "Mica", hint: "系统静态壁纸的模糊色调（不认动态壁纸），最安静" },
-  { id: "tabbed", label: "Mica Alt", hint: "同样取静态壁纸色调，颜色更明显" },
-  { id: "acrylic", label: "亚克力", hint: "透出窗口后面的内容（模糊），最明显" },
-  { id: "none", label: "不透明", hint: "关闭半透明" },
-];
+// 窗口材质；名字与说明见词典 backdrop.<id> / backdrop.<id>.hint
+export const BACKDROPS = ["mica", "tabbed", "acrylic", "none"] as const satisfies readonly Backdrop[];
 
 export const TINT_DEFAULT = 1;
 
@@ -125,8 +105,8 @@ export function loadPref(): ThemePref {
       const p = JSON.parse(raw);
       if (["system", "custom", "wallpaper", "behind"].includes(p.source) && HEX.test(p.seed)) {
         const tint = typeof p.tint === "number" && p.tint >= 0 && p.tint <= 2 ? p.tint : TINT_DEFAULT;
-        const backdrop = BACKDROPS.some((b) => b.id === p.backdrop) ? (p.backdrop as Backdrop) : "mica";
-        const liveInterval = LIVE_INTERVALS.some((i) => i.ms === p.liveInterval)
+        const backdrop = (BACKDROPS as readonly string[]).includes(p.backdrop) ? (p.backdrop as Backdrop) : "mica";
+        const liveInterval = (LIVE_INTERVALS as readonly number[]).includes(p.liveInterval)
           ? (p.liveInterval as number)
           : LIVE_INTERVAL_DEFAULT;
         const bgOpacity =

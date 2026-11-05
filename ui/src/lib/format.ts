@@ -1,40 +1,41 @@
 // 显示用的格式化函数。
 
+import { t } from "./i18n.svelte";
+import type { Tier } from "./types";
+
 export function time(ms: number): string {
-  return new Date(ms).toLocaleTimeString("zh-CN", { hour12: false });
+  return new Date(ms).toLocaleTimeString("en-GB", { hour12: false });
 }
 
 export function duration(ms: number): string {
   if (ms < 1000) return `${ms} ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
-  return `${Math.floor(ms / 60_000)} 分 ${Math.round((ms % 60_000) / 1000)} 秒`;
+  return t("fmt.minSec", { m: Math.floor(ms / 60_000), s: Math.round((ms % 60_000) / 1000) });
 }
 
 export function uptime(secs: number): string {
   const d = Math.floor(secs / 86400);
   const h = Math.floor((secs % 86400) / 3600);
   const m = Math.floor((secs % 3600) / 60);
-  if (d) return `${d} 天 ${h} 小时`;
-  if (h) return `${h} 小时 ${m} 分`;
-  return `${m} 分钟`;
+  if (d) return t("fmt.dayHour", { d, h });
+  if (h) return t("fmt.hourMin", { h, m });
+  return t("fmt.min", { m });
 }
 
 export function tokens(n: number | null | undefined): string {
   if (n == null) return "—";
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 10_000) return `${(n / 1000).toFixed(1)}k`;
-  return n.toLocaleString("zh-CN");
+  return n.toLocaleString("en-US");
 }
 
-export const TIER_INFO = {
-  standard: { label: "Standard", hint: "标准按量计费" },
-  flex: { label: "Flex", hint: "价格更低，可能排队；仅 global 区域" },
-  priority: { label: "Priority", hint: "优先处理，价格更高；global / us / eu" },
-} as const;
+/** 档位名在两种语言里一样，说明文字见词典 tier.<id>.hint */
+export const TIERS = ["standard", "flex", "priority"] as const satisfies readonly Tier[];
+export const TIER_LABEL: Record<Tier, string> = { standard: "Standard", flex: "Flex", priority: "Priority" };
 
-export const OUTCOME_INFO = {
-  ok: { label: "成功", tone: "ok" },
-  error: { label: "失败", tone: "bad" },
-  stream_error: { label: "流中断", tone: "bad" },
-  cancelled: { label: "已取消", tone: "muted" },
+export const OUTCOME_TONE = {
+  ok: "ok",
+  error: "bad",
+  stream_error: "bad",
+  cancelled: "muted",
 } as const;

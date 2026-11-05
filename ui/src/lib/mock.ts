@@ -194,6 +194,7 @@ export const mockApi: Api = {
       config_dir: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch",
       config_path: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch\\config.toml",
       admin_token_location: "系统凭据库（VertexSwitch / admin-token）",
+      admin_token_in_store: true,
     }),
   openConfigDir: () => delay(undefined),
   getAutostart: () => delay({ enabled: autostart }),
@@ -232,6 +233,7 @@ export const mockApi: Api = {
     mockBackground = null;
     return delay(undefined);
   },
+  setLanguage: () => delay(undefined),
   onLog: (cb) => (logListeners.add(cb), () => logListeners.delete(cb)),
   onRequest: (cb) => (requestListeners.add(cb), () => requestListeners.delete(cb)),
   onSettingsChanged: (cb) => (settingsListeners.add(cb), () => settingsListeners.delete(cb)),

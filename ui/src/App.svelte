@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { LayoutGrid, ListOrdered, ScrollText, Boxes, Settings2 } from "@lucide/svelte";
   import { api } from "./lib/api";
+  import { i18n, setLangPref, t } from "./lib/i18n.svelte";
   import { live, startLive } from "./lib/live.svelte";
   import { PRESETS, previewBackground, setThemePref, setTint, theme } from "./lib/theme.svelte";
   import Overview from "./pages/Overview.svelte";
@@ -11,11 +12,11 @@
   import ModelsPage from "./pages/Models.svelte";
 
   const pages = [
-    { id: "overview", label: "概览", icon: LayoutGrid },
-    { id: "requests", label: "请求", icon: ListOrdered },
-    { id: "logs", label: "日志", icon: ScrollText },
-    { id: "models", label: "模型", icon: Boxes },
-    { id: "settings", label: "设置", icon: Settings2 },
+    { id: "overview", icon: LayoutGrid },
+    { id: "requests", icon: ListOrdered },
+    { id: "logs", icon: ScrollText },
+    { id: "models", icon: Boxes },
+    { id: "settings", icon: Settings2 },
   ] as const;
 
   type PageId = (typeof pages)[number]["id"];
@@ -34,12 +35,20 @@
     live.requests.filter((r) => r.outcome !== "ok" && Date.now() - r.ts_ms < 10 * 60_000).length,
   );
 
+  // 托盘菜单跟着界面语言（启动时告诉外壳一次，之后每次切换再告诉）
+  $effect(() => {
+    void api.setLanguage(i18n.lang).catch(() => {});
+  });
+
   onMount(() => {
     // 仅浏览器预览：#page=logs&seed=rose 直接打开某页、某个种子色（用于截图与评审）
     if (api.preview) {
       const params = new URLSearchParams(location.hash.slice(1));
       const wanted = params.get("page");
       if (pages.some((p) => p.id === wanted)) page = wanted as PageId;
+      // #lang=en / zh：用某种语言预览（不记住）
+      const lang = params.get("lang");
+      if (lang === "en" || lang === "zh") setLangPref(lang, false);
       const seed = params.get("seed");
       const preset = PRESETS.find((p) => p.id === seed);
       if (preset || /^[0-9a-f]{6}$/i.test(seed ?? "")) {
@@ -78,7 +87,7 @@
 </script>
 
 <div class="shell">
-  <nav aria-label="主导航">
+  <nav aria-label={t("nav.aria")}>
     <!-- 图标、标志和选中药丸放在一条“导轨”里：液态玻璃下它是一枚刚好包住图标的悬浮胶囊 -->
     <div class="rail glass">
       <img class="logo" src="/logo.svg" alt="VertexSwitch" width="30" height="30" />
@@ -97,14 +106,14 @@
           <span class="indicator">
             <p.icon size={20} strokeWidth={1.75} />
             {#if p.id === "requests" && failedRecent > 0}
-              <span class="badge" aria-label="最近 10 分钟 {failedRecent} 个失败">{failedRecent}</span>
+              <span class="badge" aria-label={t("nav.failedBadge", { n: failedRecent })}>{failedRecent}</span>
             {/if}
           </span>
-          <span class="label">{p.label}</span>
+          <span class="label">{t(`nav.${p.id}`)}</span>
         </button>
       {/each}
     </div>
-    {#if api.preview}<span class="preview" title="浏览器预览：示例数据，不连接核心">预览</span>{/if}
+    {#if api.preview}<span class="preview" title={t("nav.previewTitle")}>{t("nav.preview")}</span>{/if}
   </nav>
 
   <main>

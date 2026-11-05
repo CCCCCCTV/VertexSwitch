@@ -9,6 +9,7 @@ mod app_icon;
 mod backdrop_color;
 mod commands;
 mod host;
+mod i18n;
 mod title_bar;
 mod tray;
 
@@ -94,6 +95,7 @@ fn main() {
             commands::set_backdrop,
             commands::set_title_bar,
             commands::sample_backdrop,
+            commands::set_language,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -123,6 +125,7 @@ fn main() {
             let window = builder.build()?;
             app_icon::apply_to_window(&window);
             title_bar::hide_caption_content(&window);
+            i18n::load();
             tray::create(&handle)?;
             forward(handle.clone(), "log", logs.subscribe());
             forward(

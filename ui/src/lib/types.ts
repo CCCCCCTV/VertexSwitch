@@ -125,7 +125,9 @@ export interface AppInfo {
   version: string;
   config_dir: string;
   config_path: string | null;
+  /** 存在文件里时是文件路径；存在系统凭据库里时界面显示固定文字 */
   admin_token_location: string;
+  admin_token_in_store: boolean;
 }
 
 /** 窗口背景材质（Windows 11）：Mica、Mica Alt、亚克力，或不透明 */

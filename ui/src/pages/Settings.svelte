@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorText } from "../lib/api";
+  import { i18n, setLangPref, t, type LangPref } from "../lib/i18n.svelte";
   import { refreshStatus } from "../lib/live.svelte";
   import {
     BACKDROPS,
@@ -18,12 +19,18 @@
     setTint,
     theme,
   } from "../lib/theme.svelte";
+  import { TIERS } from "../lib/format";
   import type { AppInfo, Backdrop, Settings } from "../lib/types";
 
   let original = $state<Settings | null>(null);
   let draft = $state<Settings | null>(null);
   let info = $state<AppInfo | null>(null);
-  const liveScope = $derived(LIVE_SCOPES.find((s) => s.id === theme.pref.source));
+  const liveScope = $derived(LIVE_SCOPES.find((s) => s === theme.pref.source));
+  const LANGS: { id: LangPref; label: () => string }[] = [
+    { id: "system", label: () => t("settings.langSystem") },
+    { id: "zh", label: () => "中文" },
+    { id: "en", label: () => "English" },
+  ];
   let bgBusy = $state(false);
   let bgError = $state("");
 
@@ -94,11 +101,11 @@
       draft = structuredClone(result.settings);
       dropFields = result.settings.claude.drop_body_fields.join(", ");
       if (result.restart_error) {
-        message = { tone: "bad", text: `已保存，但${result.restart_error}` };
+        message = { tone: "bad", text: t("settings.savedBut", { error: result.restart_error }) };
       } else if (result.restart_required) {
-        message = { tone: "ok", text: `已保存，代理已改为监听 ${result.server?.addr ?? ""}` };
+        message = { tone: "ok", text: t("settings.savedListen", { addr: result.server?.addr ?? "" }) };
       } else {
-        message = { tone: "ok", text: "已保存并立即生效" };
+        message = { tone: "ok", text: t("settings.saved") };
       }
       await refreshStatus();
     } catch (e) {
@@ -126,7 +133,7 @@
     systemMessage = null;
     try {
       autostart = (await api.setAutostart(enabled)).enabled;
-      systemMessage = { tone: "ok", text: enabled ? "已开启开机自启（启动后只在托盘运行）" : "已关闭开机自启" };
+      systemMessage = { tone: "ok", text: t(enabled ? "settings.autostartOn" : "settings.autostartOff") };
     } catch (e) {
       systemMessage = { tone: "bad", text: errorText(e) };
     }
@@ -136,7 +143,7 @@
     systemMessage = null;
     try {
       await navigator.clipboard.writeText((await api.adminToken()).token);
-      systemMessage = { tone: "ok", text: "管理 token 已复制到剪贴板" };
+      systemMessage = { tone: "ok", text: t("settings.tokenCopied") };
     } catch (e) {
       systemMessage = { tone: "bad", text: errorText(e) };
     }
@@ -150,18 +157,18 @@
 </script>
 
 <header>
-  <h1>设置</h1>
+  <h1>{t("nav.settings")}</h1>
   <div class="actions">
     {#if message}<span class="msg {message.tone}">{message.text}</span>{/if}
-    <button onclick={revert} disabled={!dirty || saving}>撤销</button>
-    <button class="primary" onclick={save} disabled={!dirty || saving}>{saving ? "保存中…" : "保存"}</button>
+    <button onclick={revert} disabled={!dirty || saving}>{t("settings.revert")}</button>
+    <button class="primary" onclick={save} disabled={!dirty || saving}>{saving ? t("settings.saving") : t("settings.save")}</button>
   </div>
 </header>
 
 <datalist id="regions">
-  <option value="global">global（推荐）</option>
-  <option value="us">us（美国多区域）</option>
-  <option value="eu">eu（欧盟多区域）</option>
+  <option value="global">{t("region.global")}</option>
+  <option value="us">{t("region.us")}</option>
+  <option value="eu">{t("region.eu")}</option>
   <option value="us-central1"></option>
   <option value="us-east5"></option>
   <option value="europe-west1"></option>
@@ -173,21 +180,22 @@
     <section class="panel">
       <h2>Google Cloud</h2>
       <label class="field">
-        <span>服务账号密钥文件</span>
+        <span>{t("settings.keyFile")}</span>
         <div class="with-btn">
-          <input type="text" bind:value={draft.google.credentials_file} placeholder="留空则使用环境变量 GOOGLE_APPLICATION_CREDENTIALS" />
-          <button onclick={pickKey}>选择…</button>
+          <input type="text" bind:value={draft.google.credentials_file} placeholder={t("settings.keyFilePlaceholder")}
+          />
+          <button onclick={pickKey}>{t("settings.browse")}</button>
         </div>
       </label>
       <div class="two">
         <label class="field">
-          <span>项目 ID</span>
-          <input type="text" bind:value={draft.google.project_id} placeholder="留空则从密钥文件读取" />
+          <span>{t("settings.projectId")}</span>
+          <input type="text" bind:value={draft.google.project_id} placeholder={t("settings.projectIdPlaceholder")} />
         </label>
         <label class="field">
-          <span>默认区域</span>
+          <span>{t("settings.defaultRegion")}</span>
           <input type="text" list="regions" bind:value={draft.google.region} />
-          <small>Claude 使用此区域；Gemini 未单独设置时也用它</small>
+          <small>{t("settings.defaultRegionHint")}</small>
         </label>
       </div>
     </section>
@@ -196,101 +204,102 @@
       <h2>Gemini</h2>
       <div class="two">
         <label class="field">
-          <span>区域</span>
-          <input type="text" list="regions" bind:value={draft.gemini.region} placeholder={`沿用默认区域（${draft.google.region}）`} />
-          <small>Flex 只支持 global；Priority 支持 global / us / eu</small>
+          <span>{t("settings.region")}</span>
+          <input type="text" list="regions" bind:value={draft.gemini.region} placeholder={t("settings.geminiRegionPlaceholder", { region: draft.google.region })}
+          />
+          <small>{t("settings.geminiRegionHint")}</small>
         </label>
         <label class="field">
-          <span>默认服务档位</span>
+          <span>{t("settings.defaultTier")}</span>
           <select bind:value={draft.gemini.tier}>
-            <option value="standard">Standard（标准）</option>
-            <option value="flex">Flex（低价，排队）</option>
-            <option value="priority">Priority（优先）</option>
+            {#each TIERS as id}<option value={id}>{t(`tierOption.${id}`)}</option>{/each}
           </select>
-          <small>单个模型的档位在“模型”页设置</small>
+          <small>{t("settings.defaultTierHint")}</small>
         </label>
         <label class="field">
-          <span>OpenAI 格式的 Gemini 请求</span>
+          <span>{t("settings.openaiNative")}</span>
           <select bind:value={draft.gemini.openai_native}>
-            <option value="auto">需要档位时转成原生格式（推荐）</option>
-            <option value="always">总是转成原生格式</option>
-            <option value="never">总是走兼容接口（档位不生效）</option>
+            <option value="auto">{t("settings.openaiNative.auto")}</option>
+            <option value="always">{t("settings.openaiNative.always")}</option>
+            <option value="never">{t("settings.openaiNative.never")}</option>
           </select>
-          <small>Vertex 的 OpenAI 兼容接口不接受档位，转成原生格式才能带上</small>
+          <small>{t("settings.openaiNativeHint")}</small>
         </label>
         <label class="field">
-          <span>Flex 排队超时（秒）</span>
+          <span>{t("settings.flexTimeout")}</span>
           <input type="number" min="1" max="1800" bind:value={draft.gemini.flex_server_timeout} />
-          <small>最长 1800 秒（30 分钟）</small>
+          <small>{t("settings.flexTimeoutHint")}</small>
         </label>
         <label class="check">
           <input type="checkbox" bind:checked={draft.gemini.shared_only} />
-          <span>只走 PayGo<small>不使用预配吞吐量（发送 X-Vertex-AI-LLM-Request-Type: shared）</small></span>
+          <span>{t("settings.sharedOnly")}<small>{t("settings.sharedOnlyHint")}</small></span>
         </label>
       </div>
     </section>
 
     <section class="panel">
-      <h2>代理服务</h2>
+      <h2>{t("settings.proxy")}</h2>
       <div class="two">
         <label class="field">
-          <span>监听地址</span>
+          <span>{t("settings.host")}</span>
           <input type="text" bind:value={draft.server.host} />
-          <small>127.0.0.1 只允许本机访问</small>
+          <small>{t("settings.hostHint")}</small>
         </label>
         <label class="field">
-          <span>端口</span>
+          <span>{t("settings.port")}</span>
           <input type="number" min="1" max="65535" bind:value={draft.server.port} />
-          <small>修改后自动在新端口重新监听</small>
+          <small>{t("settings.portHint")}</small>
         </label>
       </div>
       <label class="field">
         <span>API key</span>
         <div class="with-btn">
-          <input type={showKey ? "text" : "password"} bind:value={draft.server.api_key} placeholder="留空则不鉴权" autocomplete="off" />
-          <button onclick={() => (showKey = !showKey)}>{showKey ? "隐藏" : "显示"}</button>
-          <button onclick={generateKey}>生成</button>
+          <input type={showKey ? "text" : "password"} bind:value={draft.server.api_key} placeholder={t("settings.apiKeyPlaceholder")}
+            autocomplete="off"
+          />
+          <button onclick={() => (showKey = !showKey)}>{showKey ? t("settings.hide") : t("settings.show")}</button>
+          <button onclick={generateKey}>{t("settings.generate")}</button>
         </div>
-        <small>设置后客户端需携带：Authorization: Bearer、x-api-key 或 x-goog-api-key</small>
+        <small>{t("settings.apiKeyHint")}</small>
       </label>
     </section>
 
     <section class="panel">
-      <h2>Ollama（本地模型）</h2>
+      <h2>{t("settings.ollama")}</h2>
       <div class="two">
         <label class="check">
           <input type="checkbox" bind:checked={draft.ollama.enabled} />
-          <span>启用<small>通过 OpenAI 接口转发到本地 Ollama，不需要 Google 认证</small></span>
+          <span>{t("settings.enable")}<small>{t("settings.ollamaHint")}</small></span>
         </label>
         <label class="field">
-          <span>Ollama 地址</span>
+          <span>{t("settings.ollamaUrl")}</span>
           <input type="text" bind:value={draft.ollama.base_url} disabled={!draft.ollama.enabled} />
         </label>
       </div>
     </section>
 
     <details class="panel">
-      <summary><h2>高级</h2></summary>
+      <summary><h2>{t("settings.advanced")}</h2></summary>
       <div class="three">
-        <label class="field"><span>连接超时（秒）</span><input type="number" min="1" bind:value={draft.timeouts.connect} /></label>
-        <label class="field"><span>非流式读超时（秒）</span><input type="number" min="1" bind:value={draft.timeouts.read} /></label>
-        <label class="field"><span>流式空闲上限（秒）</span><input type="number" min="1" bind:value={draft.timeouts.stream_idle} /></label>
-        <label class="field"><span>连接错误重试次数</span><input type="number" min="0" max="5" bind:value={draft.retry.attempts} /></label>
+        <label class="field"><span>{t("settings.connectTimeout")}</span><input type="number" min="1" bind:value={draft.timeouts.connect} /></label>
+        <label class="field"><span>{t("settings.readTimeout")}</span><input type="number" min="1" bind:value={draft.timeouts.read} /></label>
+        <label class="field"><span>{t("settings.streamIdle")}</span><input type="number" min="1" bind:value={draft.timeouts.stream_idle} /></label>
+        <label class="field"><span>{t("settings.retries")}</span><input type="number" min="0" max="5" bind:value={draft.retry.attempts} /></label>
         <label class="field">
-          <span>配额耗尽判定（秒）</span><input type="number" min="1" bind:value={draft.retry.quota_hang_seconds} />
-          <small>上游挂起超过这么久后无响应断开，按配额耗尽处理</small>
+          <span>{t("settings.quotaHang")}</span><input type="number" min="1" bind:value={draft.retry.quota_hang_seconds} />
+          <small>{t("settings.quotaHangHint")}</small>
         </label>
-        <label class="field"><span>OpenAI→Claude 默认 max_tokens</span><input type="number" min="1" bind:value={draft.openai.default_max_tokens} /></label>
+        <label class="field"><span>{t("settings.maxTokens")}</span><input type="number" min="1" bind:value={draft.openai.default_max_tokens} /></label>
       </div>
       <label class="field">
-        <span>转发给 Claude 前删除的字段</span>
-        <input type="text" bind:value={dropFields} placeholder="逗号分隔" />
+        <span>{t("settings.dropFields")}</span>
+        <input type="text" bind:value={dropFields} placeholder={t("settings.commaSeparated")} />
       </label>
     </details>
 
     <section class="panel" id="appearance">
-      <div class="row-title"><h2>外观</h2><span class="faint small">立即生效，只影响这台电脑</span></div>
-      <div class="seeds" role="radiogroup" aria-label="主题色">
+      <div class="row-title"><h2>{t("settings.appearance")}</h2><span class="faint small">{t("settings.appearanceNote")}</span></div>
+      <div class="seeds" role="radiogroup" aria-label={t("settings.themeColor")}>
         <button
           role="radio"
           aria-checked={theme.pref.source === "system"}
@@ -299,14 +308,14 @@
           onclick={() => setThemePref({ ...theme.pref, source: "system" })}
         >
           <span class="swatch" style:background={theme.systemAccent ?? "var(--accent)"}></span>
-          跟随 Windows 强调色
+          {t("settings.followAccent")}
         </button>
         {#each PRESETS as p}
           <button
             role="radio"
             aria-checked={theme.pref.source === "custom" && theme.pref.seed.toLowerCase() === p.seed.toLowerCase()}
-            aria-label={p.label}
-            title={p.label}
+            aria-label={t(`preset.${p.id}`)}
+            title={t(`preset.${p.id}`)}
             class="seed"
             class:on={theme.pref.source === "custom" && theme.pref.seed.toLowerCase() === p.seed.toLowerCase()}
             onclick={() => setThemePref({ ...theme.pref, source: "custom", seed: p.seed })}
@@ -314,65 +323,61 @@
             <span class="swatch" style:background={p.seed}></span>
           </button>
         {/each}
-        <label class="seed custom" title="自定义颜色">
+        <label class="seed custom" title={t("settings.customColor")}>
           <input
             type="color"
             value={theme.seed}
             oninput={(e) => setThemePref({ ...theme.pref, source: "custom", seed: e.currentTarget.value })}
-            aria-label="自定义主题色"
+            aria-label={t("settings.customColorAria")}
           />
-          自定义
+          {t("settings.custom")}
         </label>
       </div>
       <div class="live">
-        <span class="live-label" id="live-label">实时取色</span>
+        <span class="live-label" id="live-label">{t("settings.live")}</span>
         <div class="segmented" role="radiogroup" aria-labelledby="live-label">
           <button
             role="radio"
             aria-checked={!liveScope}
             class:on={!liveScope}
-            onclick={() => liveScope && setThemePref({ ...theme.pref, source: "system" })}>关闭</button
+            onclick={() => liveScope && setThemePref({ ...theme.pref, source: "system" })}>{t("settings.off")}</button
           >
           {#each LIVE_SCOPES as scope}
             <button
               role="radio"
-              aria-checked={liveScope?.id === scope.id}
-              class:on={liveScope?.id === scope.id}
-              onclick={() => setThemePref({ ...theme.pref, source: scope.id })}>{scope.label}</button
+              aria-checked={liveScope === scope}
+              class:on={liveScope === scope}
+              onclick={() => setThemePref({ ...theme.pref, source: scope })}>{t(`live.${scope}`)}</button
             >
           {/each}
         </div>
         {#if liveScope}
           <label class="interval">
-            间隔
+            {t("settings.interval")}
             <select
               value={theme.pref.liveInterval}
               onchange={(e) => setLiveInterval(Number(e.currentTarget.value))}
             >
-              {#each LIVE_INTERVALS as i}<option value={i.ms}>{i.label}</option>{/each}
+              {#each LIVE_INTERVALS as ms}<option value={ms}
+                  >{ms ? t("interval.seconds", { n: ms / 1000 }) : t("interval.none")}</option
+                >{/each}
             </select>
           </label>
         {/if}
       </div>
       <p class="faint small live-hint">
-        {liveScope ? liveScope.hint : "关闭时颜色来自上面选的颜色；打开后从桌面背景取色，背景按取到的颜色和位置渐变"}
+        {liveScope ? t(`live.${liveScope}.hint`) : t("live.offHint")}
         {#if liveScope && theme.pref.liveInterval === 0}
-          <br />无间隔：取完马上取下一次，跟得最紧，但会一直占用一些 CPU{liveScope.id === "behind"
-            ? "（窗口后方要让后面每个窗口都画一遍，比整张壁纸更耗）"
-            : ""}。
+          <br />{t("live.continuous")}{liveScope === "behind" ? t("live.continuousBehind") : ""}{t("live.end")}
         {/if}
       </p>
       <label class="check inline glass-toggle">
         <input type="checkbox" checked={theme.pref.glass} onchange={(e) => setGlass(e.currentTarget.checked)} />
-        <span
-          >液态玻璃<small
-            >侧边栏、板块和状态胶囊变成玻璃，透出并折射本软件的背景（底色、实时取色的颜色场、背景图片），边缘有高光；配合背景图片或实时取色最明显</small
-          ></span
-        >
+        <span>{t("settings.glass")}<small>{t("settings.glassHint")}</small></span>
       </label>
       <div class="tint">
-        <label for="tint">色调强度</label>
-        <span class="faint small">中性</span>
+        <label for="tint">{t("settings.tint")}</label>
+        <span class="faint small">{t("settings.neutral")}</span>
         <input
           id="tint"
           type="range"
@@ -382,43 +387,45 @@
           value={theme.pref.tint}
           oninput={(e) => setTint(Number(e.currentTarget.value))}
         />
-        <span class="faint small">浓</span>
-        <button class="ghost" onclick={() => setTint(TINT_DEFAULT)} disabled={theme.pref.tint === TINT_DEFAULT}>恢复默认</button>
+        <span class="faint small">{t("settings.strong")}</span>
+        <button class="ghost" onclick={() => setTint(TINT_DEFAULT)} disabled={theme.pref.tint === TINT_DEFAULT}
+          >{t("settings.resetDefault")}</button
+        >
       </div>
       {#if theme.backdropSupported || api.preview}
         <div class="backdrop">
-          <label for="backdrop">窗口材质</label>
+          <label for="backdrop">{t("settings.backdrop")}</label>
           <select
             id="backdrop"
             value={theme.pref.backdrop}
             onchange={(e) => setBackdrop(e.currentTarget.value as Backdrop)}
           >
-            {#each BACKDROPS as b}<option value={b.id}>{b.label}</option>{/each}
+            {#each BACKDROPS as b}<option value={b}>{t(`backdrop.${b}`)}</option>{/each}
           </select>
           <span class="faint small"
-            >{BACKDROPS.find((b) => b.id === theme.pref.backdrop)?.hint}{liveScope
-              ? "；实时取色打开时背景由取到的颜色铺满，材质看不到"
-              : ""}</span
+            >{t(`backdrop.${theme.pref.backdrop}.hint`)}{liveScope ? t("settings.backdropLiveNote") : ""}</span
           >
         </div>
       {/if}
       <div class="backdrop">
-        <span class="row-label">背景图片</span>
+        <span class="row-label">{t("settings.bgImage")}</span>
         {#if theme.bgImage}
           <span class="thumb" style:background-image={`url("${theme.bgImage}")`} aria-hidden="true"></span>
         {/if}
         <button onclick={() => background(chooseBackground)} disabled={bgBusy}>
-          {theme.bgImage ? "更换图片" : "选择图片"}
+          {theme.bgImage ? t("settings.changeImage") : t("settings.chooseImage")}
         </button>
         {#if theme.bgImage}
-          <button class="ghost" onclick={() => background(clearBackground)} disabled={bgBusy}>移除</button>
+          <button class="ghost" onclick={() => background(clearBackground)} disabled={bgBusy}
+            >{t("settings.remove")}</button
+          >
         {/if}
-        {#if bgError}<span class="msg bad">{bgError}</span>{:else}<span class="faint small">图片会复制到配置目录，铺满窗口背景</span>{/if}
+        {#if bgError}<span class="msg bad">{bgError}</span>{:else}<span class="faint small">{t("settings.bgImageHint")}</span>{/if}
       </div>
       {#if theme.bgImage}
         <div class="tint">
-          <label for="bg-opacity">图片不透明度</label>
-          <span class="faint small">淡</span>
+          <label for="bg-opacity">{t("settings.bgOpacity")}</label>
+          <span class="faint small">{t("settings.faint")}</span>
           <input
             id="bg-opacity"
             type="range"
@@ -428,17 +435,31 @@
             value={theme.pref.bgOpacity}
             oninput={(e) => setBackgroundOpacity(Number(e.currentTarget.value))}
           />
-          <span class="faint small">浓</span>
+          <span class="faint small">{t("settings.strong")}</span>
           <span class="small mono">{Math.round(theme.pref.bgOpacity * 100)}%</span>
         </div>
       {/if}
-      <p class="faint small">整个界面的色调都由这个颜色生成，强度只影响底色和面板；浅色 / 深色跟随系统设置。</p>
+      <p class="faint small">{t("settings.themeNote")}</p>
     </section>
 
     <section class="panel">
       <div class="row-title">
-        <h2>系统</h2>
+        <h2>{t("settings.system")}</h2>
         {#if systemMessage}<span class="msg {systemMessage.tone}">{systemMessage.text}</span>{/if}
+      </div>
+      <div class="live lang">
+        <span class="live-label" id="lang-label">{t("settings.language")}</span>
+        <div class="segmented" role="radiogroup" aria-labelledby="lang-label">
+          {#each LANGS as l}
+            <button
+              role="radio"
+              aria-checked={i18n.pref === l.id}
+              class:on={i18n.pref === l.id}
+              lang={l.id === "system" ? undefined : l.id === "zh" ? "zh-CN" : "en"}
+              onclick={() => setLangPref(l.id)}>{l.label()}</button
+            >
+          {/each}
+        </div>
       </div>
       <label class="check inline">
         <input
@@ -447,22 +468,27 @@
           disabled={autostart === null}
           onchange={(e) => toggleAutostart(e.currentTarget.checked)}
         />
-        <span>开机时自动启动<small>登录 Windows 后在托盘里运行，不弹出窗口；立即生效，不需要点保存</small></span>
+        <span>{t("settings.autostart")}<small>{t("settings.autostartHint")}</small></span>
       </label>
       {#if info}
         <dl class="facts">
-          <dt>配置文件</dt>
-          <dd><span class="mono">{info.config_path}</span> <button class="link" onclick={() => api.openConfigDir()}>打开目录</button></dd>
-          <dt>管理 token</dt>
-          <dd>{info.admin_token_location} <button class="link" onclick={copyAdminToken}>复制</button></dd>
-          <dt>版本</dt>
+          <dt>{t("settings.configFile")}</dt>
+          <dd><span class="mono">{info.config_path}</span> <button class="link" onclick={() => api.openConfigDir()}
+              >{t("settings.openFolder")}</button
+            ></dd>
+          <dt>{t("settings.adminToken")}</dt>
+          <dd>
+            {info.admin_token_in_store ? t("settings.credentialStore") : info.admin_token_location}
+            <button class="link" onclick={copyAdminToken}>{t("settings.copy")}</button>
+          </dd>
+          <dt>{t("settings.version")}</dt>
           <dd>{info.version}</dd>
         </dl>
       {/if}
     </section>
   </div>
 {:else}
-  <div class="empty">正在加载…</div>
+  <div class="empty">{t("common.loading")}</div>
 {/if}
 
 <style>
@@ -748,6 +774,10 @@
 
   .live-label {
     font-weight: 500;
+  }
+
+  .lang {
+    margin: 0 0 14px;
   }
 
   .live-hint {

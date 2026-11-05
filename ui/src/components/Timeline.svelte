@@ -2,6 +2,7 @@
   // 请求时间线：最近 30 分钟每分钟的请求数，按结果堆叠；降级与档位切换标在时间轴上。
   import { onMount } from "svelte";
   import { OctagonX } from "@lucide/svelte";
+  import { t } from "../lib/i18n.svelte";
   import { live } from "../lib/live.svelte";
   import { time } from "../lib/format";
 
@@ -68,13 +69,13 @@
 
 <div class="timeline" bind:clientWidth={width}>
   <div class="summary">
-    <strong>{total}</strong> 个请求
-    {#if failed}<span class="bad"><OctagonX size={14} />{failed} 个失败或中断</span>{/if}
+    <strong>{total}</strong> {t("timeline.requests", { n: total })}
+    {#if failed}<span class="bad"><OctagonX size={14} />{t("timeline.failed", { n: failed })}</span>{/if}
     <span class="legend">
-      <span><i class="sw ok"></i>成功</span>
-      <span><i class="sw warn"></i>中断</span>
-      <span><i class="sw bad hatch"></i>失败</span>
-      <span><i class="tri"></i>档位降级</span>
+      <span><i class="sw ok"></i>{t("timeline.ok")}</span>
+      <span><i class="sw warn"></i>{t("timeline.interrupted")}</span>
+      <span><i class="sw bad hatch"></i>{t("timeline.failedLegend")}</span>
+      <span><i class="tri"></i>{t("timeline.downgrade")}</span>
     </span>
   </div>
   <svg
@@ -82,7 +83,7 @@
     width={width}
     height={H}
     role="img"
-    aria-label="最近 30 分钟共 {total} 个请求，其中 {failed} 个失败或中断"
+    aria-label={t("timeline.aria", { total, failed })}
     onmouseleave={() => (hover = null)}
   >
     <defs>
@@ -123,22 +124,22 @@
       />
       {#if i % 10 === 0 || i === MINUTES - 1}
         <text class="axis" x={x(i) + barW / 2} y={H - 6} text-anchor="middle">
-          {i === MINUTES - 1 ? "现在" : time(b.ts).slice(0, 5)}
+          {i === MINUTES - 1 ? t("timeline.now") : time(b.ts).slice(0, 5)}
         </text>
       {/if}
     {/each}
 
     {#each marks as m}
       <line class="mark" x1={m.x} x2={m.x} y1={PAD.top - 4} y2={PAD.top + plotH} />
-      <text class="mark-label" x={m.x + 4} y={PAD.top + 8}>切到 {m.tier}</text>
+      <text class="mark-label" x={m.x + 4} y={PAD.top + 8}>{t("timeline.switchedTo", { tier: m.tier })}</text>
     {/each}
   </svg>
 
   {#if hovered}
     <div class="tip" style:left="{Math.min(width - 170, Math.max(0, x(hover!) - 60))}px">
       <b>{time(hovered.ts).slice(0, 5)}</b>
-      成功 {hovered.ok} · 中断 {hovered.interrupted} · 失败 {hovered.failed}
-      {#if hovered.downgraded}<br /><span class="warn-t">档位降级 {hovered.downgraded} 次</span>{/if}
+      {t("timeline.tip", { ok: hovered.ok, interrupted: hovered.interrupted, failed: hovered.failed })}
+      {#if hovered.downgraded}<br /><span class="warn-t">{t("timeline.tipDowngrade", { n: hovered.downgraded })}</span>{/if}
     </div>
   {/if}
 </div>

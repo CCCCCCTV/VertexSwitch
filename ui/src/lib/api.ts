@@ -18,6 +18,7 @@ import type {
   Tier,
 } from "./types";
 import { mockApi } from "./mock";
+import { t, type Lang } from "./i18n.svelte";
 
 export interface Api {
   readonly preview: boolean;
@@ -55,6 +56,8 @@ export interface Api {
   /** 当前背景图片；没有设置时为 null */
   backgroundImage(): Promise<Blob | null>;
   clearBackgroundImage(): Promise<void>;
+  /** 界面语言（启动时和切换时告诉外壳，托盘菜单跟着换） */
+  setLanguage(lang: Lang): Promise<void>;
   onLog(cb: (e: LogEntry) => void): () => void;
   onRequest(cb: (r: RequestRecord) => void): () => void;
   onSettingsChanged(cb: () => void): () => void;
@@ -103,7 +106,7 @@ async function tauriApi(): Promise<Api> {
     },
     pickKeyFile: async () => {
       const picked = await open({
-        title: "选择服务账号密钥文件",
+        title: t("dialog.keyFile"),
         multiple: false,
         directory: false,
         filters: [{ name: "JSON", extensions: ["json"] }],
@@ -112,10 +115,10 @@ async function tauriApi(): Promise<Api> {
     },
     chooseBackgroundImage: async () => {
       const picked = await open({
-        title: "选择背景图片",
+        title: t("dialog.bgImage"),
         multiple: false,
         directory: false,
-        filters: [{ name: "图片", extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"] }],
+        filters: [{ name: t("dialog.images"), extensions: ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"] }],
       });
       if (typeof picked !== "string") return false;
       await invoke("set_background_image", { path: picked });
@@ -126,6 +129,7 @@ async function tauriApi(): Promise<Api> {
       return bytes.byteLength ? new Blob([bytes]) : null;
     },
     clearBackgroundImage: () => invoke("clear_background_image"),
+    setLanguage: (lang) => invoke("set_language", { lang }),
     onLog: (cb) => subscribe("log", cb),
     onRequest: (cb) => subscribe("request", cb),
     onSettingsChanged: (cb) => subscribe("settings-changed", () => cb()),

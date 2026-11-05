@@ -9,8 +9,10 @@ use tauri_plugin_opener::OpenerExt;
 use vertexswitch_core::admin;
 use vertexswitch_core::config::app_dir;
 use vertexswitch_core::errors::ProxyError;
+use vertexswitch_core::secrets::TokenLocation;
 
 use crate::host::CoreHost;
+use crate::i18n::tr;
 use crate::tray;
 
 type Host<'a> = State<'a, Arc<CoreHost>>;
@@ -18,6 +20,11 @@ type CmdResult = Result<Value, String>;
 
 fn err(e: ProxyError) -> String {
     e.message
+}
+
+/// “前缀：原因”形式的报错，前缀跟随界面语言。
+fn fail(zh: &str, en: &str, e: impl std::fmt::Display) -> String {
+    format!("{}{e}", tr(zh, en))
 }
 
 #[tauri::command]
@@ -108,8 +115,18 @@ pub fn get_app_info(host: Host<'_>) -> CmdResult {
         "version": vertexswitch_core::VERSION,
         "config_dir": app_dir().display().to_string(),
         "config_path": host.state.config_path.as_ref().map(|p| p.display().to_string()),
-        "admin_token_location": host.admin_token_location,
+        "admin_token_location": host.admin_token.describe(),
+        "admin_token_in_store": matches!(host.admin_token, TokenLocation::CredentialStore),
     }))
+}
+
+/// 界面语言（启动时和每次切换时调用）：托盘菜单与外壳的提示跟着换。
+#[tauri::command]
+pub fn set_language(app: AppHandle, host: Host<'_>, lang: String) -> CmdResult {
+    if crate::i18n::set(&lang)? {
+        tray::relabel(&app, &host.state);
+    }
+    Ok(Value::Null)
 }
 
 #[tauri::command]
@@ -136,7 +153,13 @@ fn background_files() -> impl Iterator<Item = std::path::PathBuf> {
 
 fn remove_background() -> Result<(), String> {
     for path in background_files() {
-        std::fs::remove_file(&path).map_err(|e| format!("删除旧背景图片失败：{e}"))?;
+        std::fs::remove_file(&path).map_err(|e| {
+            fail(
+                "删除旧背景图片失败：",
+                "Couldn't remove the old background image: ",
+                e,
+            )
+        })?;
     }
     Ok(())
 }
@@ -149,18 +172,26 @@ pub fn set_background_image(path: String) -> CmdResult {
         .and_then(|e| e.to_str())
         .map(str::to_ascii_lowercase)
         .filter(|e| BACKGROUND_EXTS.contains(&e.as_str()))
-        .ok_or("只支持 PNG、JPG、WebP、GIF、BMP、AVIF 图片")?;
+        .ok_or(tr(
+            "只支持 PNG、JPG、WebP、GIF、BMP、AVIF 图片",
+            "Only PNG, JPG, WebP, GIF, BMP and AVIF images are supported",
+        ))?;
     let size = std::fs::metadata(&src)
-        .map_err(|e| format!("读取图片失败：{e}"))?
+        .map_err(|e| fail("读取图片失败：", "Couldn't read the image: ", e))?
         .len();
     if size > BACKGROUND_MAX_BYTES {
-        return Err("图片不能超过 30 MB".into());
+        return Err(tr("图片不能超过 30 MB", "The image must be 30 MB or smaller").into());
     }
     let dir = app_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     remove_background()?;
-    std::fs::copy(&src, dir.join(format!("background.{ext}")))
-        .map_err(|e| format!("保存背景图片失败：{e}"))?;
+    std::fs::copy(&src, dir.join(format!("background.{ext}"))).map_err(|e| {
+        fail(
+            "保存背景图片失败：",
+            "Couldn't save the background image: ",
+            e,
+        )
+    })?;
     Ok(Value::Null)
 }
 
@@ -174,7 +205,13 @@ pub fn clear_background_image() -> CmdResult {
 #[tauri::command]
 pub fn get_background_image() -> Result<tauri::ipc::Response, String> {
     let bytes = match background_files().next() {
-        Some(path) => std::fs::read(path).map_err(|e| format!("读取背景图片失败：{e}"))?,
+        Some(path) => std::fs::read(path).map_err(|e| {
+            fail(
+                "读取背景图片失败：",
+                "Couldn't read the background image: ",
+                e,
+            )
+        })?,
         None => Vec::new(),
     };
     Ok(tauri::ipc::Response::new(bytes))

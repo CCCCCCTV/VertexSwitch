@@ -2,6 +2,7 @@
   import { tick } from "svelte";
   import { live } from "../lib/live.svelte";
   import { time } from "../lib/format";
+  import { t } from "../lib/i18n.svelte";
 
   type Level = "all" | "WARN" | "ERROR";
   let level = $state<Level>("all");
@@ -26,11 +27,11 @@
 </script>
 
 <header>
-  <h1>日志</h1>
-  <div class="chips" role="radiogroup" aria-label="级别">
-    <button class:on={level === "all"} onclick={() => (level = "all")}>全部</button>
-    <button class:on={level === "WARN"} onclick={() => (level = "WARN")}>告警及以上</button>
-    <button class:on={level === "ERROR"} onclick={() => (level = "ERROR")}>仅错误</button>
+  <h1>{t("nav.logs")}</h1>
+  <div class="chips" role="radiogroup" aria-label={t("logs.level")}>
+    <button class:on={level === "all"} onclick={() => (level = "all")}>{t("logs.all")}</button>
+    <button class:on={level === "WARN"} onclick={() => (level = "WARN")}>{t("logs.warn")}</button>
+    <button class:on={level === "ERROR"} onclick={() => (level = "ERROR")}>{t("logs.error")}</button>
   </div>
 </header>
 
@@ -42,11 +43,11 @@
       <span class="msg">{e.message}</span>
     </div>
   {:else}
-    <div class="empty">暂无日志。</div>
+    <div class="empty">{t("logs.empty")}</div>
   {/each}
 </div>
 {#if !follow}
-  <button class="jump" onclick={() => { follow = true; if (box) box.scrollTop = box.scrollHeight; }}>回到最新 ↓</button>
+  <button class="jump" onclick={() => { follow = true; if (box) box.scrollTop = box.scrollHeight; }}>{t("logs.jump")}</button>
 {/if}
 
 <style>

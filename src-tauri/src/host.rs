@@ -10,7 +10,7 @@ use vertexswitch_core::app::Background;
 use vertexswitch_core::config::{Settings, app_dir, config_path};
 use vertexswitch_core::logs::LogHub;
 use vertexswitch_core::registry::ModelRegistry;
-use vertexswitch_core::secrets::load_admin_token;
+use vertexswitch_core::secrets::{TokenLocation, load_admin_token};
 use vertexswitch_core::{AppState, SharedState, serve_until, start_background};
 
 struct Running {
@@ -21,7 +21,7 @@ struct Running {
 pub struct CoreHost {
     pub state: SharedState,
     /// 管理 token 存在哪里（显示给用户）
-    pub admin_token_location: String,
+    pub admin_token: TokenLocation,
     running: tokio::sync::Mutex<Option<Running>>,
     background: tokio::sync::Mutex<Option<Background>>,
     last_error: Mutex<Option<String>>,
@@ -46,7 +46,7 @@ impl CoreHost {
             .with_paths(Some(config_file), Some(app_dir().join("models.toml")));
         Arc::new(Self {
             state: Arc::new(state),
-            admin_token_location: location.describe(),
+            admin_token: location,
             running: tokio::sync::Mutex::new(None),
             background: tokio::sync::Mutex::new(None),
             last_error: Mutex::new(None),
@@ -91,7 +91,11 @@ impl CoreHost {
             }
         }
         let Some(listener) = bound else {
-            let message = format!("无法监听 {addr}：{last}");
+            let message = if crate::i18n::english() {
+                format!("Can't listen on {addr}: {last}")
+            } else {
+                format!("无法监听 {addr}：{last}")
+            };
             tracing::error!("{message}");
             *self.last_error.lock().expect("锁未中毒") = Some(message.clone());
             return Err(message);

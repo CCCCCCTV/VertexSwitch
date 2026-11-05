@@ -1,4 +1,4 @@
-//! 托盘图标与菜单：打开主界面、切换 Gemini 档位、退出。
+//! 托盘图标与菜单：打开主界面、切换 Gemini 档位、退出。文字跟随界面语言（见 [`crate::i18n`]）。
 
 use std::sync::Arc;
 
@@ -9,16 +9,35 @@ use tauri::{AppHandle, Emitter, Manager, Wry};
 use vertexswitch_core::{SharedState, admin};
 
 use crate::host::CoreHost;
+use crate::i18n::tr;
 
 const TRAY_ID: &str = "main";
-pub const TIERS: [(&str, &str); 3] = [
-    ("standard", "Standard（标准）"),
-    ("flex", "Flex（低价，排队）"),
-    ("priority", "Priority（优先）"),
+/// 档位 id 与菜单文字（中文、英文）
+const TIERS: [(&str, &str, &str); 3] = [
+    ("standard", "Standard（标准）", "Standard"),
+    ("flex", "Flex（低价，排队）", "Flex (cheaper, may queue)"),
+    ("priority", "Priority（优先）", "Priority (served first)"),
 ];
 
-/// 档位勾选项，供 [`sync`] 更新。
-pub struct TierItems(Vec<(&'static str, CheckMenuItem<Wry>)>);
+fn open_text() -> &'static str {
+    tr("打开 VertexSwitch", "Open VertexSwitch")
+}
+
+fn tier_menu_text() -> &'static str {
+    tr("Gemini 默认档位", "Gemini default tier")
+}
+
+fn quit_text() -> &'static str {
+    tr("退出", "Quit")
+}
+
+/// 菜单项的句柄：切换语言时改文字，档位变化时改勾选。
+pub struct TrayMenu {
+    open: MenuItem<Wry>,
+    tier_menu: Submenu<Wry>,
+    quit: MenuItem<Wry>,
+    tiers: Vec<(&'static str, CheckMenuItem<Wry>)>,
+}
 
 pub fn show_main(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -29,20 +48,27 @@ pub fn show_main(app: &AppHandle) {
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "打开 VertexSwitch", true, None::<&str>)?;
-    let items = TIERS
+    let open = MenuItem::with_id(app, "open", open_text(), true, None::<&str>)?;
+    let tiers = TIERS
         .iter()
-        .map(|(id, label)| {
-            CheckMenuItem::with_id(app, format!("tier:{id}"), *label, true, false, None::<&str>)
-                .map(|item| (*id, item))
+        .map(|(id, zh, en)| {
+            CheckMenuItem::with_id(
+                app,
+                format!("tier:{id}"),
+                tr(zh, en),
+                true,
+                false,
+                None::<&str>,
+            )
+            .map(|item| (*id, item))
         })
         .collect::<tauri::Result<Vec<_>>>()?;
-    let refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = items
+    let refs: Vec<&dyn tauri::menu::IsMenuItem<Wry>> = tiers
         .iter()
         .map(|(_, item)| item as &dyn tauri::menu::IsMenuItem<Wry>)
         .collect();
-    let tier_menu = Submenu::with_items(app, "Gemini 默认档位", true, &refs)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let tier_menu = Submenu::with_items(app, tier_menu_text(), true, &refs)?;
+    let quit = MenuItem::with_id(app, "quit", quit_text(), true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -53,7 +79,12 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &quit,
         ],
     )?;
-    app.manage(TierItems(items));
+    app.manage(TrayMenu {
+        open,
+        tier_menu,
+        quit,
+        tiers,
+    });
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(crate::app_icon::tray())
@@ -96,20 +127,35 @@ fn set_tier(app: &AppHandle, tier: String) {
     sync(app, &host.state);
 }
 
+/// 界面语言变了：菜单文字换成新语言，提示文字也跟着刷新。
+pub fn relabel(app: &AppHandle, state: &SharedState) {
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        let _ = menu.open.set_text(open_text());
+        let _ = menu.tier_menu.set_text(tier_menu_text());
+        let _ = menu.quit.set_text(quit_text());
+        for ((_, item), (_, zh, en)) in menu.tiers.iter().zip(TIERS) {
+            let _ = item.set_text(tr(zh, en));
+        }
+    }
+    sync(app, state);
+}
+
 /// 让勾选状态与提示文字跟上当前配置（配置也可能由界面或文件热加载修改）。
 pub fn sync(app: &AppHandle, state: &SharedState) {
     let runtime = state.runtime();
     let settings = &runtime.settings;
     let tier = settings.gemini.tier.as_str();
-    if let Some(items) = app.try_state::<TierItems>() {
-        for (id, item) in &items.0 {
+    if let Some(menu) = app.try_state::<TrayMenu>() {
+        for (id, item) in &menu.tiers {
             let _ = item.set_checked(*id == tier);
         }
     }
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(format!(
-            "VertexSwitch\n{}:{}\nGemini 默认档位：{tier}",
-            settings.server.host, settings.server.port
+            "VertexSwitch\n{}:{}\n{}{tier}",
+            settings.server.host,
+            settings.server.port,
+            tr("Gemini 默认档位：", "Gemini default tier: "),
         )));
     }
 }

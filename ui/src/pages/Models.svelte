@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorText } from "../lib/api";
-  import { TIER_INFO } from "../lib/format";
+  import { TIERS, TIER_LABEL } from "../lib/format";
+  import { t } from "../lib/i18n.svelte";
   import { live, refreshStatus } from "../lib/live.svelte";
   import type { Models, Tier } from "../lib/types";
 
@@ -16,10 +17,10 @@
   let message = $state<{ tone: "ok" | "bad"; text: string } | null>(null);
 
   const tabs = [
-    { id: "gemini", label: "Gemini" },
-    { id: "claude", label: "Claude" },
-    { id: "maas", label: "开放模型（MaaS）" },
-    { id: "ollama", label: "Ollama" },
+    { id: "gemini", label: () => "Gemini" },
+    { id: "claude", label: () => "Claude" },
+    { id: "maas", label: () => t("models.maas") },
+    { id: "ollama", label: () => "Ollama" },
   ] as const;
 
   const rows = $derived.by((): [string, string][] => {
@@ -64,26 +65,26 @@
     }
   }
 
-  const reload = () => run(async () => `已重新加载，共 ${(await api.reloadModels()).aliases} 个别名`);
-  const edit = () => run(async () => `已打开 ${(await api.editModels()).path}；保存后自动生效`);
-  const ollama = () => run(async () => `发现 ${(await api.refreshOllama()).ollama_models} 个 Ollama 模型`);
+  const reload = () => run(async () => t("models.reloaded", { n: (await api.reloadModels()).aliases }));
+  const edit = () => run(async () => t("models.opened", { path: (await api.editModels()).path }));
+  const ollama = () => run(async () => t("models.foundOllama", { n: (await api.refreshOllama()).ollama_models }));
 </script>
 
 <header>
-  <h1>模型</h1>
+  <h1>{t("nav.models")}</h1>
   <div class="actions">
     {#if message}<span class="msg {message.tone}">{message.text}</span>{/if}
-    <button onclick={reload} disabled={busy}>重新加载</button>
-    <button class="primary" onclick={edit} disabled={busy}>编辑模型表</button>
+    <button onclick={reload} disabled={busy}>{t("models.reload")}</button>
+    <button class="primary" onclick={edit} disabled={busy}>{t("models.edit")}</button>
   </div>
 </header>
 
 <div class="segmented tabs" role="tablist">
-  {#each tabs as t}
-    <button role="tab" aria-selected={tab === t.id} class:on={tab === t.id} onclick={() => (tab = t.id)}>
-      {t.label}
+  {#each tabs as item}
+    <button role="tab" aria-selected={tab === item.id} class:on={tab === item.id} onclick={() => (tab = item.id)}>
+      {item.label()}
       {#if models}
-        <span class="count">{t.id === "ollama" ? models.ollama.length : Object.keys(models[t.id]).length}</span>
+        <span class="count">{item.id === "ollama" ? models.ollama.length : Object.keys(models[item.id]).length}</span>
       {/if}
     </button>
   {/each}
@@ -91,14 +92,14 @@
 
 <div class="panel table-card">
   {#if !models}
-    <div class="empty">正在加载…</div>
+    <div class="empty">{t("common.loading")}</div>
   {:else if rows.length}
     <table>
       <thead>
         <tr>
-          <th>客户端使用的名字</th>
-          <th>Vertex 上游模型 ID</th>
-          {#if tab === "gemini"}<th class="tier-col">服务档位</th>{/if}
+          <th>{t("models.alias")}</th>
+          <th>{t("models.upstream")}</th>
+          {#if tab === "gemini"}<th class="tier-col">{t("models.tier")}</th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -115,13 +116,13 @@
                   class:own
                   value={own ?? "default"}
                   disabled={tierSaving === upstream}
-                  aria-label="{alias} 的服务档位"
+                  aria-label={t("models.tierAria", { alias })}
                   onchange={(e) => setModelTier(upstream, e.currentTarget.value)}
                 >
-                  <option value="default">跟随默认（{TIER_INFO[defaultTier].label}）</option>
-                  {#each Object.entries(TIER_INFO) as [id, info]}
+                  <option value="default">{t("models.followDefault", { tier: TIER_LABEL[defaultTier] })}</option>
+                  {#each TIERS as id}
                     <option value={id} disabled={id === "flex" && noFlex}>
-                      {info.label}{id === "flex" && noFlex ? "（此模型不支持）" : ""}
+                      {TIER_LABEL[id]}{id === "flex" && noFlex ? t("models.flexUnsupported") : ""}
                     </option>
                   {/each}
                 </select>
@@ -133,25 +134,28 @@
     </table>
   {:else if tab === "ollama"}
     <div class="empty">
-      没有发现 Ollama 模型。在设置里启用 Ollama 后
-      <button class="link" onclick={ollama} disabled={busy}>重新发现</button>。
+      {t("models.noOllama")}
+      <button class="link" onclick={ollama} disabled={busy}>{t("models.rediscover")}</button>{t("models.noOllamaEnd")}
     </div>
   {:else if tab === "maas"}
-    <div class="empty">没有登记别名。<span class="mono">publisher/model</span> 形式的名字（如 deepseek-ai/deepseek-v3.1-maas）无需登记即可使用。</div>
+    <div class="empty">
+      {t("models.noMaas")}<span class="mono">publisher/model</span>{t("models.noMaasEnd")}
+    </div>
   {:else}
-    <div class="empty">没有模型。</div>
+    <div class="empty">{t("models.none")}</div>
   {/if}
 </div>
 
 {#if models}
   <p class="faint hint">
-    来源：{models.source === "builtin" ? "内置模型表" : models.source}。
+    {t("models.source", { source: models.source === "builtin" ? t("models.builtin") : models.source })}
     {#if tab === "gemini"}
-      表中没有的 gemini-* 名字原样转发。服务档位按上游模型设置，对 Gemini 原生接口和 OpenAI 兼容接口都生效（后者需要档位时自动转成原生格式发送）；请求头
-      <span class="mono">X-VertexSwitch-Tier</span> 可以临时覆盖。
+      {t("models.geminiHint")}
+      <span class="mono">X-VertexSwitch-Tier</span>
+      {t("models.geminiHintEnd")}
     {/if}
-    {#if tab === "claude"}表中没有的 claude-* 名字原样转发；带日期的写法（如 -20251001）自动改为 @20251001。{/if}
-    {#if models.source === "builtin"}点“编辑模型表”会把内置表复制到配置目录供修改。{/if}
+    {#if tab === "claude"}{t("models.claudeHint")}{/if}
+    {#if models.source === "builtin"}{t("models.builtinHint")}{/if}
   </p>
 {/if}
 
@@ -217,8 +221,9 @@
     padding-bottom: 5px;
   }
 
+  /* 各行一样宽：选项长短不同（如“不支持”）也不会让某一行变宽 */
   .tier-select {
-    width: auto;
+    width: 100%;
     min-width: 168px;
     height: 30px;
     font-size: 13px;
