@@ -32,6 +32,8 @@
 从 GitHub Release 下载 `VertexSwitch_x.y.z_x64-setup.exe` 运行即可，安装到当前用户目录，不需要管理员权限。
 安装包暂未签名，首次运行时 SmartScreen 可能提示，选择“仍要运行”。卸载时保留配置目录 `%APPDATA%\VertexSwitch`。
 
+每个 Release 附有 `SHA256SUMS.txt`，发布说明里有可直接粘贴的 PowerShell 核对命令（输出 True 即下载的文件完整）。
+
 首次启动后在“设置”里选择服务账号密钥文件即可使用。
 
 ## 从源码构建桌面程序

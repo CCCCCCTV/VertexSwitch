@@ -1,6 +1,6 @@
 name: Release
 
-# 推送 v* 标签时构建 Windows 安装包，并附到一个草稿 Release 上（需要手动发布）。
+# 推送 v* 标签时构建 Windows 安装包，连同 SHA256 校验值附到一个草稿 Release 上（需要手动发布）。
 on:
   push:
     tags: ["v*"]
@@ -21,11 +21,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: npm ci
       - run: npx tauri build
+      - name: 生成 SHA256 校验值与发布说明
+        shell: bash
+        run: bash scripts/release-notes.sh target/release/bundle/nsis
       - name: 创建草稿 Release
         shell: bash
+        working-directory: target/release/bundle/nsis
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --title "VertexSwitch $GITHUB_REF_NAME" \
-            --notes "Windows 安装包（当前用户安装，不需要管理员权限）。安装包未签名，首次运行时 SmartScreen 可能提示，选择“仍要运行”。" \
-            target/release/bundle/nsis/*-setup.exe
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+            --title "VertexSwitch $GITHUB_REF_NAME" --notes-file notes.md \
+            *-setup.exe SHA256SUMS.txt
