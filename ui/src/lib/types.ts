@@ -66,6 +66,8 @@ export interface LogEntry {
   level: "ERROR" | "WARN" | "INFO";
   target: string;
   message: string;
+  /** 事件附带的字段：kind 标识特定事件（档位降级为 tier_fallback / tier_mismatch），model 为上游模型 */
+  fields: Record<string, string>;
 }
 
 export type Outcome = "ok" | "error" | "stream_error" | "cancelled";

@@ -28,6 +28,7 @@ use crate::app::{SharedState, bearer, constant_time_eq, health_info, router};
 use crate::config::Settings;
 use crate::errors::{ProxyError, ProxyResult};
 use crate::registry::Backend;
+use crate::tr;
 
 // ---------------------------------------------------------------- 管理操作
 
@@ -63,15 +64,22 @@ pub fn settings(state: &SharedState) -> Settings {
 
 /// 校验、写盘（有配置文件时）并立即应用。返回 `{settings, restart_required}`。
 pub fn replace_settings(state: &SharedState, value: Value) -> ProxyResult<Value> {
-    let settings: Settings = serde_json::from_value(value)
-        .map_err(|e| ProxyError::new(400, format!("配置格式错误：{e}")))?;
+    let settings: Settings = serde_json::from_value(value).map_err(|e| {
+        ProxyError::new(400, tr!("配置格式错误：{e}", "Invalid config format: {e}"))
+    })?;
     settings
         .validate()
-        .map_err(|e| ProxyError::new(400, format!("配置有误：{e}")))?;
+        .map_err(|e| ProxyError::new(400, tr!("配置有误：{e}", "Invalid config: {e}")))?;
     if let Some(path) = &state.config_path {
-        settings
-            .save(path)
-            .map_err(|e| ProxyError::new(500, format!("写入配置文件失败：{e}")))?;
+        settings.save(path).map_err(|e| {
+            ProxyError::new(
+                500,
+                tr!(
+                    "写入配置文件失败：{e}",
+                    "Couldn't write the config file: {e}"
+                ),
+            )
+        })?;
     }
     let outcome = state.apply_settings(settings);
     Ok(json!({
@@ -141,23 +149,36 @@ fn table_json(entries: &[(String, String)]) -> Value {
 pub fn reload_models(state: &SharedState) -> ProxyResult<Value> {
     let count = state
         .reload_models()
-        .map_err(|e| ProxyError::new(400, format!("模型表有误：{e}")))?;
+        .map_err(|e| ProxyError::new(400, tr!("模型表有误：{e}", "Invalid model table: {e}")))?;
     Ok(json!({ "aliases": count }))
 }
 
 /// 把内置模型表写到用户目录供编辑（已存在则不覆盖）。返回文件路径。
 pub fn export_models(state: &SharedState) -> ProxyResult<String> {
-    let path = state
-        .models_path
-        .as_ref()
-        .ok_or_else(|| ProxyError::new(400, "未指定用户模型表路径"))?;
+    let path = state.models_path.as_ref().ok_or_else(|| {
+        ProxyError::new(
+            400,
+            tr!(
+                "未指定用户模型表路径",
+                "No path is set for the user model table"
+            ),
+        )
+    })?;
     if !path.exists() {
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)
-                .map_err(|e| ProxyError::new(500, format!("创建目录失败：{e}")))?;
+            std::fs::create_dir_all(dir).map_err(|e| {
+                ProxyError::new(
+                    500,
+                    tr!("创建目录失败：{e}", "Couldn't create the directory: {e}"),
+                )
+            })?;
         }
-        std::fs::write(path, crate::registry::DEFAULT_MODELS)
-            .map_err(|e| ProxyError::new(500, format!("写入模型表失败：{e}")))?;
+        std::fs::write(path, crate::registry::DEFAULT_MODELS).map_err(|e| {
+            ProxyError::new(
+                500,
+                tr!("写入模型表失败：{e}", "Couldn't write the model table: {e}"),
+            )
+        })?;
     }
     Ok(path.display().to_string())
 }
@@ -209,7 +230,15 @@ pub async fn send_test(
     let status = response.status().as_u16();
     let bytes = axum::body::to_bytes(response.into_body(), 4 * 1024 * 1024)
         .await
-        .map_err(|e| ProxyError::new(502, format!("读取测试响应失败：{e}")))?;
+        .map_err(|e| {
+            ProxyError::new(
+                502,
+                tr!(
+                    "读取测试响应失败：{e}",
+                    "Couldn't read the test response: {e}"
+                ),
+            )
+        })?;
     let parsed: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     Ok(json!({
         "ok": (200..300).contains(&status),
@@ -268,11 +297,22 @@ pub async fn require_admin(
         .get::<ConnectInfo<SocketAddr>>()
         .is_none_or(|ConnectInfo(addr)| addr.ip().is_loopback());
     if !local {
-        return ProxyError::new(403, "管理接口只接受本机连接").into_response();
+        return ProxyError::new(
+            403,
+            tr!(
+                "管理接口只接受本机连接",
+                "The admin API only accepts local connections"
+            ),
+        )
+        .into_response();
     }
     let given = bearer(request.headers()).unwrap_or_default();
     if !constant_time_eq(given.as_bytes(), state.admin_token.as_bytes()) {
-        return ProxyError::new(401, "管理 token 无效或缺失").into_response();
+        return ProxyError::new(
+            401,
+            tr!("管理 token 无效或缺失", "Admin token is missing or invalid"),
+        )
+        .into_response();
     }
     next.run(request).await
 }

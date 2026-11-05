@@ -7,6 +7,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::config::app_dir;
+use crate::tr;
 
 pub const DEFAULT_MODELS: &str = include_str!("../data/models.toml");
 
@@ -48,14 +49,47 @@ impl Route {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum RegistryError {
-    #[error("读取模型表失败：{0}")]
-    Io(#[from] std::io::Error),
-    #[error("模型表格式错误：{0}")]
-    Parse(#[from] toml::de::Error),
-    #[error("模型表中 {0:?} 的值必须是字符串")]
+    Io(std::io::Error),
+    Parse(toml::de::Error),
     NotString(String),
+}
+
+impl std::fmt::Display for RegistryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Io(e) => tr!("读取模型表失败：{e}", "Couldn't read the model table: {e}"),
+            Self::Parse(e) => tr!("模型表格式错误：{e}", "The model table is malformed: {e}"),
+            Self::NotString(key) => tr!(
+                "模型表中 {key:?} 的值必须是字符串",
+                "The value of {key:?} in the model table must be a string"
+            ),
+        };
+        f.write_str(&text)
+    }
+}
+
+impl std::error::Error for RegistryError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io(e) => Some(e),
+            Self::Parse(e) => Some(e),
+            Self::NotString(_) => None,
+        }
+    }
+}
+
+impl From<std::io::Error> for RegistryError {
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<toml::de::Error> for RegistryError {
+    fn from(e: toml::de::Error) -> Self {
+        Self::Parse(e)
+    }
 }
 
 type Table = Vec<(String, String)>;

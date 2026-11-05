@@ -28,7 +28,8 @@ use crate::errors::{Protocol, ProxyError, ProxyResult};
 use crate::metrics;
 use crate::registry::{Backend, Route};
 use crate::runtime::Runtime;
-use crate::tiers::{Tier, TierPlan};
+use crate::tiers::{LOG_KIND_FALLBACK, Tier, TierPlan};
+use crate::tr;
 use crate::translate::openai_to_anthropic::{
     SseParser, StreamTranslator, request_to_anthropic, response_to_openai,
 };
@@ -61,12 +62,11 @@ async fn chat_completions(
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|m| !m.is_empty())
-        .ok_or_else(|| ProxyError::new(400, "model: 缺少模型名"))?
+        .ok_or_else(|| ProxyError::new(400, tr!("model: 缺少模型名", "model: missing model name")))?
         .to_owned();
-    let route = state
-        .registry()
-        .resolve(&model)
-        .ok_or_else(|| ProxyError::new(404, format!("未知模型 {model:?}")))?;
+    let route = state.registry().resolve(&model).ok_or_else(|| {
+        ProxyError::new(404, tr!("未知模型 {model:?}", "Unknown model {model:?}"))
+    })?;
     let stream = body.get("stream").and_then(Value::as_bool) == Some(true);
     metrics::note(|i| {
         i.model = Some(route.upstream_model.clone());
@@ -102,7 +102,7 @@ async fn to_gemini(
     )
     .expect("生成请求总有档位方案");
     for warning in &plan.warnings {
-        tracing::warn!("{}：{warning}", route.upstream_model);
+        tracing::warn!(model = %route.upstream_model, kind = LOG_KIND_FALLBACK, "{warning}");
     }
     let native = match settings.gemini.openai_native.as_str() {
         "always" => true,
@@ -114,8 +114,13 @@ async fn to_gemini(
     }
     if plan.sent_tier_header() {
         tracing::warn!(
-            "{}：gemini.openai_native = never，OpenAI 兼容接口带不了档位头，本次按 Standard 发送",
-            route.upstream_model
+            model = %route.upstream_model,
+            kind = LOG_KIND_FALLBACK,
+            "{}",
+            tr!(
+                "gemini.openai_native = never，OpenAI 兼容接口带不了档位头，本次按 Standard 发送",
+                "gemini.openai_native = never: the OpenAI-compatible endpoint can't carry tier headers, so this request goes out as Standard"
+            )
         );
     }
     metrics::note(|i| i.tier = Some(Tier::Standard.as_str()));
@@ -134,7 +139,10 @@ async fn passthrough(state: &Runtime, mut body: Value, route: &Route) -> ProxyRe
             if !settings.ollama.enabled {
                 return Err(ProxyError::new(
                     400,
-                    "Ollama 未启用（ollama.enabled = false）",
+                    tr!(
+                        "Ollama 未启用（ollama.enabled = false）",
+                        "Ollama is not enabled (ollama.enabled = false)"
+                    ),
                 ));
             }
             let url = format!(
@@ -269,8 +277,15 @@ async fn via_gemini_native(
     if !stream {
         let data = state.transport.read_body(response).await?;
         check.feed(&data);
-        let message: Value = serde_json::from_slice(&data)
-            .map_err(|_| ProxyError::new(502, "Vertex AI 返回了无法解析的响应"))?;
+        let message: Value = serde_json::from_slice(&data).map_err(|_| {
+            ProxyError::new(
+                502,
+                tr!(
+                    "Vertex AI 返回了无法解析的响应",
+                    "Vertex AI returned a response that couldn't be parsed"
+                ),
+            )
+        })?;
         let mut r =
             Json(openai_to_gemini::response_to_openai(&message, client_model)).into_response();
         r.headers_mut().insert("x-vertexswitch-tier", tier);
@@ -298,7 +313,7 @@ async fn via_gemini_native(
             check.feed(&chunk);
             for (_, raw) in parser.feed(&chunk) {
                 let Ok(data) = serde_json::from_str::<Value>(&raw) else {
-                    tracing::warn!("无法解析的上游 SSE 数据：{}", raw.chars().take(200).collect::<String>());
+                    tracing::warn!("{}", tr!("无法解析的上游 SSE 数据：{}", "Couldn't parse upstream SSE data: {}", raw.chars().take(200).collect::<String>()));
                     continue;
                 };
                 if let Some(message) = data.pointer("/error/message").and_then(Value::as_str) {
@@ -317,7 +332,7 @@ async fn via_gemini_native(
             }
             yield Ok(sse_data("[DONE]"));
         } else {
-            yield Ok(ProxyError::new(502, "Vertex AI 流式响应提前结束").stream_event(Protocol::OpenAi));
+            yield Ok(ProxyError::new(502, tr!("Vertex AI 流式响应提前结束", "Vertex AI's stream ended early")).stream_event(Protocol::OpenAi));
         }
     };
     let mut r = Response::new(Body::from_stream(events));
@@ -372,8 +387,15 @@ async fn via_claude(
 
     if !stream {
         let data = state.transport.read_body(response).await?;
-        let message: Value = serde_json::from_slice(&data)
-            .map_err(|_| ProxyError::new(502, "Vertex AI 返回了无法解析的响应"))?;
+        let message: Value = serde_json::from_slice(&data).map_err(|_| {
+            ProxyError::new(
+                502,
+                tr!(
+                    "Vertex AI 返回了无法解析的响应",
+                    "Vertex AI returned a response that couldn't be parsed"
+                ),
+            )
+        })?;
         return Ok(Json(response_to_openai(&message, client_model)).into_response());
     }
 
@@ -397,7 +419,7 @@ async fn via_claude(
             };
             for (event, raw) in parser.feed(&chunk) {
                 let Ok(data) = serde_json::from_str::<Value>(&raw) else {
-                    tracing::warn!("无法解析的上游 SSE 数据：{}", raw.chars().take(200).collect::<String>());
+                    tracing::warn!("{}", tr!("无法解析的上游 SSE 数据：{}", "Couldn't parse upstream SSE data: {}", raw.chars().take(200).collect::<String>()));
                     continue;
                 };
                 if event == "error" || data.get("type").and_then(Value::as_str) == Some("error") {
@@ -405,7 +427,8 @@ async fn via_claude(
                         .get("error")
                         .and_then(|e| e.get("message"))
                         .and_then(Value::as_str)
-                        .unwrap_or("上游返回错误事件");
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| tr!("上游返回错误事件", "Upstream sent an error event"));
                     let err = ProxyError::new(500, message);
                     yield Ok(sse_data(&err.body(Protocol::OpenAi).to_string()));
                     return;
@@ -418,7 +441,7 @@ async fn via_claude(
         if translator.finished {
             yield Ok(sse_data("[DONE]"));
         } else {
-            yield Ok(ProxyError::new(502, "Vertex AI 流式响应提前结束").stream_event(Protocol::OpenAi));
+            yield Ok(ProxyError::new(502, tr!("Vertex AI 流式响应提前结束", "Vertex AI's stream ended early")).stream_event(Protocol::OpenAi));
         }
     };
     let mut r = Response::new(Body::from_stream(events));
@@ -461,11 +484,23 @@ pub async fn refresh_ollama_models(app: &AppState) -> usize {
                 .collect();
             let count = models.len();
             app.set_ollama_models(models);
-            tracing::info!("发现 {count} 个 Ollama 模型");
+            tracing::info!(
+                "{}",
+                tr!(
+                    "发现 {count} 个 Ollama 模型",
+                    "Found Ollama models: {count}"
+                )
+            );
             count
         }
         Err(e) => {
-            tracing::warn!("Ollama 模型发现失败：{e}");
+            tracing::warn!(
+                "{}",
+                tr!(
+                    "Ollama 模型发现失败：{e}",
+                    "Ollama model discovery failed: {e}"
+                )
+            );
             state.registry().aliases(Backend::Ollama).len()
         }
     }

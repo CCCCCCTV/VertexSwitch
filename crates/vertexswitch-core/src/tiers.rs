@@ -10,11 +10,17 @@
 
 use std::sync::LazyLock;
 
+use crate::tr;
 use regex::bytes::Regex;
 
 pub const HEADER_REQUEST_TYPE: &str = "X-Vertex-AI-LLM-Request-Type";
 pub const HEADER_SHARED_TYPE: &str = "X-Vertex-AI-LLM-Shared-Request-Type";
 pub const HEADER_SERVER_TIMEOUT: &str = "X-Server-Timeout";
+
+/// 档位告警写进日志时带的 `kind` 字段，界面按它识别降级：发请求前就改用了 Standard，
+/// 或上游实际按别的档位处理。日志另带 `model` 字段。
+pub const LOG_KIND_FALLBACK: &str = "tier_fallback";
+pub const LOG_KIND_MISMATCH: &str = "tier_mismatch";
 
 pub const FLEX_MAX_TIMEOUT: u64 = 30 * 60;
 const FLEX_REGIONS: &[&str] = &["global"];
@@ -83,18 +89,21 @@ pub fn plan_tier(tier: Tier, model: &str, region: &str, opts: &TierOptions<'_>) 
     let mut effective = tier;
     match tier {
         Tier::Flex if !FLEX_REGIONS.contains(&region) => {
-            warnings.push(format!(
-                "Flex 只支持 global 端点，当前区域 {region}，已改用 Standard"
+            warnings.push(tr!(
+                "Flex 只支持 global 端点，当前区域 {region}，已改用 Standard", "Flex only works on the global endpoint (current region: {region}); using Standard instead"
             ));
             effective = Tier::Standard;
         }
         Tier::Flex if opts.flex_unsupported_models.iter().any(|m| m == model) => {
-            warnings.push(format!("模型 {model} 不支持 Flex，已改用 Standard"));
+            warnings.push(tr!(
+                "模型 {model} 不支持 Flex，已改用 Standard",
+                "Model {model} doesn't support Flex; using Standard instead"
+            ));
             effective = Tier::Standard;
         }
         Tier::Priority if !PRIORITY_REGIONS.contains(&region) => {
-            warnings.push(format!(
-                "Priority 只支持 global / us / eu 端点，当前区域 {region}，已改用 Standard"
+            warnings.push(tr!(
+                "Priority 只支持 global / us / eu 端点，当前区域 {region}，已改用 Standard", "Priority only works on the global / us / eu endpoints (current region: {region}); using Standard instead"
             ));
             effective = Tier::Standard;
         }
@@ -143,8 +152,9 @@ pub fn check_traffic_type(plan: &TierPlan, traffic_type: &str) -> Option<String>
     if traffic_type == "PROVISIONED_THROUGHPUT" && !plan.shared_only {
         return None;
     }
-    Some(format!(
+    Some(tr!(
         "请求了 {} 档位，但上游实际按 {traffic_type} 处理（期望 {expected}）",
+        "Requested the {} tier, but upstream served it as {traffic_type} (expected {expected})",
         plan.effective.as_str()
     ))
 }

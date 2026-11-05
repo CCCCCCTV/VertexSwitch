@@ -1,6 +1,7 @@
 // 浏览器预览用的示例数据：界面开发时不需要运行桌面程序，也不会连接任何服务。
 
 import type { Api } from "./api";
+import { i18n } from "./i18n.svelte";
 import type {
   LogEntry,
   Models,
@@ -65,8 +66,11 @@ const logListeners = new Set<(e: LogEntry) => void>();
 const requestListeners = new Set<(r: RequestRecord) => void>();
 const settingsListeners = new Set<() => void>();
 
-function log(level: LogEntry["level"], message: string, target = "vertexswitch_core") {
-  const entry: LogEntry = { seq: ++seq, ts_ms: Date.now(), level, target, message };
+// 示例日志模拟核心：按写下时的界面语言
+const tr = (zh: string, en: string) => (i18n.lang === "en" ? en : zh);
+
+function log(level: LogEntry["level"], message: string, target = "vertexswitch_core", fields: Record<string, string> = {}) {
+  const entry: LogEntry = { seq: ++seq, ts_ms: Date.now(), level, target, message, fields };
   logs.push(entry);
   logListeners.forEach((cb) => cb(entry));
 }
@@ -102,20 +106,37 @@ function request(i: number, ts = Date.now()) {
   requestListeners.forEach((cb) => cb(record));
 }
 
-log("INFO", "VertexSwitch 0.1.0 监听 http://127.0.0.1:8788");
-log("INFO", "Google access token 已刷新", "vertexswitch_core::auth");
+const tokenRefreshed = () =>
+  log("INFO", tr("Google access token 已刷新", "Google access token refreshed"), "vertexswitch_core::auth");
+
 // #empty=1：刚启动、还没有任何请求的样子（检查空状态用）
 const emptyPreview = new URLSearchParams(location.hash.slice(1)).get("empty") === "1";
-if (!emptyPreview) {
-  for (let i = 0; i < 14; i++) request(i, Date.now() - (14 - i) * 47_000);
-  log("WARN", "gemini-3.5-flash：请求了 priority 档位，但上游实际按 ON_DEMAND 处理（期望 ON_DEMAND_PRIORITY）", "vertexswitch_core::frontends::gemini");
+if (!emptyPreview) for (let i = 0; i < 14; i++) request(i, Date.now() - (14 - i) * 47_000);
+
+// 开头几条日志等第一次读取时再写：那时预览参数 #lang 已生效
+let seeded = false;
+function seedLogs() {
+  if (seeded) return;
+  seeded = true;
+  log("INFO", tr("VertexSwitch 0.1.0 监听 http://127.0.0.1:8788", "VertexSwitch 0.1.0 listening on http://127.0.0.1:8788"));
+  tokenRefreshed();
+  if (emptyPreview) return;
+  log(
+    "WARN",
+    tr(
+      "请求了 priority 档位，但上游实际按 ON_DEMAND 处理（期望 ON_DEMAND_PRIORITY）",
+      "Requested the priority tier, but upstream served it as ON_DEMAND (expected ON_DEMAND_PRIORITY)",
+    ),
+    "vertexswitch_core::frontends::gemini",
+    { kind: "tier_mismatch", model: "gemini-3.5-flash" },
+  );
 }
 
 let tick = 0;
 setInterval(() => {
   if (emptyPreview) return;
   request(tick++);
-  if (tick % 4 === 0) log("INFO", "Google access token 已刷新", "vertexswitch_core::auth");
+  if (tick % 4 === 0) tokenRefreshed();
 }, 5000);
 
 function status(): Status {
@@ -155,7 +176,7 @@ export const mockApi: Api = {
   patchSettings: (patch) => {
     const oldAddr = `${settings.server.host}:${settings.server.port}`;
     merge(settings, patch);
-    log("INFO", "配置已更新", "vertexswitch_core::app");
+    log("INFO", tr("配置已更新", "Config updated"), "vertexswitch_core::app");
     settingsListeners.forEach((cb) => cb());
     const restart = oldAddr !== `${settings.server.host}:${settings.server.port}`;
     return delay({ settings, restart_required: restart, server: status().server });
@@ -166,7 +187,7 @@ export const mockApi: Api = {
   reloadModels: () => delay({ aliases: 8 }),
   editModels: () => delay({ path: models.user_file ?? "" }),
   refreshOllama: () => delay({ ollama_models: 0 }),
-  logs: (since, limit) => delay(logs.filter((e) => e.seq > since).slice(-limit)),
+  logs: (since, limit) => (seedLogs(), delay(logs.filter((e) => e.seq > since).slice(-limit))),
   requests: (since, limit) => delay(requests.filter((r) => r.seq > since).slice(-limit)),
   metrics: () => {
     const totals = new Map<string, any>();

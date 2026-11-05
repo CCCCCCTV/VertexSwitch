@@ -1,9 +1,9 @@
 //! 运行日志：内存环形缓冲 + 实时广播，供管理接口查询与 SSE 推送。
 //!
-//! [`LogLayer`] 接到 tracing 上，把 INFO 及以上的事件写进 [`LogHub`]。只记录日志消息本身，
-//! 不记录请求 / 响应正文。
+//! [`LogLayer`] 接到 tracing 上，把 INFO 及以上的事件写进 [`LogHub`]。只记录日志消息本身
+//! 和附带的字段，不记录请求 / 响应正文。
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Write as _;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -31,6 +31,8 @@ pub struct LogEntry {
     pub level: String,
     pub target: String,
     pub message: String,
+    /// 事件附带的字段（如 `model`、`kind`）。界面按 `kind` 识别特定事件，不去解析消息文字
+    pub fields: BTreeMap<String, String>,
 }
 
 /// 有界的记录缓冲：最近 N 条 + 新记录广播。日志与请求记录共用。
@@ -85,12 +87,23 @@ pub type LogHub = Ring<LogEntry>;
 
 impl LogHub {
     pub fn record(&self, level: &str, target: &str, message: String) {
+        self.record_fields(level, target, message, BTreeMap::new());
+    }
+
+    pub fn record_fields(
+        &self,
+        level: &str,
+        target: &str,
+        message: String,
+        fields: BTreeMap<String, String>,
+    ) {
         let entry = LogEntry {
             seq: self.next_seq(),
             ts_ms: now_ms(),
             level: level.to_owned(),
             target: target.to_owned(),
             message,
+            fields,
         };
         self.push(entry);
     }
@@ -110,7 +123,7 @@ impl LogLayer {
 #[derive(Default)]
 struct MessageVisitor {
     message: String,
-    fields: String,
+    fields: BTreeMap<String, String>,
 }
 
 impl Visit for MessageVisitor {
@@ -118,7 +131,8 @@ impl Visit for MessageVisitor {
         if field.name() == "message" {
             self.message.push_str(value);
         } else {
-            let _ = write!(self.fields, " {}={value}", field.name());
+            self.fields
+                .insert(field.name().to_owned(), value.to_owned());
         }
     }
 
@@ -126,7 +140,8 @@ impl Visit for MessageVisitor {
         if field.name() == "message" {
             let _ = write!(self.message, "{value:?}");
         } else {
-            let _ = write!(self.fields, " {}={value:?}", field.name());
+            self.fields
+                .insert(field.name().to_owned(), format!("{value:?}"));
         }
     }
 }
@@ -139,10 +154,11 @@ impl<S: Subscriber> Layer<S> for LogLayer {
         }
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
-        self.hub.record(
+        self.hub.record_fields(
             meta.level().as_str(),
             meta.target(),
-            visitor.message + &visitor.fields,
+            visitor.message,
+            visitor.fields,
         );
     }
 }
@@ -182,14 +198,15 @@ mod tests {
         let subscriber = tracing_subscriber::registry().with(LogLayer::new(hub.clone()));
         tracing::subscriber::with_default(subscriber, || {
             tracing::debug!("hidden");
-            tracing::info!(model = "m", "可见 {}", 1);
+            tracing::info!(model = "m", tier = %"flex", "可见 {}", 1);
             tracing::warn!("告警");
         });
-        let msgs: Vec<String> = hub
-            .recent(10, |_| true)
-            .into_iter()
-            .map(|e| e.message)
-            .collect();
-        assert_eq!(msgs, ["可见 1 model=m", "告警"]);
+        let entries = hub.recent(10, |_| true);
+        let msgs: Vec<&str> = entries.iter().map(|e| e.message.as_str()).collect();
+        assert_eq!(msgs, ["可见 1", "告警"]);
+        let fields = &entries[0].fields;
+        assert_eq!(fields["model"], "m");
+        assert_eq!(fields["tier"], "flex");
+        assert!(entries[1].fields.is_empty());
     }
 }

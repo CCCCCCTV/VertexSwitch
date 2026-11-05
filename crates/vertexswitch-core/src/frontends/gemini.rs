@@ -22,7 +22,10 @@ use crate::backends::{gemini, vertex};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
 use crate::metrics;
 use crate::registry::Backend;
-use crate::tiers::{TierPlan, TrafficTypeWatcher, check_traffic_type};
+use crate::tiers::{
+    LOG_KIND_FALLBACK, LOG_KIND_MISMATCH, TierPlan, TrafficTypeWatcher, check_traffic_type,
+};
+use crate::tr;
 use crate::transport::{UpstreamRequest, VERTEX};
 
 pub const TIER_OVERRIDE_HEADER: &str = "x-vertexswitch-tier";
@@ -51,7 +54,10 @@ fn split_target(target: &str) -> ProxyResult<(&str, &str)> {
         }
         _ => Err(ProxyError::new(
             404,
-            format!("不支持的 Gemini 方法：{target:?}"),
+            tr!(
+                "不支持的 Gemini 方法：{target:?}",
+                "Unsupported Gemini method: {target:?}"
+            ),
         )),
     }
 }
@@ -91,7 +97,7 @@ impl TrafficCheck {
         if let Some(traffic) = self.watcher.feed(chunk)
             && let Some(warning) = check_traffic_type(plan, &traffic)
         {
-            tracing::warn!("{}：{warning}", self.model);
+            tracing::warn!(model = %self.model, kind = LOG_KIND_MISMATCH, "{warning}");
         }
     }
 }
@@ -109,7 +115,15 @@ pub async fn model_action(
         .registry()
         .resolve(model)
         .filter(|r| r.backend == Backend::Gemini)
-        .ok_or_else(|| ProxyError::new(404, format!("未知的 Gemini 模型 {model:?}")))?;
+        .ok_or_else(|| {
+            ProxyError::new(
+                404,
+                tr!(
+                    "未知的 Gemini 模型 {model:?}",
+                    "Unknown Gemini model {model:?}"
+                ),
+            )
+        })?;
     let mut body = parse_json_object(&body)?;
     gemini::prepare_body(&mut body);
 
@@ -131,7 +145,7 @@ pub async fn model_action(
     );
     if let Some(plan) = &plan {
         for warning in &plan.warnings {
-            tracing::warn!("{}：{warning}", route.upstream_model);
+            tracing::warn!(model = %route.upstream_model, kind = LOG_KIND_FALLBACK, "{warning}");
         }
         upstream_headers.extend(plan.headers.iter().map(|(k, v)| (k.to_string(), v.clone())));
     }
@@ -230,7 +244,10 @@ async fn get_model(
         .iter()
         .any(|a| a == id)
     {
-        return Err(ProxyError::new(404, format!("未知模型 {id:?}")));
+        return Err(ProxyError::new(
+            404,
+            tr!("未知模型 {id:?}", "Unknown model {id:?}"),
+        ));
     }
     Ok(Json(gemini_model(id)))
 }

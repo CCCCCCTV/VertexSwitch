@@ -10,6 +10,7 @@ use crate::backends::vertex;
 use crate::config::Settings;
 use crate::errors::{ProxyError, ProxyResult};
 use crate::registry::ModelRegistry;
+use crate::tr;
 use crate::transport::Transport;
 
 pub struct Runtime {
@@ -94,7 +95,10 @@ impl Runtime {
         if project.is_empty() {
             return Err(ProxyError::new(
                 500,
-                "未配置 Google Cloud 项目 ID（google.project_id）",
+                tr!(
+                    "未配置 Google Cloud 项目 ID（google.project_id）",
+                    "No Google Cloud project ID is configured (google.project_id)"
+                ),
             ));
         }
         Ok(project)

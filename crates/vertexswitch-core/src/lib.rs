@@ -9,6 +9,7 @@ pub mod backends;
 pub mod config;
 pub mod errors;
 pub mod frontends;
+pub mod i18n;
 pub mod logs;
 pub mod metrics;
 pub mod registry;

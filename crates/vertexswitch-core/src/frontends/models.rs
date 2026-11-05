@@ -17,6 +17,7 @@ use crate::app::SharedState;
 use crate::errors::{ProxyError, ProxyResult};
 use crate::registry::Backend;
 use crate::runtime::Runtime;
+use crate::tr;
 
 const EPOCH: &str = "1970-01-01T00:00:00Z";
 
@@ -81,7 +82,10 @@ async fn get_model(
 ) -> ProxyResult<Json<Value>> {
     let state = app.runtime();
     if !all_ids(&state).contains(&id) {
-        return Err(ProxyError::new(404, format!("未知模型 {id:?}")));
+        return Err(ProxyError::new(
+            404,
+            tr!("未知模型 {id:?}", "Unknown model {id:?}"),
+        ));
     }
     Ok(Json(if wants_anthropic(&uri, &headers) {
         anthropic_model(&id)

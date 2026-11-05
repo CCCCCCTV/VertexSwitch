@@ -12,6 +12,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::config::{RetrySettings, TimeoutSettings};
 use crate::errors::{ProxyError, ProxyResult};
+use crate::tr;
 
 pub const VERTEX: &str = "Vertex AI";
 
@@ -95,12 +96,23 @@ impl Transport {
             let error = match tokio::time::timeout(wait, request.send()).await {
                 Ok(Ok(response)) => return Ok(response),
                 Ok(Err(e)) => e,
-                Err(_) => return Err(ProxyError::new(504, format!("等待 {upstream} 响应超时"))),
+                Err(_) => {
+                    return Err(ProxyError::new(
+                        504,
+                        tr!(
+                            "等待 {upstream} 响应超时",
+                            "Timed out waiting for {upstream} to respond"
+                        ),
+                    ));
+                }
             };
             if error.is_builder() {
                 return Err(ProxyError::new(
                     502,
-                    format!("请求 {upstream} 失败：{error}"),
+                    tr!(
+                        "请求 {upstream} 失败：{error}",
+                        "Request to {upstream} failed: {error}"
+                    ),
                 ));
             }
             let elapsed = started.elapsed();
@@ -108,22 +120,34 @@ impl Transport {
             let disconnected = !error.is_connect();
             if req.detect_quota && disconnected && elapsed >= secs(self.retry.quota_hang_seconds) {
                 tracing::warn!(
-                    "上游 {:.1}s 无响应后断开，按配额耗尽处理：{error}",
-                    elapsed.as_secs_f64()
+                    "{}",
+                    tr!(
+                        "上游 {:.1}s 无响应后断开，按配额耗尽处理：{error}",
+                        "Upstream disconnected after {:.1}s without responding; treating it as quota exhaustion: {error}",
+                        elapsed.as_secs_f64()
+                    )
                 );
                 return Err(ProxyError::new(504, quota_message(elapsed)));
             }
             if attempt >= attempts {
                 return Err(ProxyError::new(
                     502,
-                    format!(
+                    tr!(
                         "无法连接 {upstream}（已重试 {} 次）：{}",
+                        "Couldn't connect to {upstream} (retried {} times): {}",
                         attempt - 1,
                         describe(&error)
                     ),
                 ));
             }
-            tracing::info!("上游连接错误，第 {attempt} 次重试：{}", describe(&error));
+            tracing::info!(
+                "{}",
+                tr!(
+                    "上游连接错误，第 {attempt} 次重试：{}",
+                    "Upstream connection error, retry {attempt}: {}",
+                    describe(&error)
+                )
+            );
             tokio::time::sleep(secs(self.retry.backoff_seconds) * attempt).await;
         }
         unreachable!("循环内必定返回")
@@ -135,9 +159,19 @@ impl Transport {
             Ok(Ok(body)) => Ok(body),
             Ok(Err(e)) => Err(ProxyError::new(
                 502,
-                format!("读取上游响应失败：{}", describe(&e)),
+                tr!(
+                    "读取上游响应失败：{}",
+                    "Couldn't read the upstream response: {}",
+                    describe(&e)
+                ),
             )),
-            Err(_) => Err(ProxyError::new(504, "读取上游响应超时")),
+            Err(_) => Err(ProxyError::new(
+                504,
+                tr!(
+                    "读取上游响应超时",
+                    "Timed out reading the upstream response"
+                ),
+            )),
         }
     }
 
@@ -154,13 +188,13 @@ impl Transport {
                     Ok(Ok(Some(chunk))) => yield Ok(chunk),
                     Ok(Ok(None)) => break,
                     Ok(Err(e)) => {
-                        tracing::warn!("上游流式响应中断：{}", describe(&e));
-                        yield Err(ProxyError::new(502, format!("{upstream} 流式响应中断")));
+                        tracing::warn!("{}", tr!("上游流式响应中断：{}", "Upstream stream interrupted: {}", describe(&e)));
+                        yield Err(ProxyError::new(502, tr!("{upstream} 流式响应中断", "{upstream} stream interrupted")));
                         break;
                     }
                     Err(_) => {
-                        tracing::warn!("上游流式响应空闲超时");
-                        yield Err(ProxyError::new(504, format!("{upstream} 流式响应空闲超时")));
+                        tracing::warn!("{}", tr!("上游流式响应空闲超时", "Upstream stream went idle and timed out"));
+                        yield Err(ProxyError::new(504, tr!("{upstream} 流式响应空闲超时", "{upstream} stream went idle and timed out")));
                         break;
                     }
                 }
@@ -172,10 +206,21 @@ impl Transport {
 fn header_map(headers: &[(String, String)]) -> ProxyResult<HeaderMap> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes())
-            .map_err(|_| ProxyError::new(500, format!("非法请求头名 {name}")))?;
-        let value = HeaderValue::from_str(value)
-            .map_err(|_| ProxyError::new(400, format!("请求头 {name} 的值非法")))?;
+        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
+            ProxyError::new(
+                500,
+                tr!("非法请求头名 {name}", "Invalid request header name {name}"),
+            )
+        })?;
+        let value = HeaderValue::from_str(value).map_err(|_| {
+            ProxyError::new(
+                400,
+                tr!(
+                    "请求头 {name} 的值非法",
+                    "Invalid value for request header {name}"
+                ),
+            )
+        })?;
         map.insert(name, value);
     }
     Ok(map)
@@ -186,9 +231,12 @@ fn secs(value: f64) -> Duration {
 }
 
 fn quota_message(elapsed: Duration) -> String {
-    format!(
+    tr!(
         "Vertex AI 在 {:.0} 秒内没有返回任何响应就断开了连接，通常表示配额耗尽（RESOURCE_EXHAUSTED）。\
          请稍后重试或在 Google Cloud 控制台检查配额。",
+        "Vertex AI closed the connection without any response within {:.0} seconds, which usually \
+         means the quota is exhausted (RESOURCE_EXHAUSTED). Try again later or check your quota in \
+         the Google Cloud console.",
         elapsed.as_secs_f64()
     )
 }

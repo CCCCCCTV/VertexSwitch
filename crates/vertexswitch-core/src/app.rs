@@ -27,6 +27,7 @@ use crate::logs::LogHub;
 use crate::metrics::{Metrics, record_requests};
 use crate::registry::ModelRegistry;
 use crate::runtime::Runtime;
+use crate::tr;
 
 /// 挂在路由上的应用状态（不使用全局变量）。
 pub struct AppState {
@@ -105,7 +106,7 @@ impl AppState {
         if tokens_changed {
             self.start_refresher();
         }
-        tracing::info!("配置已更新");
+        tracing::info!("{}", tr!("配置已更新", "Config updated"));
         ApplyOutcome { restart_required }
     }
 
@@ -133,7 +134,13 @@ impl AppState {
         };
         let count = registry.len();
         self.set_registry(registry);
-        tracing::info!("模型表已重新加载（{count} 个别名）");
+        tracing::info!(
+            "{}",
+            tr!(
+                "模型表已重新加载（{count} 个别名）",
+                "Model table reloaded ({count} aliases)"
+            )
+        );
         Ok(count)
     }
 
@@ -142,7 +149,7 @@ impl AppState {
         let path = self
             .config_path
             .as_ref()
-            .ok_or_else(|| "未指定配置文件".to_owned())?;
+            .ok_or_else(|| tr!("未指定配置文件", "No config file is set"))?;
         let settings = Settings::load(path).map_err(|e| e.to_string())?;
         Ok(self.apply_settings(settings))
     }
@@ -284,7 +291,13 @@ async fn watch_files(state: std::sync::Weak<AppState>) {
                         state.apply_settings(settings);
                     }
                     Ok(_) => {}
-                    Err(e) => tracing::warn!("配置文件有误，保留当前配置：{e}"),
+                    Err(e) => tracing::warn!(
+                        "{}",
+                        tr!(
+                            "配置文件有误，保留当前配置：{e}",
+                            "Config file is invalid; keeping the current config: {e}"
+                        )
+                    ),
                 }
             }
         }
@@ -292,7 +305,13 @@ async fn watch_files(state: std::sync::Weak<AppState>) {
         if models_now != models_seen {
             models_seen = models_now;
             if let Err(e) = state.reload_models() {
-                tracing::warn!("模型表有误，保留当前模型表：{e}");
+                tracing::warn!(
+                    "{}",
+                    tr!(
+                        "模型表有误，保留当前模型表：{e}",
+                        "Model table is invalid; keeping the current one: {e}"
+                    )
+                );
             }
         }
     }
@@ -339,7 +358,11 @@ async fn require_api_key(
     if !expected.is_empty() {
         let given = extract_key(&request).unwrap_or_default();
         if !constant_time_eq(given.as_bytes(), expected.as_bytes()) {
-            return ProxyError::new(401, "API key 无效或缺失").into_response();
+            return ProxyError::new(
+                401,
+                tr!("API key 无效或缺失", "API key is missing or invalid"),
+            )
+            .into_response();
         }
     }
     next.run(request).await

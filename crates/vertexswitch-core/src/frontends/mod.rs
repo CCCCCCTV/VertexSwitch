@@ -15,13 +15,27 @@ use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 
 use crate::errors::{Protocol, ProxyError, ProxyResult};
+use crate::tr;
 
 /// 请求体必须是 JSON 对象。
 pub fn parse_json_object(body: &[u8]) -> ProxyResult<Value> {
-    let value: Value = serde_json::from_slice(body)
-        .map_err(|e| ProxyError::new(400, format!("请求体不是合法的 JSON：{e}")))?;
+    let value: Value = serde_json::from_slice(body).map_err(|e| {
+        ProxyError::new(
+            400,
+            tr!(
+                "请求体不是合法的 JSON：{e}",
+                "The request body isn't valid JSON: {e}"
+            ),
+        )
+    })?;
     if !value.is_object() {
-        return Err(ProxyError::new(400, "请求体必须是 JSON 对象"));
+        return Err(ProxyError::new(
+            400,
+            tr!(
+                "请求体必须是 JSON 对象",
+                "The request body must be a JSON object"
+            ),
+        ));
     }
     Ok(value)
 }

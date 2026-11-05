@@ -38,7 +38,7 @@
     }
     // 降级来自核心的告警日志（trafficType 与请求的档位不符）
     for (const e of live.logs) {
-      if (e.level !== "WARN" || !e.message.includes("实际按")) continue;
+      if (e.fields.kind !== "tier_mismatch") continue;
       const i = Math.floor((e.ts_ms - start) / 60_000);
       if (i >= 0 && i < MINUTES) b[i].downgraded++;
     }

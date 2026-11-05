@@ -3,6 +3,7 @@
 //! 处理函数返回 [`ProxyError`]；它先以"占位响应 + 扩展"的形式离开处理函数，
 //! 再由 [`render_errors`] 中间件按请求路径判定的入口协议写成对应格式的 JSON。
 
+use crate::tr;
 use axum::{
     Json,
     body::Body,
@@ -46,7 +47,7 @@ impl ProxyError {
             let text = String::from_utf8_lossy(raw);
             let text = text.trim();
             if text.is_empty() {
-                format!("上游返回 HTTP {status}")
+                tr!("上游返回 HTTP {status}", "Upstream returned HTTP {status}")
             } else {
                 text.chars().take(2000).collect()
             }
@@ -158,12 +159,12 @@ pub async fn render_errors(request: Request, next: Next) -> Response {
 
 /// 未知路由。
 pub async fn not_found() -> ProxyError {
-    ProxyError::new(404, "未知的路径")
+    ProxyError::new(404, tr!("未知的路径", "Unknown path"))
 }
 
 /// 处理函数 panic 时仍按 JSON 返回（协议由外层 [`render_errors`] 决定）。
 pub fn panic_response(_: Box<dyn std::any::Any + Send + 'static>) -> Response<Body> {
-    ProxyError::new(500, "代理内部错误").into_response()
+    ProxyError::new(500, tr!("代理内部错误", "Internal proxy error")).into_response()
 }
 
 fn extract_message(body: &Value) -> Option<String> {

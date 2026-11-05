@@ -20,6 +20,7 @@ use crate::errors::{Protocol, ProxyError, ProxyResult};
 use crate::metrics;
 use crate::registry::Backend;
 use crate::runtime::Runtime;
+use crate::tr;
 use crate::transport::{UpstreamRequest, VERTEX};
 
 /// 透传给 Vertex 的客户端请求头。客户端的 anthropic-version 不转发（版本在请求体里）。
@@ -44,13 +45,23 @@ fn require_claude(state: &Runtime, body: &Value) -> ProxyResult<String> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|m| !m.is_empty())
-        .ok_or_else(|| ProxyError::new(400, "model: 缺少模型名"))?;
+        .ok_or_else(|| {
+            ProxyError::new(400, tr!("model: 缺少模型名", "model: missing model name"))
+        })?;
     state
         .registry()
         .resolve(model)
         .filter(|r| r.backend == Backend::Claude)
         .map(|r| r.upstream_model)
-        .ok_or_else(|| ProxyError::new(404, format!("model: 未知的 Claude 模型 {model:?}")))
+        .ok_or_else(|| {
+            ProxyError::new(
+                404,
+                tr!(
+                    "model: 未知的 Claude 模型 {model:?}",
+                    "model: unknown Claude model {model:?}"
+                ),
+            )
+        })
 }
 
 fn note_claude(model: &str, stream: bool) {

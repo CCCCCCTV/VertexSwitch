@@ -21,6 +21,7 @@ use serde_json::{Map, Value, json};
 
 use super::openai_to_anthropic::{DATA_URL, bad, now_secs, text_of};
 use crate::errors::ProxyResult;
+use crate::tr;
 
 /// 文档给出的占位签名：历史里的函数调用不是这个 API 生成的（或签名丢了）时使用
 pub const SKIP_SIGNATURE: &str = "skip_thought_signature_validator";
@@ -93,15 +94,16 @@ fn content_part(part: &Value) -> ProxyResult<Option<Value>> {
                 .and_then(|i| i.get("url"))
                 .or(image)
                 .and_then(Value::as_str)
-                .ok_or_else(|| bad("image_url.url 缺失"))?;
+                .ok_or_else(|| bad(tr!("image_url.url 缺失", "image_url.url is missing")))?;
             Some(media_part(url, "image/jpeg"))
         }
         Some("input_audio") => {
-            let audio = field("input_audio").ok_or_else(|| bad("input_audio 缺失"))?;
+            let audio = field("input_audio")
+                .ok_or_else(|| bad(tr!("input_audio 缺失", "input_audio is missing")))?;
             let data = audio
                 .get("data")
                 .and_then(Value::as_str)
-                .ok_or_else(|| bad("input_audio.data 缺失"))?;
+                .ok_or_else(|| bad(tr!("input_audio.data 缺失", "input_audio.data is missing")))?;
             let format = audio.get("format").and_then(Value::as_str).unwrap_or("wav");
             Some(json!({"inlineData": {"mimeType": format!("audio/{format}"), "data": data}}))
         }
@@ -109,10 +111,20 @@ fn content_part(part: &Value) -> ProxyResult<Option<Value>> {
             let data = field("file")
                 .and_then(|f| f.get("file_data"))
                 .and_then(Value::as_str)
-                .ok_or_else(|| bad("file 只支持 file_data（data URL），不支持 file_id"))?;
+                .ok_or_else(|| {
+                    bad(tr!(
+                        "file 只支持 file_data（data URL），不支持 file_id",
+                        "file only supports file_data (a data URL), not file_id"
+                    ))
+                })?;
             Some(media_part(data, "application/pdf"))
         }
-        other => return Err(bad(format!("不支持的消息内容类型：{other:?}"))),
+        other => {
+            return Err(bad(tr!(
+                "不支持的消息内容类型：{other:?}",
+                "Unsupported message content type: {other:?}"
+            )));
+        }
     })
 }
 
@@ -128,7 +140,10 @@ fn user_parts(content: Option<&Value>) -> ProxyResult<Vec<Value>> {
             .into_iter()
             .flatten()
             .collect()),
-        Some(_) => Err(bad("user 消息的 content 必须是字符串或数组")),
+        Some(_) => Err(bad(tr!(
+            "user 消息的 content 必须是字符串或数组",
+            "The content of a user message must be a string or an array"
+        ))),
     }
 }
 
@@ -136,8 +151,12 @@ fn parse_arguments(raw: Option<&Value>) -> ProxyResult<Value> {
     match raw {
         None | Some(Value::Null) => Ok(json!({})),
         Some(Value::String(s)) if s.trim().is_empty() => Ok(json!({})),
-        Some(Value::String(s)) => serde_json::from_str(s)
-            .map_err(|e| bad(format!("tool_calls 的 arguments 不是合法 JSON：{e}"))),
+        Some(Value::String(s)) => serde_json::from_str(s).map_err(|e| {
+            bad(tr!(
+                "tool_calls 的 arguments 不是合法 JSON：{e}",
+                "tool_calls arguments aren't valid JSON: {e}"
+            ))
+        }),
         Some(other) => Ok(other.clone()),
     }
 }
@@ -169,7 +188,12 @@ fn assistant_parts(
         let name = function
             .get("name")
             .and_then(Value::as_str)
-            .ok_or_else(|| bad("tool_calls[].function.name 缺失"))?;
+            .ok_or_else(|| {
+                bad(tr!(
+                    "tool_calls[].function.name 缺失",
+                    "tool_calls[].function.name is missing"
+                ))
+            })?;
         if let Some(id) = call.get("id").and_then(Value::as_str) {
             names.insert(id.to_owned(), name.to_owned());
         }
@@ -213,7 +237,10 @@ fn convert_tools(body: &Value) -> ProxyResult<Vec<Value>> {
         .flatten()
         .map(|tool| match tool.get("type").and_then(Value::as_str) {
             Some("function") => Ok(tool.get("function").cloned().unwrap_or_default()),
-            other => Err(bad(format!("不支持的工具类型：{other:?}"))),
+            other => Err(bad(tr!(
+                "不支持的工具类型：{other:?}",
+                "Unsupported tool type: {other:?}"
+            ))),
         })
         // 已弃用的 functions 字段
         .chain(
@@ -228,7 +255,12 @@ fn convert_tools(body: &Value) -> ProxyResult<Vec<Value>> {
         let name = function
             .get("name")
             .and_then(Value::as_str)
-            .ok_or_else(|| bad("tools[].function.name 缺失"))?;
+            .ok_or_else(|| {
+                bad(tr!(
+                    "tools[].function.name 缺失",
+                    "tools[].function.name is missing"
+                ))
+            })?;
         let mut decl = Map::new();
         decl.insert("name".into(), name.into());
         if let Some(desc) = function
@@ -264,14 +296,24 @@ fn tool_config(body: &Value) -> ProxyResult<Option<Value>> {
             "none" => json!({"mode": "NONE"}),
             "required" => json!({"mode": "ANY"}),
             "validated" => json!({"mode": "VALIDATED"}),
-            other => return Err(bad(format!("不支持的 tool_choice：{other:?}"))),
+            other => {
+                return Err(bad(tr!(
+                    "不支持的 tool_choice：{other:?}",
+                    "Unsupported tool_choice: {other:?}"
+                )));
+            }
         },
         Some(obj) => {
             let name = obj
                 .pointer("/function/name")
                 .or_else(|| obj.get("name"))
                 .and_then(Value::as_str)
-                .ok_or_else(|| bad(format!("不支持的 tool_choice：{obj}")))?;
+                .ok_or_else(|| {
+                    bad(tr!(
+                        "不支持的 tool_choice：{obj}",
+                        "Unsupported tool_choice: {obj}"
+                    ))
+                })?;
             json!({"mode": "ANY", "allowedFunctionNames": [name]})
         }
     };
@@ -351,15 +393,21 @@ fn generation_config(body: &Value) -> ProxyResult<Map<String, Value>> {
                 }
             }
             Some("text") | None => {}
-            Some(other) => return Err(bad(format!("不支持的 response_format：{other:?}"))),
+            Some(other) => {
+                return Err(bad(tr!(
+                    "不支持的 response_format：{other:?}",
+                    "Unsupported response_format: {other:?}"
+                )));
+            }
         }
     }
     let effort = body.get("reasoning_effort").and_then(Value::as_str);
     let thinking = google_extras(body).and_then(|g| g.get("thinking_config"));
     if effort.is_some() && thinking.is_some() {
-        return Err(bad(
+        return Err(bad(tr!(
             "reasoning_effort 与 extra_body.google.thinking_config 只能二选一",
-        ));
+            "Use either reasoning_effort or extra_body.google.thinking_config, not both"
+        )));
     }
     if let Some(budget) = effort.and_then(|e| {
         REASONING_BUDGETS
@@ -381,7 +429,7 @@ pub fn request_to_gemini(body: &Value, model: &str) -> ProxyResult<Value> {
         .get("messages")
         .and_then(Value::as_array)
         .filter(|m| !m.is_empty())
-        .ok_or_else(|| bad("messages 不能为空"))?;
+        .ok_or_else(|| bad(tr!("messages 不能为空", "messages must not be empty")))?;
     let needs_signature = requires_signatures(model);
 
     let mut system: Vec<Value> = Vec::new();
@@ -397,7 +445,10 @@ pub fn request_to_gemini(body: &Value, model: &str) -> ProxyResult<Value> {
 
     for msg in messages {
         if !msg.is_object() {
-            return Err(bad("messages[] 必须是对象"));
+            return Err(bad(tr!(
+                "messages[] 必须是对象",
+                "Each item in messages[] must be an object"
+            )));
         }
         let role = msg.get("role").and_then(Value::as_str);
         if let Some("tool" | "function") = role {
@@ -410,7 +461,12 @@ pub fn request_to_gemini(body: &Value, model: &str) -> ProxyResult<Value> {
                         .and_then(Value::as_str)
                         .and_then(|id| names.get(id).cloned())
                 })
-                .ok_or_else(|| bad("tool 消息找不到对应的工具调用（tool_call_id 不匹配）"))?;
+                .ok_or_else(|| {
+                    bad(tr!(
+                        "tool 消息找不到对应的工具调用（tool_call_id 不匹配）",
+                        "A tool message has no matching tool call (tool_call_id doesn't match)"
+                    ))
+                })?;
             pending_results.push(function_response(&name, msg.get("content"))?);
             continue;
         }
@@ -434,12 +490,20 @@ pub fn request_to_gemini(body: &Value, model: &str) -> ProxyResult<Value> {
                     contents.push(json!({"role": "model", "parts": parts}));
                 }
             }
-            other => return Err(bad(format!("不支持的消息角色：{other:?}"))),
+            other => {
+                return Err(bad(tr!(
+                    "不支持的消息角色：{other:?}",
+                    "Unsupported message role: {other:?}"
+                )));
+            }
         }
     }
     flush(&mut contents, &mut pending_results);
     if contents.is_empty() {
-        return Err(bad("messages 里没有可发送的内容"));
+        return Err(bad(tr!(
+            "messages 里没有可发送的内容",
+            "messages has nothing to send"
+        )));
     }
 
     let mut out = Map::new();

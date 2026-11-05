@@ -1,4 +1,4 @@
-//! 托盘图标与菜单：打开主界面、切换 Gemini 档位、退出。文字跟随界面语言（见 [`crate::i18n`]）。
+//! 托盘图标与菜单：打开主界面、切换 Gemini 档位、退出。文字跟随界面语言（见 [`vertexswitch_core::i18n`]）。
 
 use std::sync::Arc;
 
@@ -6,10 +6,10 @@ use serde_json::json;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Wry};
+use vertexswitch_core::i18n::tr;
 use vertexswitch_core::{SharedState, admin};
 
 use crate::host::CoreHost;
-use crate::i18n::tr;
 
 const TRAY_ID: &str = "main";
 /// 档位 id 与菜单文字（中文、英文）
@@ -122,7 +122,14 @@ fn set_tier(app: &AppHandle, tier: String) {
             // 通知界面刷新
             let _ = app.emit("settings-changed", ());
         }
-        Err(e) => tracing::warn!("切换档位失败：{}", e.message),
+        Err(e) => tracing::warn!(
+            "{}",
+            vertexswitch_core::tr!(
+                "切换档位失败：{}",
+                "Couldn't switch the tier: {}",
+                e.message
+            )
+        ),
     }
     sync(app, &host.state);
 }

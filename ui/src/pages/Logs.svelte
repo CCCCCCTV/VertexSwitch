@@ -40,7 +40,7 @@
     <div class="line {e.level.toLowerCase()}">
       <span class="ts">{time(e.ts_ms)}</span>
       <span class="lv">{e.level}</span>
-      <span class="msg">{e.message}</span>
+      <span class="msg">{e.message}{#each Object.entries(e.fields) as [k, v] (k)}{#if k !== "kind"}{" "}<span class="field">{k}={v}</span>{/if}{/each}</span>
     </div>
   {:else}
     <div class="empty">{t("logs.empty")}</div>
@@ -98,7 +98,8 @@
     background: var(--hover);
   }
 
-  .ts {
+  .ts,
+  .field {
     color: var(--text-3);
   }
 

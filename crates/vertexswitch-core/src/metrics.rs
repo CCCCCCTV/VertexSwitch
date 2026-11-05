@@ -26,6 +26,7 @@ use serde::Serialize;
 use crate::app::SharedState;
 use crate::errors::{Protocol, ProxyError, protocol_for_path};
 use crate::logs::{Ring, now_ms};
+use crate::tr;
 
 /// 处理函数填写的请求信息。
 #[derive(Debug, Clone, Default)]
@@ -158,7 +159,10 @@ impl Metrics {
     pub fn prometheus(&self) -> String {
         let totals = self.totals.lock().expect("锁未中毒");
         let mut out = String::new();
-        out.push_str("# HELP vertexswitch_requests_total 已完成的请求数\n");
+        out.push_str(&tr!(
+            "# HELP vertexswitch_requests_total 已完成的请求数\n",
+            "# HELP vertexswitch_requests_total Completed requests\n"
+        ));
         out.push_str("# TYPE vertexswitch_requests_total counter\n");
         for ((p, b, s), t) in totals.iter() {
             out.push_str(&format!(
@@ -175,7 +179,7 @@ impl Metrics {
             e.input_tokens += t.input_tokens;
             e.output_tokens += t.output_tokens;
         }
-        out.push_str("# HELP vertexswitch_request_duration_seconds 请求耗时（到响应体结束）\n");
+        out.push_str(&tr!("# HELP vertexswitch_request_duration_seconds 请求耗时（到响应体结束）\n", "# HELP vertexswitch_request_duration_seconds Request duration (until the response body ends)\n"));
         out.push_str("# TYPE vertexswitch_request_duration_seconds summary\n");
         for ((p, b), t) in &by_backend {
             let labels = format!("protocol=\"{p}\",backend=\"{b}\"");
@@ -188,7 +192,10 @@ impl Metrics {
                 t.count
             ));
         }
-        out.push_str("# HELP vertexswitch_tokens_total 上游报告的 token 用量\n");
+        out.push_str(&tr!(
+            "# HELP vertexswitch_tokens_total 上游报告的 token 用量\n",
+            "# HELP vertexswitch_tokens_total Token usage reported by upstream\n"
+        ));
         out.push_str("# TYPE vertexswitch_tokens_total counter\n");
         for ((p, b), t) in &by_backend {
             for (kind, n) in [("input", t.input_tokens), ("output", t.output_tokens)] {
@@ -197,7 +204,10 @@ impl Metrics {
                 ));
             }
         }
-        out.push_str("# HELP vertexswitch_requests_in_flight 进行中的请求\n");
+        out.push_str(&tr!(
+            "# HELP vertexswitch_requests_in_flight 进行中的请求\n",
+            "# HELP vertexswitch_requests_in_flight Requests in progress\n"
+        ));
         out.push_str("# TYPE vertexswitch_requests_in_flight gauge\n");
         out.push_str(&format!(
             "vertexswitch_requests_in_flight {}\n",

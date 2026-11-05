@@ -9,10 +9,10 @@ use tauri_plugin_opener::OpenerExt;
 use vertexswitch_core::admin;
 use vertexswitch_core::config::app_dir;
 use vertexswitch_core::errors::ProxyError;
+use vertexswitch_core::i18n::{self, tr};
 use vertexswitch_core::secrets::TokenLocation;
 
 use crate::host::CoreHost;
-use crate::i18n::tr;
 use crate::tray;
 
 type Host<'a> = State<'a, Arc<CoreHost>>;
@@ -120,10 +120,10 @@ pub fn get_app_info(host: Host<'_>) -> CmdResult {
     }))
 }
 
-/// 界面语言（启动时和每次切换时调用）：托盘菜单与外壳的提示跟着换。
+/// 界面语言（启动时和每次切换时调用）：核心的日志与错误、托盘菜单都跟着换。
 #[tauri::command]
 pub fn set_language(app: AppHandle, host: Host<'_>, lang: String) -> CmdResult {
-    if crate::i18n::set(&lang)? {
+    if i18n::set(&lang)? {
         tray::relabel(&app, &host.state);
     }
     Ok(Value::Null)
@@ -233,7 +233,14 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> CmdResult {
         launcher.disable()
     }
     .map_err(|e| e.to_string())?;
-    tracing::info!("开机自启已{}", if enabled { "开启" } else { "关闭" });
+    tracing::info!(
+        "{}",
+        if enabled {
+            tr("开机自启已开启", "Launch at startup turned on")
+        } else {
+            tr("开机自启已关闭", "Launch at startup turned off")
+        }
+    );
     get_autostart(app)
 }
 
@@ -257,7 +264,12 @@ pub async fn sample_backdrop(window: tauri::WebviewWindow, scope: String) -> Cmd
     let scope = match scope.as_str() {
         "wallpaper" => Scope::Wallpaper,
         "behind" => Scope::Behind,
-        other => return Err(format!("未知的取色范围：{other}")),
+        other => {
+            return Err(vertexswitch_core::tr!(
+                "未知的取色范围：{other}",
+                "Unknown sampling scope: {other}"
+            ));
+        }
     };
     #[cfg(windows)]
     let hwnd = window.hwnd().map_err(|e| e.to_string())?.0 as isize;
@@ -276,9 +288,9 @@ pub async fn sample_backdrop(window: tauri::WebviewWindow, scope: String) -> Cmd
 #[tauri::command]
 pub fn set_title_bar(window: tauri::WebviewWindow, color: Option<String>, dark: bool) -> CmdResult {
     let color = match color {
-        Some(hex) => {
-            Some(crate::title_bar::parse_hex(&hex).ok_or_else(|| format!("颜色格式不对：{hex}"))?)
-        }
+        Some(hex) => Some(crate::title_bar::parse_hex(&hex).ok_or_else(|| {
+            vertexswitch_core::tr!("颜色格式不对：{hex}", "Invalid color: {hex}")
+        })?),
         None => None,
     };
     crate::title_bar::set_colors(&window, color, dark);
@@ -294,7 +306,12 @@ pub fn set_backdrop(window: tauri::WebviewWindow, kind: String) -> CmdResult {
         "tabbed" => Some(Effect::Tabbed),
         "acrylic" => Some(Effect::Acrylic),
         "none" => None,
-        other => return Err(format!("未知的窗口材质：{other}")),
+        other => {
+            return Err(vertexswitch_core::tr!(
+                "未知的窗口材质：{other}",
+                "Unknown window material: {other}"
+            ));
+        }
     };
     window
         .set_effects(effect.map(|e| EffectsBuilder::new().effect(e).build()))

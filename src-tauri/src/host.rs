@@ -11,6 +11,7 @@ use vertexswitch_core::config::{Settings, app_dir, config_path};
 use vertexswitch_core::logs::LogHub;
 use vertexswitch_core::registry::ModelRegistry;
 use vertexswitch_core::secrets::{TokenLocation, load_admin_token};
+use vertexswitch_core::tr;
 use vertexswitch_core::{AppState, SharedState, serve_until, start_background};
 
 struct Running {
@@ -32,11 +33,20 @@ impl CoreHost {
     pub fn create(logs: Arc<LogHub>) -> Arc<Self> {
         let config_file = config_path();
         let settings = Settings::load(&config_file).unwrap_or_else(|e| {
-            tracing::warn!("{e}；暂用默认配置");
+            tracing::warn!(
+                "{}",
+                tr!("{e}；暂用默认配置", "{e}; using the default config for now")
+            );
             Settings::default()
         });
         let registry = ModelRegistry::load().unwrap_or_else(|e| {
-            tracing::warn!("{e}；暂用内置模型表");
+            tracing::warn!(
+                "{}",
+                tr!(
+                    "{e}；暂用内置模型表",
+                    "{e}; using the built-in model table for now"
+                )
+            );
             ModelRegistry::builtin()
         });
         let (token, location) = load_admin_token();
@@ -91,11 +101,7 @@ impl CoreHost {
             }
         }
         let Some(listener) = bound else {
-            let message = if crate::i18n::english() {
-                format!("Can't listen on {addr}: {last}")
-            } else {
-                format!("无法监听 {addr}：{last}")
-            };
+            let message = tr!("无法监听 {addr}：{last}", "Can't listen on {addr}: {last}");
             tracing::error!("{message}");
             *self.last_error.lock().expect("锁未中毒") = Some(message.clone());
             return Err(message);
@@ -107,12 +113,22 @@ impl CoreHost {
                 let _ = rx.await;
             };
             if let Err(e) = serve_until(listener, state, shutdown).await {
-                tracing::error!("代理服务异常退出：{e}");
+                tracing::error!(
+                    "{}",
+                    tr!(
+                        "代理服务异常退出：{e}",
+                        "The proxy server stopped unexpectedly: {e}"
+                    )
+                );
             }
         });
         tracing::info!(
-            "VertexSwitch {} 监听 http://{addr}",
-            vertexswitch_core::VERSION
+            "{}",
+            tr!(
+                "VertexSwitch {} 监听 http://{addr}",
+                "VertexSwitch {} listening on http://{addr}",
+                vertexswitch_core::VERSION
+            )
         );
         *self.last_error.lock().expect("锁未中毒") = None;
         *running = Some(Running {

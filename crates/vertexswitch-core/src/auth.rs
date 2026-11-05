@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::tr;
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -85,16 +86,31 @@ impl ServiceAccountAuth {
     }
 
     fn load(&self) -> Result<Loaded, AuthError> {
-        let path = self
-            .credentials_file
-            .as_ref()
-            .ok_or_else(|| AuthError("未配置服务账号密钥文件（google.credentials_file）".into()))?;
-        let text = std::fs::read_to_string(path)
-            .map_err(|e| AuthError(format!("无法读取服务账号密钥文件 {}：{e}", path.display())))?;
-        let key: ServiceAccountKey = serde_json::from_str(&text)
-            .map_err(|e| AuthError(format!("服务账号密钥文件格式错误：{e}")))?;
-        let encoding_key = EncodingKey::from_rsa_pem(key.private_key.as_bytes())
-            .map_err(|e| AuthError(format!("服务账号私钥无效：{e}")))?;
+        let path = self.credentials_file.as_ref().ok_or_else(|| {
+            AuthError(tr!(
+                "未配置服务账号密钥文件（google.credentials_file）",
+                "No service account key file is configured (google.credentials_file)"
+            ))
+        })?;
+        let text = std::fs::read_to_string(path).map_err(|e| {
+            AuthError(tr!(
+                "无法读取服务账号密钥文件 {}：{e}",
+                "Couldn't read the service account key file {}: {e}",
+                path.display()
+            ))
+        })?;
+        let key: ServiceAccountKey = serde_json::from_str(&text).map_err(|e| {
+            AuthError(tr!(
+                "服务账号密钥文件格式错误：{e}",
+                "The service account key file is malformed: {e}"
+            ))
+        })?;
+        let encoding_key = EncodingKey::from_rsa_pem(key.private_key.as_bytes()).map_err(|e| {
+            AuthError(tr!(
+                "服务账号私钥无效：{e}",
+                "The service account private key is invalid: {e}"
+            ))
+        })?;
         if self.explicit_project.is_empty()
             && let Some(project) = &key.project_id
         {
@@ -132,7 +148,13 @@ impl ServiceAccountAuth {
         match &result {
             Ok(_) => {
                 *self.last_error.write().expect("锁未中毒") = None;
-                tracing::info!("Google access token 已刷新");
+                tracing::info!(
+                    "{}",
+                    tr!(
+                        "Google access token 已刷新",
+                        "Google access token refreshed"
+                    )
+                );
             }
             Err(e) => *self.last_error.write().expect("锁未中毒") = Some(e.0.clone()),
         }
@@ -159,7 +181,7 @@ impl ServiceAccountAuth {
         let mut header = Header::new(Algorithm::RS256);
         header.kid.clone_from(&loaded.key.private_key_id);
         let assertion = jsonwebtoken::encode(&header, &claims, &loaded.encoding_key)
-            .map_err(|e| AuthError(format!("签名 JWT 失败：{e}")))?;
+            .map_err(|e| AuthError(tr!("签名 JWT 失败：{e}", "Couldn't sign the JWT: {e}")))?;
 
         let requested_at = Instant::now();
         let response = self
@@ -172,19 +194,27 @@ impl ServiceAccountAuth {
             .timeout(Duration::from_secs(30))
             .send()
             .await
-            .map_err(|e| AuthError(format!("获取 Google access token 失败：{e}")))?;
+            .map_err(|e| {
+                AuthError(tr!(
+                    "获取 Google access token 失败：{e}",
+                    "Couldn't get a Google access token: {e}"
+                ))
+            })?;
         let status = response.status();
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             let detail: String = body.chars().take(500).collect();
-            return Err(AuthError(format!(
-                "获取 Google access token 失败：HTTP {status} {detail}"
+            return Err(AuthError(tr!(
+                "获取 Google access token 失败：HTTP {status} {detail}",
+                "Couldn't get a Google access token: HTTP {status} {detail}"
             )));
         }
-        let parsed: TokenResponse = response
-            .json()
-            .await
-            .map_err(|e| AuthError(format!("Google token 响应格式错误：{e}")))?;
+        let parsed: TokenResponse = response.json().await.map_err(|e| {
+            AuthError(tr!(
+                "Google token 响应格式错误：{e}",
+                "Malformed Google token response: {e}"
+            ))
+        })?;
         let expiry = requested_at + Duration::from_secs(parsed.expires_in);
         state.token = Some((parsed.access_token.clone(), expiry));
         Ok(parsed.access_token)

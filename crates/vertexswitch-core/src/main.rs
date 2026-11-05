@@ -14,6 +14,7 @@ use vertexswitch_core::config::{Settings, app_dir, config_path};
 use vertexswitch_core::logs::{LogHub, LogLayer};
 use vertexswitch_core::registry::ModelRegistry;
 use vertexswitch_core::secrets::load_admin_token;
+use vertexswitch_core::tr;
 
 #[derive(Parser)]
 #[command(name = "vertexswitch-core", version, about = "VertexSwitch 代理核心")]
@@ -39,6 +40,7 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    vertexswitch_core::i18n::load();
     let logs = Arc::new(LogHub::new(1000));
     tracing_subscriber::registry()
         .with(
@@ -71,12 +73,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr = format!("{}:{}", settings.server.host, settings.server.port);
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!(
-        "VertexSwitch {} 监听 http://{addr}",
-        vertexswitch_core::VERSION
+        "{}",
+        tr!(
+            "VertexSwitch {} 监听 http://{addr}",
+            "VertexSwitch {} listening on http://{addr}",
+            vertexswitch_core::VERSION
+        )
     );
     tracing::info!(
-        "管理接口 token 位于{}（vertexswitch-core admin-token 可打印）",
-        token_location.describe()
+        "{}",
+        tr!(
+            "管理接口 token 位于{}（vertexswitch-core admin-token 可打印）",
+            "Admin token is stored in {} (print it with: vertexswitch-core admin-token)",
+            token_location.describe()
+        )
     );
 
     let state = Arc::new(

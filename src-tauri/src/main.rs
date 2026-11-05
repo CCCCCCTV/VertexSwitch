@@ -9,7 +9,6 @@ mod app_icon;
 mod backdrop_color;
 mod commands;
 mod host;
-mod i18n;
 mod title_bar;
 mod tray;
 
@@ -52,6 +51,8 @@ fn forward<T: Serialize + Clone + Send + 'static>(
 }
 
 fn main() {
+    // 最先读回界面语言：读取配置时的告警、托盘菜单都要用它
+    vertexswitch_core::i18n::load();
     let logs = init_logging();
     let host = CoreHost::create(logs.clone());
     let start_minimized = std::env::args().any(|a| a == "--minimized");
@@ -125,7 +126,6 @@ fn main() {
             let window = builder.build()?;
             app_icon::apply_to_window(&window);
             title_bar::hide_caption_content(&window);
-            i18n::load();
             tray::create(&handle)?;
             forward(handle.clone(), "log", logs.subscribe());
             forward(

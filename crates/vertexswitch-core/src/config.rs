@@ -6,24 +6,58 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::tr;
 use serde::{Deserialize, Serialize};
 
 pub const APP_NAME: &str = "VertexSwitch";
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum ConfigError {
-    #[error("读取配置文件 {path} 失败：{source}")]
     Io {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("配置文件 {path} 格式错误：{source}")]
     Parse {
         path: PathBuf,
         source: toml::de::Error,
     },
-    #[error("配置文件 {path} 有误：{message}")]
-    Invalid { path: PathBuf, message: String },
+    Invalid {
+        path: PathBuf,
+        message: String,
+    },
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Io { path, source } => tr!(
+                "读取配置文件 {} 失败：{source}",
+                "Couldn't read the config file {}: {source}",
+                path.display()
+            ),
+            Self::Parse { path, source } => tr!(
+                "配置文件 {} 格式错误：{source}",
+                "The config file {} is malformed: {source}",
+                path.display()
+            ),
+            Self::Invalid { path, message } => tr!(
+                "配置文件 {} 有误：{message}",
+                "The config file {} is invalid: {message}",
+                path.display()
+            ),
+        };
+        f.write_str(&text)
+    }
+}
+
+impl std::error::Error for ConfigError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Io { source, .. } => Some(source),
+            Self::Parse { source, .. } => Some(source),
+            Self::Invalid { .. } => None,
+        }
+    }
 }
 
 /// 配置、日志所在目录。
@@ -279,19 +313,22 @@ impl Settings {
         let g = &self.gemini;
         let tier_ok = |t: &str| crate::tiers::Tier::parse(t).is_some();
         if !tier_ok(&g.tier) {
-            return Err(format!(
+            return Err(tr!(
                 "gemini.tier 只能是 standard / flex / priority，不是 {:?}",
+                "gemini.tier must be standard / flex / priority, not {:?}",
                 g.tier
             ));
         }
         if let Some((model, tier)) = g.model_tiers.iter().find(|(_, t)| !tier_ok(t)) {
-            return Err(format!(
-                "gemini.model_tiers.{model} 只能是 standard / flex / priority，不是 {tier:?}"
+            return Err(tr!(
+                "gemini.model_tiers.{model} 只能是 standard / flex / priority，不是 {tier:?}",
+                "gemini.model_tiers.{model} must be standard / flex / priority, not {tier:?}"
             ));
         }
         if !OPENAI_NATIVE_MODES.contains(&g.openai_native.as_str()) {
-            return Err(format!(
+            return Err(tr!(
                 "gemini.openai_native 只能是 auto / always / never，不是 {:?}",
+                "gemini.openai_native must be auto / always / never, not {:?}",
                 g.openai_native
             ));
         }

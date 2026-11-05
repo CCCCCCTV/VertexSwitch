@@ -73,11 +73,10 @@
       });
     }
     for (const e of live.logs) {
-      if (e.ts_ms < since || e.level === "INFO") continue;
-      // 降级告警来自核心日志（核心的文字不翻译，按中文关键字识别）
-      if (!e.message.includes("实际按") && !e.message.includes("已改用 Standard")) continue;
-      const [model, detail] = e.message.split("：");
-      items.push({ ts: e.ts_ms, tone: "warn", title: t("overview.downgrade", { model }), detail: detail ?? e.message });
+      // 降级告警来自核心日志的 kind 字段：请求前改用了 Standard，或上游实际按别的档位处理
+      const kind = e.fields.kind;
+      if (e.ts_ms < since || (kind !== "tier_fallback" && kind !== "tier_mismatch")) continue;
+      items.push({ ts: e.ts_ms, tone: "warn", title: t("overview.downgrade", { model: e.fields.model ?? "" }), detail: e.message });
     }
     return items.sort((a, b) => b.ts - a.ts).slice(0, 5);
   });

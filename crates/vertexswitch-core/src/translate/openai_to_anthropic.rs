@@ -15,6 +15,7 @@ use regex::Regex;
 use serde_json::{Map, Value, json};
 
 use crate::errors::{ProxyError, ProxyResult};
+use crate::tr;
 
 pub(crate) static DATA_URL: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?s)^data:(?P<media>[\w/+.-]+);base64,(?P<data>.+)$").expect("合法正则")
@@ -43,7 +44,10 @@ pub(crate) fn text_of(content: Option<&Value>) -> ProxyResult<String> {
             .filter(|p| p.get("type").and_then(Value::as_str) == Some("text"))
             .filter_map(|p| p.get("text").and_then(Value::as_str))
             .collect()),
-        Some(_) => Err(bad("messages[].content 格式不正确")),
+        Some(_) => Err(bad(tr!(
+            "messages[].content 格式不正确",
+            "messages[].content has an invalid format"
+        ))),
     }
 }
 
@@ -53,10 +57,10 @@ fn image_block(part: &Value) -> ProxyResult<Value> {
         .and_then(|i| i.get("url"))
         .or(image)
         .and_then(Value::as_str)
-        .ok_or_else(|| bad("image_url.url 缺失"))?;
+        .ok_or_else(|| bad(tr!("image_url.url 缺失", "image_url.url is missing")))?;
     // Vertex 上的 Claude 不支持 URL 图片来源，只能内嵌 base64
     let caps = DATA_URL.captures(url).ok_or_else(|| {
-        bad("Vertex AI 上的 Claude 不支持 URL 图片，请改用 data:image/...;base64, 内嵌图片")
+        bad(tr!("Vertex AI 上的 Claude 不支持 URL 图片，请改用 data:image/...;base64, 内嵌图片", "Claude on Vertex AI doesn't support image URLs; embed the image as data:image/...;base64, instead"))
     })?;
     Ok(json!({
         "type": "image",
@@ -75,10 +79,16 @@ fn user_blocks(content: Option<&Value>) -> ProxyResult<Vec<Value>> {
                     "text": part.get("text").and_then(Value::as_str).unwrap_or_default(),
                 })),
                 Some("image_url") => image_block(part),
-                other => Err(bad(format!("不支持的消息内容类型：{other:?}"))),
+                other => Err(bad(tr!(
+                    "不支持的消息内容类型：{other:?}",
+                    "Unsupported message content type: {other:?}"
+                ))),
             })
             .collect(),
-        _ => Err(bad("user 消息的 content 必须是字符串或数组")),
+        _ => Err(bad(tr!(
+            "user 消息的 content 必须是字符串或数组",
+            "The content of a user message must be a string or an array"
+        ))),
     }
 }
 
@@ -94,8 +104,12 @@ fn assistant_blocks(msg: &Value) -> ProxyResult<Vec<Value>> {
         let input = match function.get("arguments") {
             None | Some(Value::Null) => json!({}),
             Some(Value::String(raw)) if raw.is_empty() => json!({}),
-            Some(Value::String(raw)) => serde_json::from_str(raw)
-                .map_err(|e| bad(format!("tool_calls 的 arguments 不是合法 JSON：{e}")))?,
+            Some(Value::String(raw)) => serde_json::from_str(raw).map_err(|e| {
+                bad(tr!(
+                    "tool_calls 的 arguments 不是合法 JSON：{e}",
+                    "tool_calls arguments aren't valid JSON: {e}"
+                ))
+            })?,
             Some(other) => other.clone(),
         };
         blocks.push(json!({
@@ -114,7 +128,10 @@ fn convert_tools(tools: &[Value]) -> ProxyResult<Vec<Value>> {
         .map(|tool| {
             let kind = tool.get("type").and_then(Value::as_str);
             if kind != Some("function") {
-                return Err(bad(format!("不支持的工具类型：{kind:?}")));
+                return Err(bad(tr!(
+                    "不支持的工具类型：{kind:?}",
+                    "Unsupported tool type: {kind:?}"
+                )));
             }
             let function = tool.get("function").cloned().unwrap_or_default();
             let mut item = Map::new();
@@ -150,13 +167,23 @@ fn convert_tool_choice(
             "auto" => json!({"type": "auto"}),
             "none" => json!({"type": "none"}),
             "required" => json!({"type": "any"}),
-            other => return Err(bad(format!("不支持的 tool_choice：{other:?}"))),
+            other => {
+                return Err(bad(tr!(
+                    "不支持的 tool_choice：{other:?}",
+                    "Unsupported tool_choice: {other:?}"
+                )));
+            }
         }),
         Some(obj) if obj.get("type").and_then(Value::as_str) == Some("function") => Some(json!({
             "type": "tool",
             "name": obj.get("function").and_then(|f| f.get("name")),
         })),
-        Some(other) => return Err(bad(format!("不支持的 tool_choice：{other}"))),
+        Some(other) => {
+            return Err(bad(tr!(
+                "不支持的 tool_choice：{other}",
+                "Unsupported tool_choice: {other}"
+            )));
+        }
     };
     if parallel == Some(&Value::Bool(false)) {
         let choice = result.get_or_insert_with(|| json!({"type": "auto"}));
@@ -172,13 +199,18 @@ pub fn request_to_anthropic(body: &Value, default_max_tokens: u64) -> ProxyResul
     match body.get("n") {
         None | Some(Value::Null) => {}
         Some(n) if n.as_u64() == Some(1) => {}
-        Some(_) => return Err(bad("Claude 不支持 n > 1")),
+        Some(_) => {
+            return Err(bad(tr!(
+                "Claude 不支持 n > 1",
+                "Claude doesn't support n > 1"
+            )));
+        }
     }
     let messages = body
         .get("messages")
         .and_then(Value::as_array)
         .filter(|m| !m.is_empty())
-        .ok_or_else(|| bad("messages 不能为空"))?;
+        .ok_or_else(|| bad(tr!("messages 不能为空", "messages must not be empty")))?;
 
     let mut system_parts: Vec<String> = Vec::new();
     let mut out_messages: Vec<Value> = Vec::new();
@@ -201,7 +233,10 @@ pub fn request_to_anthropic(body: &Value, default_max_tokens: u64) -> ProxyResul
 
     for msg in messages {
         if !msg.is_object() {
-            return Err(bad("messages[] 必须是对象"));
+            return Err(bad(tr!(
+                "messages[] 必须是对象",
+                "Each item in messages[] must be an object"
+            )));
         }
         match msg.get("role").and_then(Value::as_str) {
             Some("system" | "developer") => system_parts.push(text_of(msg.get("content"))?),
@@ -215,7 +250,12 @@ pub fn request_to_anthropic(body: &Value, default_max_tokens: u64) -> ProxyResul
                     "content": text_of(msg.get("content"))?,
                 })],
             ),
-            other => return Err(bad(format!("不支持的消息角色：{other:?}"))),
+            other => {
+                return Err(bad(tr!(
+                    "不支持的消息角色：{other:?}",
+                    "Unsupported message role: {other:?}"
+                )));
+            }
         }
     }
 

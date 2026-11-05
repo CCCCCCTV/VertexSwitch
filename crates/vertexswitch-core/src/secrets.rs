@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use crate::app::{load_or_create_admin_token, random_token};
+use crate::tr;
 
 pub const SERVICE: &str = "VertexSwitch";
 pub const ADMIN_TOKEN_USER: &str = "admin-token";
@@ -55,14 +56,14 @@ pub struct MemoryStore {
 impl SecretStore for MemoryStore {
     fn get(&self) -> Result<Option<String>, String> {
         if self.fail {
-            return Err("凭据库不可用".into());
+            return Err(tr!("凭据库不可用", "credential store unavailable"));
         }
         Ok(self.value.lock().expect("锁未中毒").clone())
     }
 
     fn set(&self, value: &str) -> Result<(), String> {
         if self.fail {
-            return Err("凭据库不可用".into());
+            return Err(tr!("凭据库不可用", "credential store unavailable"));
         }
         *self.value.lock().expect("锁未中毒") = Some(value.to_owned());
         Ok(())
@@ -78,7 +79,10 @@ pub enum TokenLocation {
 impl TokenLocation {
     pub fn describe(&self) -> String {
         match self {
-            Self::CredentialStore => format!("系统凭据库（{SERVICE} / {ADMIN_TOKEN_USER}）"),
+            Self::CredentialStore => tr!(
+                "系统凭据库（{SERVICE} / {ADMIN_TOKEN_USER}）",
+                "the system credential store ({SERVICE} / {ADMIN_TOKEN_USER})"
+            ),
             Self::File(path) => path.display().to_string(),
         }
     }
@@ -87,13 +91,23 @@ impl TokenLocation {
 /// 读取管理 token，没有就生成。`legacy_file` 是旧版本的 token 文件，也是凭据库不可用时的退路。
 pub fn admin_token(store: &dyn SecretStore, legacy_file: &Path) -> (String, TokenLocation) {
     let fallback = |reason: String| {
-        tracing::warn!("无法使用系统凭据库保存管理 token（{reason}），改用文件");
+        tracing::warn!(
+            "{}",
+            tr!(
+                "无法使用系统凭据库保存管理 token（{reason}），改用文件",
+                "Can't keep the admin token in the system credential store ({reason}); using a file instead"
+            )
+        );
         match load_or_create_admin_token(legacy_file) {
             Ok(token) => (token, TokenLocation::File(legacy_file.to_owned())),
             Err(e) => {
                 tracing::warn!(
-                    "也无法读写 {}：{e}；本次使用临时 token",
-                    legacy_file.display()
+                    "{}",
+                    tr!(
+                        "也无法读写 {}：{e}；本次使用临时 token",
+                        "Can't read or write {} either: {e}; using a temporary token for this run",
+                        legacy_file.display()
+                    )
                 );
                 (random_token(), TokenLocation::File(legacy_file.to_owned()))
             }
@@ -133,7 +147,13 @@ pub fn load_admin_token() -> (String, TokenLocation) {
                 fail: true,
                 ..Default::default()
             };
-            tracing::warn!("系统凭据库不可用：{e}");
+            tracing::warn!(
+                "{}",
+                tr!(
+                    "系统凭据库不可用：{e}",
+                    "System credential store unavailable: {e}"
+                )
+            );
             admin_token(&failing, &legacy)
         }
     }
@@ -142,8 +162,21 @@ pub fn load_admin_token() -> (String, TokenLocation) {
 fn remove_legacy(path: &Path) {
     if path.exists() {
         match std::fs::remove_file(path) {
-            Ok(()) => tracing::info!("管理 token 已迁入系统凭据库，删除旧文件 {}", path.display()),
-            Err(e) => tracing::warn!("删除旧的管理 token 文件失败：{e}"),
+            Ok(()) => tracing::info!(
+                "{}",
+                tr!(
+                    "管理 token 已迁入系统凭据库，删除旧文件 {}",
+                    "Moved the admin token into the system credential store and deleted the old file {}",
+                    path.display()
+                )
+            ),
+            Err(e) => tracing::warn!(
+                "{}",
+                tr!(
+                    "删除旧的管理 token 文件失败：{e}",
+                    "Couldn't delete the old admin token file: {e}"
+                )
+            ),
         }
     }
 }
