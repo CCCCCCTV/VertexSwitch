@@ -4,33 +4,22 @@
 //! countTokens。查询参数（如 `alt=sse`）透传，代理自己的 `key` 除外。生成类请求按配置附加
 //! 服务档位头，并用响应里的 `usageMetadata.trafficType` 核对实际档位。
 
-use std::time::Duration;
-
 use axum::{
     Json, Router,
-    body::{Body, Bytes},
+    body::Bytes,
     extract::{Path, RawQuery, State},
-    http::{HeaderMap, HeaderValue, header},
+    http::HeaderMap,
     response::{IntoResponse, Response},
     routing::get,
 };
 use serde_json::{Value, json};
 
-use super::{parse_json_object, relay};
+use super::parse_json_object;
 use crate::app::SharedState;
-use crate::backends::{gemini, vertex};
+use crate::backends::{self, Target, gemini};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
-use crate::metrics;
 use crate::registry::Backend;
-use crate::tiers::{
-    LOG_KIND_FALLBACK, LOG_KIND_MISMATCH, TierPlan, TrafficTypeWatcher, check_traffic_type,
-};
 use crate::tr;
-use crate::transport::{UpstreamRequest, VERTEX};
-
-pub const TIER_OVERRIDE_HEADER: &str = "x-vertexswitch-tier";
-/// Flex 排队到 X-Server-Timeout 才返回时，本地多等这么久再判超时
-pub(super) const TIMEOUT_MARGIN: Duration = Duration::from_secs(60);
 
 pub fn routes() -> Router<SharedState> {
     let mut router = Router::new();
@@ -74,34 +63,6 @@ fn forwarded_query(raw: Option<&str>) -> String {
     out.finish()
 }
 
-/// 收到第一个 trafficType 时核对一次档位。
-pub(super) struct TrafficCheck {
-    plan: Option<TierPlan>,
-    model: String,
-    watcher: TrafficTypeWatcher,
-}
-
-impl TrafficCheck {
-    pub(super) fn new(plan: Option<TierPlan>, model: String) -> Self {
-        Self {
-            plan,
-            model,
-            watcher: TrafficTypeWatcher::default(),
-        }
-    }
-
-    pub(super) fn feed(&mut self, chunk: &[u8]) {
-        let Some(plan) = &self.plan else {
-            return;
-        };
-        if let Some(traffic) = self.watcher.feed(chunk)
-            && let Some(warning) = check_traffic_type(plan, &traffic)
-        {
-            tracing::warn!(model = %self.model, kind = LOG_KIND_MISMATCH, "{warning}");
-        }
-    }
-}
-
 pub async fn model_action(
     State(app): State<SharedState>,
     Path(target): Path<String>,
@@ -124,93 +85,20 @@ pub async fn model_action(
                 ),
             )
         })?;
-    let mut body = parse_json_object(&body)?;
-    gemini::prepare_body(&mut body);
-
-    let mut upstream_headers = vec![
-        (
-            "authorization".to_owned(),
-            format!("Bearer {}", state.google_token().await?),
-        ),
-        ("content-type".to_owned(), "application/json".to_owned()),
-    ];
-    let override_tier = headers
-        .get(TIER_OVERRIDE_HEADER)
-        .and_then(|v| v.to_str().ok());
-    let plan = gemini::tier_plan(
-        &state.settings,
-        &route.upstream_model,
-        action,
-        override_tier,
-    );
-    if let Some(plan) = &plan {
-        for warning in &plan.warnings {
-            tracing::warn!(model = %route.upstream_model, kind = LOG_KIND_FALLBACK, "{warning}");
-        }
-        upstream_headers.extend(plan.headers.iter().map(|(k, v)| (k.to_string(), v.clone())));
-    }
-
-    let region = state.settings.gemini_region();
-    let base = vertex::publisher_models_url(
-        &state.vertex_base(region),
-        &state.project_id()?,
-        region,
-        "google",
-    );
-    let mut url = format!("{base}/{}:{action}", route.upstream_model);
-    let query = forwarded_query(query.as_deref());
-    if !query.is_empty() {
-        url = format!("{url}?{query}");
-    }
-    let stream = action == "streamGenerateContent";
-    metrics::note(|i| {
-        i.model = Some(route.upstream_model.clone());
-        i.backend = Some(Backend::Gemini.as_str());
-        i.tier = plan.as_ref().map(|p| p.effective.as_str());
-        i.stream = stream;
-    });
-    let mut request = UpstreamRequest::post_json(
-        url,
-        upstream_headers,
-        serde_json::to_vec(&body).expect("Value 可序列化").into(),
-        stream,
-    );
-    request.min_read_timeout = plan
-        .as_ref()
-        .and_then(|p| p.server_timeout)
-        .map(|s| Duration::from_secs(s) + TIMEOUT_MARGIN);
-
-    let response = state.transport.open(&request).await?;
-    let status = response.status();
-    if !status.is_success() {
-        let raw = state.transport.read_body(response).await?;
-        return Err(ProxyError::from_upstream(status.as_u16(), &raw));
-    }
-
-    let content_type = response
-        .headers()
-        .get(header::CONTENT_TYPE)
-        .cloned()
-        .unwrap_or_else(|| HeaderValue::from_static("application/json"));
-    let tier_header = plan
-        .as_ref()
-        .map(|p| HeaderValue::from_static(p.effective.as_str()));
-    let mut check = TrafficCheck::new(plan, route.upstream_model);
-
-    let mut out = if stream {
-        let chunks = state.transport.chunks(response, VERTEX);
-        relay(chunks, Protocol::Gemini, move |chunk| check.feed(chunk))
-    } else {
-        let data = state.transport.read_body(response).await?;
-        check.feed(&data);
-        Response::new(Body::from(data))
+    let body = parse_json_object(&body)?;
+    let target = Target::GeminiNative {
+        model: route.upstream_model,
+        action: action.to_owned(),
+        query: forwarded_query(query.as_deref()),
+        tier_override: headers
+            .get(gemini::TIER_OVERRIDE_HEADER)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_owned),
     };
-    *out.status_mut() = status;
-    out.headers_mut().insert(header::CONTENT_TYPE, content_type);
-    if let Some(tier) = tier_header {
-        out.headers_mut().insert("x-vertexswitch-tier", tier);
-    }
-    Ok(out)
+    backends::call(&state, target, body)
+        .await?
+        .relay(Protocol::Gemini)
+        .await
 }
 
 fn gemini_model(id: &str) -> Value {

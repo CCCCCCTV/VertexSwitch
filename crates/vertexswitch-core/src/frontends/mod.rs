@@ -1,20 +1,14 @@
-//! 入口协议：把客户端请求转给对应后端，并把响应按入口协议返回。
+//! 入口协议模块：解析客户端请求、选路由，必要时翻译请求体，再交给后端模块（`backends`）发出去，
+//! 并选择把上游回复原样转交还是翻译成客户端协议。
 
 pub mod anthropic;
 pub mod gemini;
 pub mod models;
 pub mod openai;
 
-use axum::{
-    body::Body,
-    http::{HeaderValue, header},
-    response::Response,
-};
-use bytes::Bytes;
-use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 
-use crate::errors::{Protocol, ProxyError, ProxyResult};
+use crate::errors::{ProxyError, ProxyResult};
 use crate::tr;
 
 /// 请求体必须是 JSON 对象。
@@ -40,31 +34,17 @@ pub fn parse_json_object(body: &[u8]) -> ProxyResult<Value> {
     Ok(value)
 }
 
-/// 原样转发上游流；中途出错时按入口协议补发一个错误事件后结束（SPEC §5）。
-/// `on_chunk` 用于旁路观察数据（如核对 trafficType）。
-pub fn relay(
-    chunks: impl Stream<Item = ProxyResult<Bytes>> + Send + 'static,
-    protocol: Protocol,
-    mut on_chunk: impl FnMut(&[u8]) + Send + 'static,
-) -> Response {
-    let body = async_stream::stream! {
-        futures_util::pin_mut!(chunks);
-        while let Some(item) = chunks.next().await {
-            match item {
-                Ok(chunk) => {
-                    on_chunk(&chunk);
-                    yield Ok::<_, std::convert::Infallible>(chunk);
-                }
-                Err(e) => {
-                    yield Ok(e.stream_event(protocol));
-                    break;
-                }
-            }
-        }
-    };
-    let mut response = Response::new(Body::from_stream(body));
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
-    response
+/// 请求体里的 `model`（去掉首尾空白，不能为空）。
+pub fn require_model(body: &Value) -> ProxyResult<String> {
+    body.get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| ProxyError::new(400, tr!("model: 缺少模型名", "model: missing model name")))
+}
+
+/// 请求体里的 `"stream": true`。
+pub fn wants_stream(body: &Value) -> bool {
+    body.get("stream").and_then(Value::as_bool) == Some(true)
 }

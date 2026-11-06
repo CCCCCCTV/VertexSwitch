@@ -89,21 +89,17 @@ fn model_in_url(url: &str) -> String {
         .unwrap_or_default()
 }
 
-/// 一次上游请求。
-pub struct UpstreamRequest<'a> {
+/// 一次上游请求（都发往 Vertex AI）。
+pub struct UpstreamRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: Bytes,
     pub stream: bool,
     /// 上游可能合法地排队这么久（如 Flex 的 X-Server-Timeout），本地等待不得小于它
     pub min_read_timeout: Option<Duration>,
-    /// 报错信息里的上游名称
-    pub upstream: &'a str,
-    /// 是否按 Vertex 的配额耗尽特征处理
-    pub detect_quota: bool,
 }
 
-impl<'a> UpstreamRequest<'a> {
+impl UpstreamRequest {
     pub fn post_json(
         url: String,
         headers: Vec<(String, String)>,
@@ -116,8 +112,6 @@ impl<'a> UpstreamRequest<'a> {
             body,
             stream,
             min_read_timeout: None,
-            upstream: VERTEX,
-            detect_quota: true,
         }
     }
 }
@@ -148,7 +142,7 @@ impl Transport {
     }
 
     /// 等响应头的时长。
-    fn header_timeout(&self, req: &UpstreamRequest<'_>) -> Duration {
+    fn header_timeout(&self, req: &UpstreamRequest) -> Duration {
         let base = secs(if req.stream {
             self.timeouts.stream_idle
         } else {
@@ -163,14 +157,14 @@ impl Transport {
     /// 并带 ±25% 抖动，上游给了 `Retry-After` 时至少等这么久。还没给客户端发出任何字节，
     /// 所以对流式请求同样适用。不管上游过了多久才返回繁忙都会重试（Standard 也可能先挂一分多钟再回 429）；
     /// 最多等多久由客户端决定：客户端断开时整个请求被丢弃，重试随之停止。
-    pub async fn open(&self, req: &UpstreamRequest<'_>) -> ProxyResult<reqwest::Response> {
+    pub async fn open(&self, req: &UpstreamRequest) -> ProxyResult<reqwest::Response> {
         let headers = header_map(&req.headers)?;
         let limit = if self.retry.busy {
             self.retry.busy_attempts.min(MAX_BUSY_RETRIES)
         } else {
             0
         };
-        let upstream = req.upstream;
+        let upstream = VERTEX;
         // 只在要写日志时才解析请求体取模型名
         let mut model_cache: Option<String> = None;
         let mut model = || {
@@ -235,12 +229,12 @@ impl Transport {
     /// 发一次请求拿到响应头；连接层出错且还没收到任何响应时按 `attempts` 重试。
     async fn send(
         &self,
-        req: &UpstreamRequest<'_>,
+        req: &UpstreamRequest,
         headers: &HeaderMap,
     ) -> ProxyResult<reqwest::Response> {
         let wait = self.header_timeout(req);
         let attempts = self.retry.attempts + 1;
-        let upstream = req.upstream;
+        let upstream = VERTEX;
         for attempt in 1..=attempts {
             let request = self
                 .client
@@ -273,7 +267,7 @@ impl Transport {
             let elapsed = started.elapsed();
             // 连接都没建立起来（含连接超时）不是配额特征；对端在没有响应的情况下断开才是
             let disconnected = !error.is_connect();
-            if req.detect_quota && disconnected && elapsed >= secs(self.retry.quota_hang_seconds) {
+            if disconnected && elapsed >= secs(self.retry.quota_hang_seconds) {
                 tracing::warn!(
                     "{}",
                     tr!(
@@ -334,9 +328,9 @@ impl Transport {
     pub fn chunks(
         &self,
         mut response: reqwest::Response,
-        upstream: &'static str,
     ) -> impl Stream<Item = ProxyResult<Bytes>> + Send + 'static {
         let idle = secs(self.timeouts.stream_idle);
+        let upstream = VERTEX;
         async_stream::stream! {
             loop {
                 match tokio::time::timeout(idle, response.chunk()).await {

@@ -322,7 +322,7 @@ fn stream_translation() {
         "usageMetadata": {"promptTokenCount": 3, "candidatesTokenCount": 4, "totalTokenCount": 7},
     })));
     assert!(t.finished);
-    out.extend(t.finish());
+    out.extend(t.usage_chunk());
 
     assert!(out.iter().all(|c| c["id"] == "chatcmpl-r2"));
     assert_eq!(
@@ -350,5 +350,5 @@ fn stream_without_usage_or_finish() {
     let out = t.handle(&json!({"candidates": [{"content": {"parts": [{"text": "x"}]}}]}));
     assert_eq!(out.len(), 2);
     assert!(!t.finished);
-    assert!(t.finish().is_none());
+    assert!(t.usage_chunk().is_none());
 }

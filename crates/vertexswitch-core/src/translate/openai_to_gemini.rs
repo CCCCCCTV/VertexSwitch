@@ -778,7 +778,7 @@ impl StreamTranslator {
     }
 
     /// 流正常结束后：客户端要了用量就补一段只有 usage 的块。
-    pub fn finish(&self) -> Option<Value> {
+    pub fn usage_chunk(&self) -> Option<Value> {
         if !self.include_usage {
             return None;
         }
@@ -786,6 +786,28 @@ impl StreamTranslator {
         last["choices"] = json!([]);
         last["usage"] = openai_usage(self.usage.as_ref());
         Some(last)
+    }
+}
+
+impl super::StreamTranslate for StreamTranslator {
+    fn on_event(&mut self, _event: &str, data: &Value) -> Vec<bytes::Bytes> {
+        self.handle(data)
+            .iter()
+            .map(|out| super::openai_frame(&out.to_string()))
+            .collect()
+    }
+
+    fn finish(&mut self) -> Option<Vec<bytes::Bytes>> {
+        if !self.finished {
+            return None;
+        }
+        let mut frames: Vec<bytes::Bytes> = self
+            .usage_chunk()
+            .map(|usage| super::openai_frame(&usage.to_string()))
+            .into_iter()
+            .collect();
+        frames.push(super::openai_frame("[DONE]"));
+        Some(frames)
     }
 }
 

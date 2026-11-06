@@ -237,7 +237,7 @@ async fn retry_after_is_honoured_and_long_ones_are_not_waited_for() {
     assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 
-fn req(url: &str, stream: bool) -> UpstreamRequest<'static> {
+fn req(url: &str, stream: bool) -> UpstreamRequest {
     UpstreamRequest::post_json(
         format!("{url}/x"),
         vec![],
@@ -272,22 +272,6 @@ async fn long_hang_then_disconnect_is_quota_504_without_retry() {
     assert_eq!(err.status, 504);
     assert!(err.message.contains("配额"), "{}", err.message);
     assert_eq!(count.load(Ordering::SeqCst), 1);
-}
-
-#[tokio::test]
-async fn quota_detection_can_be_disabled() {
-    let (url, count) = raw_server(|socket| async move {
-        tokio::time::sleep(Duration::from_millis(300)).await;
-        drop(socket);
-    })
-    .await;
-    let mut r = req(&url, false);
-    r.detect_quota = false;
-    r.upstream = "本地上游";
-    let err = transport(0.1, 5.0, 5.0).open(&r).await.unwrap_err();
-    assert_eq!(err.status, 502);
-    assert!(err.message.contains("本地上游"));
-    assert_eq!(count.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]
@@ -350,7 +334,7 @@ async fn stream_idle_timeout_yields_504_error() {
     .await;
     let t = transport(20.0, 5.0, 0.3);
     let response = t.open(&req(&url, true)).await.unwrap();
-    let items: Vec<_> = t.chunks(response, "Vertex AI").collect().await;
+    let items: Vec<_> = t.chunks(response).collect().await;
     assert_eq!(items[0].as_ref().unwrap(), &Bytes::from_static(b"hello"));
     let err = items[1].as_ref().unwrap_err();
     assert_eq!(err.status, 504);
@@ -368,7 +352,7 @@ async fn stream_broken_mid_way_yields_502_error() {
     .await;
     let t = transport(20.0, 5.0, 5.0);
     let response = t.open(&req(&url, true)).await.unwrap();
-    let items: Vec<_> = t.chunks(response, "Vertex AI").collect().await;
+    let items: Vec<_> = t.chunks(response).collect().await;
     assert!(items[0].is_ok());
     assert_eq!(items.last().unwrap().as_ref().unwrap_err().status, 502);
 }

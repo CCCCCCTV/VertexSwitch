@@ -379,21 +379,3 @@ fn stream_translator_without_usage_chunk() {
             .all(|c| !c["choices"].as_array().unwrap().is_empty())
     );
 }
-
-#[test]
-fn sse_parser_handles_arbitrary_splits() {
-    let raw = "event: message_start\r\ndata: {\"a\": 1}\r\n\r\nevent: ping\ndata: {}\n\nevent: content_block_delta\ndata: {\"t\": \"你\"}\n\n".as_bytes();
-    for size in [1, 3, 7, raw.len()] {
-        let mut p = SseParser::default();
-        let events: Vec<(String, String)> = raw.chunks(size).flat_map(|c| p.feed(c)).collect();
-        assert_eq!(
-            events,
-            vec![
-                ("message_start".into(), "{\"a\": 1}".into()),
-                ("ping".into(), "{}".into()),
-                ("content_block_delta".into(), "{\"t\": \"你\"}".into()),
-            ],
-            "size {size}"
-        );
-    }
-}

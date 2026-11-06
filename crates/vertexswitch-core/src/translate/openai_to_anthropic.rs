@@ -389,52 +389,6 @@ pub fn response_to_openai(msg: &Value, model: &str) -> Value {
 
 // ---------------------------------------------------------------- 流式
 
-/// 把任意切分的字节流解析成 (event, data) 对。
-///
-/// 在字节层面找事件边界（完整的事件不会切开多字节 UTF-8 字符）；每次对整个缓冲区把 CRLF
-/// 归一为 LF，这样被切开的 CRLF 也能正确识别。
-#[derive(Default)]
-pub struct SseParser {
-    buffer: Vec<u8>,
-}
-
-impl SseParser {
-    pub fn feed(&mut self, chunk: &[u8]) -> Vec<(String, String)> {
-        self.buffer.extend_from_slice(chunk);
-        if self.buffer.windows(2).any(|w| w == b"\r\n") {
-            let mut normalized = Vec::with_capacity(self.buffer.len());
-            let mut i = 0;
-            while i < self.buffer.len() {
-                if self.buffer[i] == b'\r' && self.buffer.get(i + 1) == Some(&b'\n') {
-                    i += 1;
-                    continue;
-                }
-                normalized.push(self.buffer[i]);
-                i += 1;
-            }
-            self.buffer = normalized;
-        }
-        let mut events = Vec::new();
-        while let Some(pos) = self.buffer.windows(2).position(|w| w == b"\n\n") {
-            let raw: Vec<u8> = self.buffer.drain(..pos + 2).collect();
-            let raw = String::from_utf8_lossy(&raw[..pos]);
-            let mut event = "message".to_owned();
-            let mut data: Vec<&str> = Vec::new();
-            for line in raw.split('\n') {
-                if let Some(rest) = line.strip_prefix("event:") {
-                    event = rest.trim().to_owned();
-                } else if let Some(rest) = line.strip_prefix("data:") {
-                    data.push(rest.trim_start());
-                }
-            }
-            if !data.is_empty() {
-                events.push((event, data.join("\n")));
-            }
-        }
-        events
-    }
-}
-
 /// Anthropic 流式事件 → OpenAI `chat.completion.chunk`。
 ///
 /// 工具调用参数以 `input_json_delta` 分段到达，按 content block 下标映射到 OpenAI 的
@@ -560,6 +514,19 @@ impl StreamTranslator {
             // ping 与未知事件忽略
             _ => vec![],
         }
+    }
+}
+
+impl super::StreamTranslate for StreamTranslator {
+    fn on_event(&mut self, event: &str, data: &Value) -> Vec<bytes::Bytes> {
+        self.handle(event, data)
+            .iter()
+            .map(|out| super::openai_frame(&out.to_string()))
+            .collect()
+    }
+
+    fn finish(&mut self) -> Option<Vec<bytes::Bytes>> {
+        self.finished.then(|| vec![super::openai_frame("[DONE]")])
     }
 }
 
