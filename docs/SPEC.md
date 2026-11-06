@@ -307,3 +307,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 `functionCall` 整段到达，先发签名块（一个 `signature_delta`），再发一个 tool_use 块（`input` 为 `{}`，参数用一个 `input_json_delta` 给完）；
 带 `finishReason`（或提示词被拦截）的一段之后发 `message_delta`（`stop_reason` 与最终 usage）和 `message_stop`。
 上游流里的错误事件、中途断开、没有 `finishReason` 就结束，都按 §5 补发 `event: error`（请求记录为 stream_error）。
+
+**实测**（2026-11-06，`gemini-3.5-flash-lite`，global，Standard）：普通对话（非流式 / 流式）、工具调用来回（思考签名原样带回、签名丢失时补占位值两种都成功）、
+流式工具调用（签名经 `signature_delta` 往返）、思考摘要（非流式返回 thinking 块）、计数均正常；带 `$schema`、`additionalProperties` 的 Claude Code 风格
+`input_schema` 被 `parametersJsonSchema` 接受。`flash-lite` 流式时上游本身不返回思考片段（只在最后一段带签名），不是翻译问题。
