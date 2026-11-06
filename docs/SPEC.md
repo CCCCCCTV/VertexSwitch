@@ -325,3 +325,6 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - 更早的模型发 `thinkingBudget`：客户端给了具体预算（Claude 格式的 `budget_tokens`）就用它，否则按力度取 512 / 1024 / 8192 / 24576；
   夹在模型允许的范围内（Pro 128–32768，Flash-Lite 512–24576，Flash 1–24576）。
 - `extra_body.google.thinking_config`（OpenAI 格式）是客户端自己写的原生设置，原样照转，不换算。
+
+**实测**（2026-11-06，`gemini-3.5-flash-lite`）：`thinkingLevel` 用大写枚举名（`"LOW"` 等）被 Vertex 接受；Claude 格式 `budget_tokens` 2048（→ LOW）
+与 20000（→ HIGH）都成功，HIGH 的输出 token 明显更多；OpenAI 格式 `reasoning_effort: minimal`（→ MINIMAL，经原生接口）成功。
