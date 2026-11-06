@@ -42,20 +42,12 @@ fn wants_anthropic(uri: &Uri, headers: &HeaderMap) -> bool {
     uri.path().starts_with("/anthropic/") || headers.contains_key("anthropic-version")
 }
 
-/// OpenAI 格式列出的全部模型：Claude、Gemini、MaaS 别名，以及启用时发现的 Ollama 模型。
+/// OpenAI 格式列出的全部模型：Claude、Gemini、MaaS 别名。
 fn all_ids(state: &Runtime) -> Vec<String> {
     let registry = state.registry();
     let mut ids = registry.aliases(Backend::Claude);
     ids.extend(registry.aliases(Backend::Gemini));
     ids.extend(registry.aliases(Backend::Maas));
-    if state.settings.ollama.enabled {
-        ids.extend(
-            registry
-                .aliases(Backend::Ollama)
-                .into_iter()
-                .map(|m| format!("ollama/{m}")),
-        );
-    }
     ids
 }
 

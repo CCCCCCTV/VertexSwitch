@@ -12,7 +12,7 @@
   const modelTiers = $derived(live.status?.gemini_model_tiers ?? {});
   let flexUnsupported = $state<string[]>([]);
   let tierSaving = $state<string | null>(null);
-  let tab = $state<"gemini" | "claude" | "maas" | "ollama">("gemini");
+  let tab = $state<"gemini" | "claude" | "maas">("gemini");
   let busy = $state(false);
   let message = $state<{ tone: "ok" | "bad"; text: string } | null>(null);
 
@@ -20,12 +20,10 @@
     { id: "gemini", label: () => "Gemini" },
     { id: "claude", label: () => "Claude" },
     { id: "maas", label: () => t("models.maas") },
-    { id: "ollama", label: () => "Ollama" },
   ] as const;
 
   const rows = $derived.by((): [string, string][] => {
     if (!models) return [];
-    if (tab === "ollama") return models.ollama.map((m) => [`ollama/${m}`, m]);
     return Object.entries(models[tab]);
   });
 
@@ -67,7 +65,6 @@
 
   const reload = () => run(async () => t("models.reloaded", { n: (await api.reloadModels()).aliases }));
   const edit = () => run(async () => t("models.opened", { path: (await api.editModels()).path }));
-  const ollama = () => run(async () => t("models.foundOllama", { n: (await api.refreshOllama()).ollama_models }));
 </script>
 
 <header>
@@ -84,7 +81,7 @@
     <button role="tab" aria-selected={tab === item.id} class:on={tab === item.id} onclick={() => (tab = item.id)}>
       {item.label()}
       {#if models}
-        <span class="count">{item.id === "ollama" ? models.ollama.length : Object.keys(models[item.id]).length}</span>
+        <span class="count">{Object.keys(models[item.id]).length}</span>
       {/if}
     </button>
   {/each}
@@ -132,11 +129,6 @@
         {/each}
       </tbody>
     </table>
-  {:else if tab === "ollama"}
-    <div class="empty">
-      {t("models.noOllama")}
-      <button class="link" onclick={ollama} disabled={busy}>{t("models.rediscover")}</button>{t("models.noOllamaEnd")}
-    </div>
   {:else if tab === "maas"}
     <div class="empty">
       {t("models.noMaas")}<span class="mono">publisher/model</span>{t("models.noMaasEnd")}

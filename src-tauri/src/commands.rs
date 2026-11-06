@@ -83,11 +83,6 @@ pub fn edit_models(app: AppHandle, host: Host<'_>) -> CmdResult {
 }
 
 #[tauri::command]
-pub async fn refresh_ollama(host: Host<'_>) -> CmdResult {
-    Ok(admin::refresh_ollama(&host.state).await)
-}
-
-#[tauri::command]
 pub fn get_logs(host: Host<'_>, since: u64, limit: usize) -> CmdResult {
     Ok(admin::logs(&host.state, since, limit))
 }

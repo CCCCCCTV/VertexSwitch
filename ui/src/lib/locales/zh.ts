@@ -141,7 +141,6 @@ export const zh = {
   "models.maas": "开放模型（MaaS）",
   "models.reloaded": "已重新加载，共 {n} 个别名",
   "models.opened": "已打开 {path}；保存后自动生效",
-  "models.foundOllama": "发现 {n} 个 Ollama 模型",
   "models.reload": "重新加载",
   "models.edit": "编辑模型表",
   "models.alias": "客户端使用的名字",
@@ -150,9 +149,6 @@ export const zh = {
   "models.tierAria": "{alias} 的服务档位",
   "models.followDefault": "跟随默认（{tier}）",
   "models.flexUnsupported": "（此模型不支持）",
-  "models.noOllama": "没有发现 Ollama 模型。在设置里启用 Ollama 后",
-  "models.rediscover": "重新发现",
-  "models.noOllamaEnd": "。",
   "models.noMaas": "没有登记别名。",
   "models.noMaasEnd": " 形式的名字（如 deepseek-ai/deepseek-v3.1-maas）无需登记即可使用。",
   "models.none": "没有模型。",
@@ -172,7 +168,7 @@ export const zh = {
   "settings.savedListen": "已保存，代理已改为监听 {addr}",
   "settings.saved": "已保存并立即生效",
 
-  // 设置：Google Cloud / Gemini / 代理 / Ollama / 高级
+  // 设置：Google Cloud / Gemini / 代理 / 高级
   "region.global": "global（推荐）",
   "region.us": "us（美国多区域）",
   "region.eu": "eu（欧盟多区域）",
@@ -207,10 +203,6 @@ export const zh = {
   "settings.show": "显示",
   "settings.generate": "生成",
   "settings.apiKeyHint": "设置后客户端需携带：Authorization: Bearer、x-api-key 或 x-goog-api-key",
-  "settings.ollama": "Ollama（本地模型）",
-  "settings.enable": "启用",
-  "settings.ollamaHint": "通过 OpenAI 接口转发到本地 Ollama，不需要 Google 认证",
-  "settings.ollamaUrl": "Ollama 地址",
   "settings.busyRetry": "上游繁忙时自动重试",
   "settings.busyRetryHint": "遇到 429（限流 / 资源耗尽）、503、529 时等一会儿再发（等多久见下方）；500 只重试一次；客户端断开即停止",
   "settings.busyAttempts": "最多重试次数",

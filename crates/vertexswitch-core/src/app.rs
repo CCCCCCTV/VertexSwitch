@@ -118,17 +118,9 @@ impl AppState {
         ApplyOutcome { restart_required }
     }
 
-    /// 换上新模型表，保留已发现的 Ollama 模型。
-    pub fn set_registry(&self, mut registry: ModelRegistry) {
+    /// 换上新模型表。
+    pub fn set_registry(&self, registry: ModelRegistry) {
         let old = self.runtime();
-        registry.ollama_models = old.registry().ollama_models.clone();
-        self.set_runtime(old.with_registry(registry));
-    }
-
-    pub fn set_ollama_models(&self, models: std::collections::BTreeSet<String>) {
-        let old = self.runtime();
-        let mut registry = old.registry().clone();
-        registry.ollama_models = models;
         self.set_runtime(old.with_registry(registry));
     }
 
@@ -250,14 +242,11 @@ impl Drop for Background {
     }
 }
 
-/// 启动后台任务：token 刷新、配置与模型表文件监视；启用 Ollama 时先发现一次模型。
+/// 启动后台任务：token 刷新、配置与模型表文件监视。
 /// 与监听无关，换端口重启监听时不需要重来。
 pub async fn start_background(state: &SharedState) -> Background {
     state.start_refresher();
     let watcher = tokio::spawn(watch_files(Arc::downgrade(state)));
-    if state.runtime().settings.ollama.enabled {
-        frontends::openai::refresh_ollama_models(state).await;
-    }
     Background { watcher }
 }
 

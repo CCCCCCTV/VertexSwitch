@@ -3,7 +3,6 @@
 //! 模型表来自 models.toml：包内默认，用户目录下的同名文件存在时整体优先。
 //! 表保持声明顺序，用于模型列表输出。
 
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::config::app_dir;
@@ -16,7 +15,6 @@ pub enum Backend {
     Claude,
     Gemini,
     Maas,
-    Ollama,
 }
 
 impl Backend {
@@ -29,7 +27,6 @@ impl Backend {
             Backend::Claude => "claude",
             Backend::Gemini => "gemini",
             Backend::Maas => "maas",
-            Backend::Ollama => "ollama",
         }
     }
 }
@@ -99,8 +96,6 @@ pub struct ModelRegistry {
     claude: Table,
     gemini: Table,
     maas: Table,
-    /// 运行时从 Ollama /api/tags 发现的模型名
-    pub ollama_models: BTreeSet<String>,
 }
 
 impl ModelRegistry {
@@ -123,7 +118,6 @@ impl ModelRegistry {
             claude: table(Backend::Claude)?,
             gemini: table(Backend::Gemini)?,
             maas: table(Backend::Maas)?,
-            ollama_models: BTreeSet::new(),
         })
     }
 
@@ -149,7 +143,7 @@ impl ModelRegistry {
         match backend {
             Backend::Claude => &self.claude,
             Backend::Gemini => &self.gemini,
-            Backend::Maas | Backend::Ollama => &self.maas,
+            Backend::Maas => &self.maas,
         }
     }
 
@@ -160,12 +154,9 @@ impl ModelRegistry {
             .map(|(_, v)| Route::new(backend, v.clone()))
     }
 
-    /// 某个后端的 (别名, 上游 ID) 表（按声明顺序；Ollama 没有表）。
+    /// 某个后端的 (别名, 上游 ID) 表（按声明顺序）。
     pub fn entries(&self, backend: Backend) -> &[(String, String)] {
-        match backend {
-            Backend::Ollama => &[],
-            other => self.table(other),
-        }
+        self.table(backend)
     }
 
     /// 所有后端的别名总数。
@@ -179,19 +170,13 @@ impl ModelRegistry {
 
     /// 别名列表（按声明顺序）。
     pub fn aliases(&self, backend: Backend) -> Vec<String> {
-        if backend == Backend::Ollama {
-            return self.ollama_models.iter().cloned().collect();
-        }
         self.table(backend).iter().map(|(k, _)| k.clone()).collect()
     }
 
-    /// 解析顺序：显式前缀 → Gemini → Claude → MaaS → 已发现的 Ollama 模型。
+    /// 解析顺序：显式前缀 → Gemini → Claude → MaaS。
     pub fn resolve(&self, model: &str) -> Option<Route> {
         let model = model.trim();
         let model = model.strip_prefix("models/").unwrap_or(model);
-        if let Some(name) = model.strip_prefix("ollama/") {
-            return Some(Route::new(Backend::Ollama, name));
-        }
         let model = model.strip_prefix("google/").unwrap_or(model);
         let model = model.strip_prefix("anthropic/").unwrap_or(model);
 
@@ -212,9 +197,6 @@ impl ModelRegistry {
         }
         if model.contains('/') {
             return Some(Route::new(Backend::Maas, model));
-        }
-        if self.ollama_models.contains(model) {
-            return Some(Route::new(Backend::Ollama, model));
         }
         None
     }
@@ -282,22 +264,13 @@ mod tests {
     }
 
     #[test]
-    fn maas_ollama_and_unknown() {
-        let mut reg = ModelRegistry::builtin();
+    fn maas_and_unknown() {
+        let reg = ModelRegistry::builtin();
         assert_eq!(
             reg.resolve("deepseek-ai/deepseek-v3.1-maas"),
             route(Backend::Maas, "deepseek-ai/deepseek-v3.1-maas")
         );
-        assert_eq!(
-            reg.resolve("ollama/qwen3:8b"),
-            route(Backend::Ollama, "qwen3:8b")
-        );
         assert_eq!(reg.resolve("llama3.2:3b"), None);
-        reg.ollama_models.insert("llama3.2:3b".into());
-        assert_eq!(
-            reg.resolve("llama3.2:3b"),
-            route(Backend::Ollama, "llama3.2:3b")
-        );
         assert_eq!(reg.resolve("gpt-4o"), None);
     }
 

@@ -4,7 +4,6 @@
 //! - Gemini → 需要服务档位头时转成原生 generateContent（兼容接口带档位头会被 Vertex 拒绝，400），
 //!   否则原样转发到 Vertex 的 OpenAI 兼容接口；`gemini.openai_native` 可改成总是 / 从不转换
 //! - MaaS 开放模型 → 同一接口，`publisher/model`
-//! - Ollama → 本地 `/v1/chat/completions`（不需要 Google token，不按 Vertex 配额特征处理）
 //! - Claude → 转成 Anthropic Messages 调 Vertex，再把响应（含流式）转回 OpenAI 格式
 
 use std::time::Duration;
@@ -22,7 +21,7 @@ use serde_json::Value;
 
 use super::gemini::{TIER_OVERRIDE_HEADER, TIMEOUT_MARGIN, TrafficCheck};
 use super::{parse_json_object, relay};
-use crate::app::{AppState, SharedState};
+use crate::app::SharedState;
 use crate::backends::{claude, gemini, vertex};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
 use crate::metrics;
@@ -42,7 +41,6 @@ const PATHS: &[&str] = &[
     "/openai/v1/chat/completions",
     "/api/v1/chat/completions",
 ];
-pub const OLLAMA: &str = "Ollama";
 
 pub fn routes() -> Router<SharedState> {
     PATHS.iter().fold(Router::new(), |router, path| {
@@ -133,61 +131,40 @@ fn sse_data(payload: &str) -> Bytes {
 
 async fn passthrough(state: &Runtime, mut body: Value, route: &Route) -> ProxyResult<Response> {
     let settings = &state.settings;
-    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
-    let (url, upstream_model, upstream, detect_quota) = match route.backend {
-        Backend::Ollama => {
-            if !settings.ollama.enabled {
-                return Err(ProxyError::new(
-                    400,
-                    tr!(
-                        "Ollama 未启用（ollama.enabled = false）",
-                        "Ollama is not enabled (ollama.enabled = false)"
-                    ),
-                ));
-            }
-            let url = format!(
-                "{}/v1/chat/completions",
-                settings.ollama.base_url.trim_end_matches('/')
-            );
-            (url, route.upstream_model.clone(), OLLAMA, false)
-        }
-        backend => {
-            headers.push((
-                "authorization".into(),
-                format!("Bearer {}", state.google_token().await?),
-            ));
-            let (region, version, model) = if backend == Backend::Gemini {
-                (
-                    settings.gemini_region(),
-                    &settings.gemini.openai_api_version,
-                    format!("google/{}", route.upstream_model),
-                )
-            } else {
-                (
-                    settings.maas_region(),
-                    &settings.maas.api_version,
-                    route.upstream_model.clone(),
-                )
-            };
-            let url = vertex::openapi_chat_url(
-                &state.vertex_host(region),
-                version,
-                &state.project_id()?,
-                region,
-            );
-            (url, model, VERTEX, true)
-        }
+    let headers = vec![
+        ("content-type".to_owned(), "application/json".to_owned()),
+        (
+            "authorization".to_owned(),
+            format!("Bearer {}", state.google_token().await?),
+        ),
+    ];
+    let (region, version, upstream_model) = if route.backend == Backend::Gemini {
+        (
+            settings.gemini_region(),
+            &settings.gemini.openai_api_version,
+            format!("google/{}", route.upstream_model),
+        )
+    } else {
+        (
+            settings.maas_region(),
+            &settings.maas.api_version,
+            route.upstream_model.clone(),
+        )
     };
+    let url = vertex::openapi_chat_url(
+        &state.vertex_host(region),
+        version,
+        &state.project_id()?,
+        region,
+    );
     body["model"] = upstream_model.into();
     let stream = body.get("stream").and_then(Value::as_bool) == Some(true);
-    let mut request = UpstreamRequest::post_json(
+    let request = UpstreamRequest::post_json(
         url,
         headers,
         serde_json::to_vec(&body).expect("Value 可序列化").into(),
         stream,
     );
-    request.upstream = upstream;
-    request.detect_quota = detect_quota;
 
     let response = state.transport.open(&request).await?;
     let status = response.status();
@@ -197,7 +174,7 @@ async fn passthrough(state: &Runtime, mut body: Value, route: &Route) -> ProxyRe
     }
     let mut out = if stream {
         let mut r = relay(
-            state.transport.chunks(response, upstream),
+            state.transport.chunks(response, VERTEX),
             Protocol::OpenAi,
             |_| {},
         );
@@ -454,56 +431,4 @@ async fn via_claude(
     r.headers_mut()
         .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
     Ok(r)
-}
-
-/// 从 Ollama `/api/tags` 发现本地模型；Ollama 没运行时只记日志，保留原有列表。
-pub async fn refresh_ollama_models(app: &AppState) -> usize {
-    let state = app.runtime();
-    let url = format!(
-        "{}/api/tags",
-        state.settings.ollama.base_url.trim_end_matches('/')
-    );
-    let result = async {
-        let response = state
-            .transport
-            .client
-            .get(&url)
-            .timeout(Duration::from_secs(5))
-            .send()
-            .await?
-            .error_for_status()?;
-        response.json::<Value>().await
-    }
-    .await;
-    match result {
-        Ok(data) => {
-            let models: std::collections::BTreeSet<String> = data
-                .get("models")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(|m| m.get("name").and_then(Value::as_str).map(str::to_owned))
-                .collect();
-            let count = models.len();
-            app.set_ollama_models(models);
-            tracing::info!(
-                "{}",
-                tr!(
-                    "发现 {count} 个 Ollama 模型",
-                    "Found Ollama models: {count}"
-                )
-            );
-            count
-        }
-        Err(e) => {
-            tracing::warn!(
-                "{}",
-                tr!(
-                    "Ollama 模型发现失败：{e}",
-                    "Ollama model discovery failed: {e}"
-                )
-            );
-            state.registry().aliases(Backend::Ollama).len()
-        }
-    }
 }

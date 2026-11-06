@@ -102,7 +102,6 @@ fn main() {
             commands::get_models,
             commands::reload_models,
             commands::edit_models,
-            commands::refresh_ollama,
             commands::get_logs,
             commands::get_requests,
             commands::get_metrics,

@@ -20,7 +20,7 @@
 - Anthropic Messages：`/v1/messages`（流式 / 非流式）、`/v1/messages/count_tokens` → Vertex 上的 Claude
 - Gemini 原生：`/v1beta/models/{model}:generateContent | streamGenerateContent | countTokens`
 - Gemini 服务档位：Standard / Flex / Priority，并用 `usageMetadata.trafficType` 核对实际档位
-- OpenAI Chat Completions：Gemini 兼容接口、MaaS 开放模型、本地 Ollama、OpenAI→Claude 转换（含工具调用与流式）
+- OpenAI Chat Completions：Gemini 兼容接口、MaaS 开放模型、OpenAI→Claude 转换（含工具调用与流式）
 - 模型列表：`/v1/models`（Anthropic / OpenAI 格式）、`/v1beta/models`（Gemini 格式）
 - 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
 - 上游繁忙（429 资源耗尽 / 限流、503、Claude 的 529 过载）时自动重试：默认最多 3 次、依次约等 1、2、4 秒，带随机抖动、遵守 `Retry-After`；可在“设置 → 代理服务”关掉、改次数，等待时间可以写成数字或关于第几次重试 `n` 的算式（如 `5`、`min(30, 3*n)`）；客户端断开即停止
@@ -89,10 +89,6 @@ openai_native = "auto" # OpenAI 格式的 Gemini 请求需要档位时转成原�
 
 [gemini.model_tiers]   # 按上游模型单独设档位，优先于默认档位（界面“模型”页也能改）
 "gemini-3.5-flash" = "flex"
-
-[ollama]
-enabled = false
-base_url = "http://127.0.0.1:11434"
 
 [server]
 api_key = ""           # 非空时客户端须携带此 key

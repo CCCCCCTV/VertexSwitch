@@ -84,7 +84,6 @@ pub struct Settings {
     pub claude: ClaudeSettings,
     pub gemini: GeminiSettings,
     pub maas: MaasSettings,
-    pub ollama: OllamaSettings,
     pub openai: OpenAiSettings,
 }
 
@@ -263,22 +262,6 @@ impl Default for MaasSettings {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub struct OllamaSettings {
-    pub enabled: bool,
-    pub base_url: String,
-}
-
-impl Default for OllamaSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            base_url: "http://127.0.0.1:11434".into(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
 pub struct OpenAiSettings {
     pub default_max_tokens: u64,
 }
@@ -415,6 +398,26 @@ mod tests {
         assert_eq!(s.gemini.tier, "flex");
         assert_eq!(s.gemini.flex_server_timeout, 1800);
         assert_eq!(s.server.port, 8787);
+    }
+
+    #[test]
+    fn removed_ollama_section_is_ignored() {
+        // 0.1.x 写过 [ollama]；删掉 Ollama 支持后旧配置照常能读，保存时这一段自然消失
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let old = r#"
+[ollama]
+enabled = true
+base_url = "http://127.0.0.1:11434"
+
+[gemini]
+tier = "flex"
+"#;
+        std::fs::write(&path, old).unwrap();
+        let s = Settings::load(&path).unwrap();
+        assert_eq!(s.gemini.tier, "flex");
+        s.save(&path).unwrap();
+        assert!(!std::fs::read_to_string(&path).unwrap().contains("ollama"));
     }
 
     #[test]

@@ -32,7 +32,6 @@
 | gemini | openai_api_version | `v1beta1` | Gemini 的 OpenAI 兼容接口版本 |
 | gemini | openai_native | `auto` | OpenAI 格式的 Gemini 请求：auto 需要档位头时转原生（§13）/ always 总是转 / never 总走兼容接口（档位不生效） |
 | maas | region / api_version | `""` / `v1` | |
-| ollama | enabled / base_url | false / `http://127.0.0.1:11434` | |
 | openai | default_max_tokens | 8192 | OpenAI→Claude 时客户端没给 max_tokens 的默认值 |
 
 ## 2. 认证（服务账号 → access token）
@@ -63,7 +62,6 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 | Gemini 原生 | `.../publishers/google/models/{m}:{action}`，action ∈ generateContent / streamGenerateContent / countTokens | `contents[]` 里缺 `role` 的补 `"user"`（实测 Vertex 要求有 role） |
 | Gemini（OpenAI 兼容） | `{host}/v1beta1/projects/{p}/locations/{r}/endpoints/openapi/chat/completions` | `model` = `google/{m}` |
 | MaaS | `{host}/v1/projects/{p}/locations/{r}/endpoints/openapi/chat/completions` | `model` 原样（`publisher/model`） |
-| Ollama | `{base_url}/v1/chat/completions`；发现：`GET {base_url}/api/tags` | `model` 去掉 `ollama/` 前缀；**不取 Google token** |
 
 转发的请求头：`Authorization: Bearer <token>`、`Content-Type: application/json`；Claude 额外透传客户端的 `anthropic-beta`。客户端的 `anthropic-version` **不**转发（版本在请求体里）。
 
@@ -72,7 +70,7 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 - 一律先拿到响应头（不读正文）再决定怎么处理。
 - 超时：非流式 read=600；流式 read=stream_idle（900）；Flex 时 read 至少 `X-Server-Timeout + 60`。
 - **只在收到任何响应字节之前**出错时重试：ConnectError、ConnectTimeout、PoolTimeout、RemoteProtocolError（对端断开）、ReadError、WriteError。最多重试 2 次，间隔 0.4 × 第几次。
-- **配额耗尽特征**（实测旧项目经验）：从发出到"对端断开 / 读错误"超过 20 秒，且没有任何响应 → 不重试，返回 504 并说明"通常表示配额耗尽"。ConnectError 不算（连接都没建立）。上游不是 Vertex（Ollama）时不做这个判断。
+- **配额耗尽特征**（实测旧项目经验）：从发出到"对端断开 / 读错误"超过 20 秒，且没有任何响应 → 不重试，返回 504 并说明"通常表示配额耗尽"。ConnectError 不算（连接都没建立）。
 - ReadTimeout（等响应头超时）→ 504，不重试。WriteTimeout → 504。
 - 重试用尽 → 502 "无法连接 {上游名}（已重试 N 次）"。
 - 读正文时出错：ReadTimeout → 504；其他 → 502。
@@ -105,21 +103,19 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 
 解析顺序（`resolve(name)`）：
 1. 去掉首尾空白和 `models/` 前缀
-2. `ollama/x` → Ollama `x`
-3. 去掉 `google/`、`anthropic/` 前缀
-4. Gemini 表命中 → 表值；否则 `gemini-*` → 原样
-5. Claude 表命中 → 表值；否则 `claude-…-YYYYMMDD` → `claude-…@YYYYMMDD`；否则 `claude-*` → 原样
-6. MaaS 表命中 → 表值；否则含 `/` → MaaS 原样
-7. 在已发现的 Ollama 模型里 → Ollama
-8. 否则未知（404）
+2. 去掉 `google/`、`anthropic/` 前缀
+3. Gemini 表命中 → 表值；否则 `gemini-*` → 原样
+4. Claude 表命中 → 表值；否则 `claude-…-YYYYMMDD` → `claude-…@YYYYMMDD`；否则 `claude-*` → 原样
+5. MaaS 表命中 → 表值；否则含 `/` → MaaS 原样
+6. 否则未知（404）
+
+0.1.4 起不再支持本地 Ollama（这个软件只做 Vertex AI 的代理）：旧配置里的 `[ollama]` 段读取时忽略、保存时消失；`ollama/x` 这种带 `/` 的名字按 MaaS 处理。
 
 默认表（2026-11-03 核实，Gemini 已用 countTokens 在 global 实测）：
 - Claude：fable-5-1、fable-5、opus-5-5、opus-5、opus-4-8、opus-4-7、opus-4-6、sonnet-5-5、sonnet-5、sonnet-4-6、haiku-5-5 原样；opus-4-5→`@20251101`；sonnet-4-5→`@20250929`；haiku-4-5→`@20251001`
 - Gemini：4-argon、3.8-flash、3.7-flash（2027-01-28 下线）、3.6-flash（**2026-11-19 下线**）、3.5-flash、3.5-flash-lite、3.1-flash-lite、3.1-pro-preview、3-flash-preview 原样；3.1-pro、3-pro → 3.1-pro-preview；3-flash → 3-flash-preview
 - 已下线、不得出现在默认表：gemini-2.5-pro/flash/flash-lite、2.0-flash(-001)、3-pro-preview
 - MaaS：空（官方未给出清单，核实后再加）
-
-Ollama：启用时启动即调 `/api/tags` 发现（失败只告警），也应支持手动/定时刷新。
 
 ## 8. 入口
 
@@ -145,14 +141,14 @@ Ollama：启用时启动即调 `/api/tags` 发现（失败只告警），也应�
 ### 8.3 OpenAI Chat Completions
 
 - `POST /v1/chat/completions`、`/chat/completions`、`/openai/v1/chat/completions`、`/api/v1/chat/completions`
-- 按 `model` 分流：Gemini / MaaS / Ollama 原样转发（见 §3），流式转发时 `text/event-stream`，中途出错按 OpenAI 格式发错误；Claude 走 §10 转换。
-- Ollama 未启用 → 400。Gemini 兼容接口**绝不能**带档位头（Vertex 返回 400 "Flex API is not supported with chatCompletions API"）。
+- 按 `model` 分流：Gemini / MaaS 原样转发（见 §3），流式转发时 `text/event-stream`，中途出错按 OpenAI 格式发错误；Claude 走 §10 转换。
+- Gemini 兼容接口**绝不能**带档位头（Vertex 返回 400 "Flex API is not supported with chatCompletions API"）。
 - Gemini：按 §9 算出档位方案；要发任何档位头（或 `openai_native = always`）时转成原生 generateContent（§13），否则走兼容接口。请求头 `X-VertexSwitch-Tier` 同样可按请求覆盖；走原生时响应带 `X-VertexSwitch-Tier`。
 - **实测**（2026-11-03，Rust，global）：Gemini 兼容接口用 `v1beta1` 可用；非流式、流式、工具调用（含流式）、`/openai/v1`、`/chat/completions` 别名均正常。配置为 Flex 时该接口不带档位头，上游按 `ON_DEMAND` 处理；同一配置下 Gemini 原生接口仍为 `ON_DEMAND_FLEX`。兼容接口的响应里用量档位在 `usage.extra_properties.google.traffic_type`。
 
 ### 8.4 模型列表
 
-- `GET /v1/models`、`/anthropic/v1/models`：带 `anthropic-version` 头或 `/anthropic/` 前缀 → Anthropic 格式（只列 Claude）：`{"data":[{"type":"model","id","display_name","created_at":"1970-01-01T00:00:00Z"}],"has_more":false,"first_id","last_id"}`；否则 OpenAI 格式（Claude + Gemini + MaaS 别名 + 启用时 `ollama/<名字>`）：`{"object":"list","data":[{"id","object":"model","created":0,"owned_by":"vertexswitch"}]}`
+- `GET /v1/models`、`/anthropic/v1/models`：带 `anthropic-version` 头或 `/anthropic/` 前缀 → Anthropic 格式（只列 Claude）：`{"data":[{"type":"model","id","display_name","created_at":"1970-01-01T00:00:00Z"}],"has_more":false,"first_id","last_id"}`；否则 OpenAI 格式（Claude + Gemini + MaaS 别名）：`{"object":"list","data":[{"id","object":"model","created":0,"owned_by":"vertexswitch"}]}`
 - `GET /v1/models/{id}`：同上判定格式；未知 → 404
 - `GET /v1beta/models`、`/gemini/v1beta/models`：`{"models":[{"name":"models/<id>","displayName","supportedGenerationMethods":["generateContent","streamGenerateContent","countTokens"]}]}`；`GET /v1beta/models/{id}` 单个，未知 → 404
 
@@ -223,9 +219,8 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 | PATCH | `config` | JSON Merge Patch（RFC 7396），`null` 恢复默认；校验 → 写盘 → 立即生效 |
 | PUT | `config` | 整体替换，同上 |
 | POST | `config/reload` | 从配置文件重新读取并应用 |
-| GET | `models` | 三张表（保持声明顺序）+ 已发现的 Ollama 模型 + 来源（用户文件 / builtin） |
+| GET | `models` | 三张表（保持声明顺序）+ 来源（用户文件 / builtin） |
 | POST | `models/reload` | 重新读取模型表；有误返回 400 并保留原表 |
-| POST | `ollama/refresh` | 重新发现 Ollama 模型 |
 | GET | `logs?since=&limit=` | 最近日志（环形缓冲 1000 条，INFO 及以上）；`since` 为序号，用于增量拉取 |
 | GET | `logs/stream` | 日志 SSE 实时流（`data:` 为一条 JSON 日志） |
 | GET | `requests?since=&limit=` | 最近请求记录（环形缓冲 500 条） |

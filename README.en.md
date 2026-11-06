@@ -20,7 +20,7 @@ The proxy core (`crates/vertexswitch-core`) implements:
 - Anthropic Messages: `/v1/messages` (streaming and non-streaming) and `/v1/messages/count_tokens` → Claude on Vertex
 - Native Gemini: `/v1beta/models/{model}:generateContent | streamGenerateContent | countTokens`
 - Gemini service tiers: Standard / Flex / Priority, checked against `usageMetadata.trafficType`
-- OpenAI Chat Completions: the Gemini compatible endpoint, MaaS open models, local Ollama, and OpenAI→Claude translation (including tool calls and streaming)
+- OpenAI Chat Completions: the Gemini compatible endpoint, MaaS open models, and OpenAI→Claude translation (including tool calls and streaming)
 - Model lists: `/v1/models` (Anthropic / OpenAI format) and `/v1beta/models` (Gemini format)
 - Admin API `/admin/api/*`: status, config read/write (applied immediately), model table, logs and request records (with live SSE streams), metrics and test requests; config and model table files reload automatically
 - Automatic retries when upstream is busy (429 resource exhausted / rate limited, 503, Claude's 529 overloaded): up to 3 retries by default, waiting about 1, 2 and 4 s with random jitter and honouring `Retry-After`; under Settings → Proxy server you can turn it off, change the count, and set the wait as a number or a formula of the retry number `n` (e.g. `5`, `min(30, 3*n)`); stops as soon as the client disconnects
@@ -89,10 +89,6 @@ openai_native = "auto" # OpenAI-format Gemini requests that need a tier are conv
 
 [gemini.model_tiers]   # per upstream model, overrides the default tier (also editable on the Models page)
 "gemini-3.5-flash" = "flex"
-
-[ollama]
-enabled = false
-base_url = "http://127.0.0.1:11434"
 
 [server]
 api_key = ""           # when set, clients must send this key

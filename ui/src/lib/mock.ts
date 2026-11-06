@@ -41,7 +41,6 @@ const settings: Settings = {
     openai_native: "auto",
   },
   maas: { region: "", api_version: "v1" },
-  ollama: { enabled: false, base_url: "http://127.0.0.1:11434" },
   openai: { default_max_tokens: 8192 },
 };
 
@@ -59,7 +58,6 @@ const models: Models = {
     "gemini-3-flash": "gemini-3-flash-preview",
   },
   maas: {},
-  ollama: [],
   source: "builtin",
   user_file: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch\\models.toml",
 };
@@ -179,7 +177,7 @@ function status(): Status {
     listen: `${settings.server.host}:${settings.server.port}`,
     uptime_secs: Math.floor((Date.now() - started) / 1000),
     in_flight: 0,
-    models: { claude: 3, gemini: 5, maas: 0, ollama: 0 },
+    models: { claude: 3, gemini: 5, maas: 0 },
     config_path: "C:\\Users\\me\\AppData\\Roaming\\VertexSwitch\\config.toml",
     server: { running: true, addr: `${settings.server.host}:${settings.server.port}`, error: null },
   };
@@ -213,7 +211,6 @@ export const mockApi: Api = {
   models: () => delay(models),
   reloadModels: () => delay({ aliases: 8 }),
   editModels: () => delay({ path: models.user_file ?? "" }),
-  refreshOllama: () => delay({ ollama_models: 0 }),
   logs: (since, limit) => (seedLogs(), delay(logs.filter((e) => e.seq > since).slice(-limit))),
   requests: (since, limit) => delay(requests.filter((r) => r.seq > since).slice(-limit)),
   metrics: () => {

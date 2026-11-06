@@ -48,10 +48,9 @@ pub async fn start(settings: Settings) -> Harness {
     start_on(settings, MockServer::start().await).await
 }
 
-/// 在调用方事先准备好（已挂载部分 mock）的假上游上启动；Vertex 与 Ollama 都指向它。
+/// 在调用方事先准备好（已挂载部分 mock）的假上游上启动；Vertex 指向它。
 pub async fn start_on(mut settings: Settings, upstream: MockServer) -> Harness {
     settings.google.api_base_override = Some(upstream.uri());
-    settings.ollama.base_url = upstream.uri();
     launch(settings, upstream).await
 }
 
@@ -64,7 +63,7 @@ async fn launch(settings: Settings, upstream: MockServer) -> Harness {
     launch_with(settings, upstream, |s| s).await
 }
 
-/// 带配置文件 / 模型表路径启动（管理接口与热加载测试用）；Vertex 与 Ollama 指向假上游。
+/// 带配置文件 / 模型表路径启动（管理接口与热加载测试用）；Vertex 指向假上游。
 pub async fn start_with_paths(
     mut settings: Settings,
     config: Option<std::path::PathBuf>,
@@ -72,7 +71,6 @@ pub async fn start_with_paths(
 ) -> Harness {
     let upstream = MockServer::start().await;
     settings.google.api_base_override = Some(upstream.uri());
-    settings.ollama.base_url = upstream.uri();
     launch_with(settings, upstream, |s| s.with_paths(config, models)).await
 }
 

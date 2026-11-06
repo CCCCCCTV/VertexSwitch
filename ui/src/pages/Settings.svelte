@@ -327,20 +327,6 @@
       </div>
     </section>
 
-    <section class="panel">
-      <h2>{t("settings.ollama")}</h2>
-      <div class="two">
-        <label class="check">
-          <input type="checkbox" bind:checked={draft.ollama.enabled} />
-          <span>{t("settings.enable")}<small>{t("settings.ollamaHint")}</small></span>
-        </label>
-        <label class="field">
-          <span>{t("settings.ollamaUrl")}</span>
-          <input type="text" bind:value={draft.ollama.base_url} disabled={!draft.ollama.enabled} />
-        </label>
-      </div>
-    </section>
-
     <details class="panel">
       <summary><h2>{t("settings.advanced")}</h2></summary>
       <div class="three">

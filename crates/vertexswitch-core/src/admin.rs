@@ -48,7 +48,6 @@ pub async fn status(state: &SharedState) -> Value {
         "claude": registry.aliases(Backend::Claude).len(),
         "gemini": registry.aliases(Backend::Gemini).len(),
         "maas": registry.aliases(Backend::Maas).len(),
-        "ollama": registry.aliases(Backend::Ollama).len(),
     });
     info["config_path"] = state
         .config_path
@@ -128,7 +127,6 @@ pub fn models(state: &SharedState) -> Value {
         "claude": table_json(registry.entries(Backend::Claude)),
         "gemini": table_json(registry.entries(Backend::Gemini)),
         "maas": table_json(registry.entries(Backend::Maas)),
-        "ollama": registry.aliases(Backend::Ollama),
         "source": match &state.models_path {
             Some(p) if p.exists() => p.display().to_string(),
             _ => "builtin".to_owned(),
@@ -181,11 +179,6 @@ pub fn export_models(state: &SharedState) -> ProxyResult<String> {
         })?;
     }
     Ok(path.display().to_string())
-}
-
-pub async fn refresh_ollama(state: &SharedState) -> Value {
-    let count = crate::frontends::openai::refresh_ollama_models(state).await;
-    json!({ "ollama_models": count })
 }
 
 pub fn logs(state: &SharedState, since: u64, limit: usize) -> Value {
@@ -277,7 +270,6 @@ pub fn routes() -> Router<SharedState> {
         .route("/admin/api/config/reload", post(h_reload_config))
         .route("/admin/api/models", get(h_models))
         .route("/admin/api/models/reload", post(h_reload_models))
-        .route("/admin/api/ollama/refresh", post(h_refresh_ollama))
         .route("/admin/api/logs", get(h_logs))
         .route("/admin/api/logs/stream", get(h_logs_stream))
         .route("/admin/api/requests", get(h_requests))
@@ -349,10 +341,6 @@ async fn h_models(State(state): State<SharedState>) -> Json<Value> {
 
 async fn h_reload_models(State(state): State<SharedState>) -> ProxyResult<Json<Value>> {
     reload_models(&state).map(Json)
-}
-
-async fn h_refresh_ollama(State(state): State<SharedState>) -> Json<Value> {
-    Json(refresh_ollama(&state).await)
 }
 
 #[derive(Deserialize)]

@@ -5,8 +5,8 @@ mod common;
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use wiremock::matchers::{method, path};
-use wiremock::{Mock, MockServer, Request, ResponseTemplate};
+use wiremock::matchers::method;
+use wiremock::{Mock, Request, ResponseTemplate};
 
 const OPENAPI: &str = "/projects/proj/locations/global/endpoints/openapi/chat/completions";
 
@@ -128,118 +128,6 @@ async fn openai_stream_passthrough() {
             .starts_with("text/event-stream")
     );
     assert_eq!(r.text().await.unwrap(), sse);
-}
-
-#[tokio::test]
-async fn ollama_needs_no_google_token() {
-    let mut s = common::settings();
-    s.ollama.enabled = true;
-    let upstream = MockServer::start().await;
-    Mock::given(path("/api/tags"))
-        .respond_with(ResponseTemplate::new(503))
-        .mount(&upstream)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(completion()))
-        .mount(&upstream)
-        .await;
-    // 让 Google token 必然失败：Ollama 请求若去取 token 就会得到 500
-    let h = {
-        let mut s = s.clone();
-        s.google.api_base_override = Some(upstream.uri());
-        s.ollama.base_url = upstream.uri();
-        let state = std::sync::Arc::new(vertexswitch_core::AppState::from_settings(
-            s,
-            vertexswitch_core::registry::ModelRegistry::builtin(),
-        ));
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(vertexswitch_core::serve(listener, state));
-        base
-    };
-    let r = reqwest::Client::new()
-        .post(format!("{h}/v1/chat/completions"))
-        .json(&chat("ollama/qwen3:8b"))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(r.status(), 200);
-    let up = upstream
-        .received_requests()
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|r| r.url.path() == "/v1/chat/completions")
-        .unwrap();
-    assert!(up.headers.get("authorization").is_none());
-    let sent: Value = up.body_json().unwrap();
-    assert_eq!(sent["model"], "qwen3:8b");
-}
-
-#[tokio::test]
-async fn ollama_disabled() {
-    let h = common::start(common::settings()).await;
-    let r = post(&h, "/v1/chat/completions", &chat("ollama/qwen3:8b")).await;
-    assert_eq!(r.status(), 400);
-    assert!(r.json::<Value>().await.unwrap()["error"].is_object());
-    assert!(requests(&h).await.is_empty());
-}
-
-#[tokio::test]
-async fn ollama_discovery_on_startup() {
-    let mut s = common::settings();
-    s.ollama.enabled = true;
-    let upstream = MockServer::start().await;
-    Mock::given(path("/api/tags"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"models": [{"name": "llama3.2:3b"}]})),
-        )
-        .mount(&upstream)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(completion()))
-        .mount(&upstream)
-        .await;
-    let h = common::start_on(s, upstream).await;
-    // serve 先完成发现再接受连接；这里轮询到服务就绪
-    let mut models = Value::Null;
-    for _ in 0..50 {
-        if let Ok(r) = h.client.get(h.url("/v1/models")).send().await {
-            models = r.json().await.unwrap();
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
-    }
-    let ids: Vec<&str> = models["data"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|m| m["id"].as_str().unwrap())
-        .collect();
-    assert!(ids.contains(&"ollama/llama3.2:3b"));
-    let r = post(&h, "/v1/chat/completions", &chat("llama3.2:3b")).await;
-    assert_eq!(r.status(), 200);
-}
-
-#[tokio::test]
-async fn ollama_connection_error_is_not_quota() {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    let dead = format!("http://{}", listener.local_addr().unwrap());
-    drop(listener);
-    let mut s = common::settings();
-    s.ollama.enabled = true;
-    s.ollama.base_url = dead;
-    s.retry.quota_hang_seconds = 0.0;
-    let h = common::start_with_override(s).await;
-    let r = post(&h, "/v1/chat/completions", &chat("ollama/x")).await;
-    assert_eq!(r.status(), 502);
-    let msg = r.json::<Value>().await.unwrap()["error"]["message"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(msg.contains("Ollama"), "{msg}");
 }
 
 #[tokio::test]

@@ -283,10 +283,10 @@ async fn quota_detection_can_be_disabled() {
     .await;
     let mut r = req(&url, false);
     r.detect_quota = false;
-    r.upstream = "Ollama";
+    r.upstream = "本地上游";
     let err = transport(0.1, 5.0, 5.0).open(&r).await.unwrap_err();
     assert_eq!(err.status, 502);
-    assert!(err.message.contains("Ollama"));
+    assert!(err.message.contains("本地上游"));
     assert_eq!(count.load(Ordering::SeqCst), 3);
 }
 

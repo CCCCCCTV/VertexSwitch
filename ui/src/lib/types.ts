@@ -21,7 +21,7 @@ export interface Status {
   listen: string;
   uptime_secs: number;
   in_flight: number;
-  models: { claude: number; gemini: number; maas: number; ollama: number };
+  models: { claude: number; gemini: number; maas: number };
   config_path: string | null;
   server: ServerInfo;
 }
@@ -56,7 +56,6 @@ export interface Settings {
     openai_native: "auto" | "always" | "never";
   };
   maas: { region: string; api_version: string };
-  ollama: { enabled: boolean; base_url: string };
   openai: { default_max_tokens: number };
 }
 
@@ -119,7 +118,6 @@ export interface Models {
   claude: Record<string, string>;
   gemini: Record<string, string>;
   maas: Record<string, string>;
-  ollama: string[];
   source: string;
   user_file: string | null;
 }

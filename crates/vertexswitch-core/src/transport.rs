@@ -99,7 +99,7 @@ pub struct UpstreamRequest<'a> {
     pub min_read_timeout: Option<Duration>,
     /// 报错信息里的上游名称
     pub upstream: &'a str,
-    /// 是否按 Vertex 的配额耗尽特征处理（本地 Ollama 等关掉）
+    /// 是否按 Vertex 的配额耗尽特征处理
     pub detect_quota: bool,
 }
 

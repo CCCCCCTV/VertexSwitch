@@ -31,7 +31,6 @@ export interface Api {
   models(): Promise<Models>;
   reloadModels(): Promise<{ aliases: number }>;
   editModels(): Promise<{ path: string }>;
-  refreshOllama(): Promise<{ ollama_models: number }>;
   logs(since: number, limit: number): Promise<LogEntry[]>;
   requests(since: number, limit: number): Promise<RequestRecord[]>;
   metrics(): Promise<Metrics>;
@@ -94,7 +93,6 @@ async function tauriApi(): Promise<Api> {
     models: () => invoke("get_models"),
     reloadModels: () => invoke("reload_models"),
     editModels: () => invoke("edit_models"),
-    refreshOllama: () => invoke("refresh_ollama"),
     logs: (since, limit) => invoke("get_logs", { since, limit }),
     requests: (since, limit) => invoke("get_requests", { since, limit }),
     metrics: () => invoke("get_metrics"),
