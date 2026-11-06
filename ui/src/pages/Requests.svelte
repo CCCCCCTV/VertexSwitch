@@ -42,6 +42,7 @@
           <th>{t("requests.model")}</th>
           <th class="tier-col">{t("requests.tier")}</th>
           <th>{t("requests.status")}</th>
+          <th class="num" title={t("requests.firstByteHint")}>{t("requests.firstByte")}</th>
           <th class="num">{t("requests.duration")}</th>
           <th class="num">{t("common.input")}</th>
           <th class="num">{t("common.output")}</th>
@@ -64,6 +65,7 @@
                 {r.status} {t(`outcome.${r.outcome}`)}
               </span>
             </td>
+            <td class="num nowrap">{#if r.first_byte_ms === null}<span class="faint">—</span>{:else}{duration(r.first_byte_ms)}{/if}</td>
             <td class="num nowrap">{duration(r.duration_ms)}</td>
             <td class="num nowrap">{tokens(r.input_tokens)}</td>
             <td class="num nowrap">{tokens(r.output_tokens)}</td>

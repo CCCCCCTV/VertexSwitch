@@ -59,6 +59,9 @@ pub struct RequestRecord {
     pub stream: bool,
     pub status: u16,
     pub duration_ms: u64,
+    /// 首字耗时：从收到请求到发出第一段响应体。流式请求里包括排队、重试和模型思考；
+    /// 非流式约等于总耗时；没发出任何内容（出错、客户端提前断开）时为空
+    pub first_byte_ms: Option<u64>,
     pub input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     /// ok / error / stream_error / cancelled
@@ -305,6 +308,7 @@ struct Pending {
     error: Option<String>,
     scanner: UsageScanner,
     stream_error: bool,
+    first_byte_ms: Option<u64>,
     done: bool,
 }
 
@@ -335,6 +339,7 @@ impl Pending {
             stream: info.stream,
             status: self.status,
             duration_ms: self.started.elapsed().as_millis() as u64,
+            first_byte_ms: self.first_byte_ms,
             input_tokens,
             output_tokens,
             outcome,
@@ -363,6 +368,10 @@ impl Stream for ObservedBody {
         let this = &mut *self;
         match this.inner.as_mut().poll_next(cx) {
             Poll::Ready(Some(Ok(chunk))) => {
+                if this.pending.first_byte_ms.is_none() && !chunk.is_empty() {
+                    this.pending.first_byte_ms =
+                        Some(this.pending.started.elapsed().as_millis() as u64);
+                }
                 // 代理在流中出错时补发的错误事件以空行开头（见 errors::stream_event）
                 if chunk.starts_with(b"\n\nevent: error")
                     || chunk.starts_with(b"\n\ndata: {\"error\"")
@@ -420,6 +429,7 @@ pub async fn record_requests(
         error,
         scanner: UsageScanner::default(),
         stream_error: false,
+        first_byte_ms: None,
         done: false,
     };
     let (parts, body) = response.into_parts();
@@ -476,6 +486,7 @@ mod tests {
             stream: false,
             status: 200,
             duration_ms: 1500,
+            first_byte_ms: Some(1500),
             input_tokens: Some(10),
             output_tokens: Some(5),
             outcome: "ok",

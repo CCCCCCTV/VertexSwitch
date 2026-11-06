@@ -91,6 +91,8 @@ export interface RequestRecord {
   stream: boolean;
   status: number;
   duration_ms: number;
+  /** 首字耗时：收到请求到发出第一段内容（流式含排队、重试、思考；非流式约等于总耗时）；没发出内容时为 null */
+  first_byte_ms: number | null;
   input_tokens: number | null;
   output_tokens: number | null;
   outcome: Outcome;

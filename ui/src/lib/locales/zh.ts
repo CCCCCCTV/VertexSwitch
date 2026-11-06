@@ -120,6 +120,8 @@ export const zh = {
   "requests.tier": "档位",
   "requests.status": "状态",
   "requests.duration": "耗时",
+  "requests.firstByte": "首字",
+  "requests.firstByteHint": "首字耗时：从收到请求到发出第一段内容。流式请求里包括排队、重试和模型思考，之后的时间才是在出字；非流式请求约等于总耗时",
   "requests.stream": "流式",
   "requests.noMatch": "没有符合条件的请求。",
   "requests.empty": "还没有请求。客户端发来请求后会实时显示在这里。",

@@ -235,13 +235,14 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 
 配置修改：
 - 认证信息（`credentials_file`、`project_id`）不变时沿用原 token 来源与缓存的 token，否则新建并重启后台刷新；超时 / 重试不变时沿用连接池。
-- `server.host` / `server.port` 变化时返回 `restart_required: true`，由外壳重启监听。
+- `server.host` / `server.port` 变化时返回 `restart_required: true`，由外壳重启监听。不论改动来自界面、管理接口还是手改配置文件（热加载），核心都会发一次“监听地址变了”通知（`AppState::listen_changed`），外壳收到后重启监听；只改别的设置不通知。
 - 每个请求开始时取一份运行时快照（配置、token 来源、传输、模型表），改配置不影响进行中的请求。
 
 热加载：每 2 秒检查配置文件与用户模型表的修改时间；内容变化则重新加载，内容有误时保留当前配置并告警。
 
-请求记录（每条）：`seq, ts_ms, method, path, protocol, model(上游 ID), backend, tier, stream, status, duration_ms, input_tokens, output_tokens, outcome, error`。
-- 在**响应体结束时**落定：`ok`；`error`（状态码 ≥ 400）；`stream_error`（流中由代理补发了错误事件）；`cancelled`（响应体未读完就被丢弃，如客户端断开）。
+请求记录（每条）：`seq, ts_ms, method, path, protocol, model(上游 ID), backend, tier, stream, status, duration_ms, first_byte_ms, input_tokens, output_tokens, outcome, error`。
+- `first_byte_ms`（首字耗时）：从收到请求到发出第一段非空响应体的毫秒数。流式请求里包括排队、繁忙重试和模型思考，之后才是出字时间；非流式约等于 `duration_ms`；没发出任何内容（出错、客户端提前断开）时为 null。
+- 在**响应体结束时**落定：`ok`；`error`（状态码 ≥ 400）；`stream_error`（流中由代理补发了错误事件；所有入口与翻译路径的流内错误都由 `ProxyError::stream_event` 生成、以空行开头，记录据此识别）；`cancelled`（响应体未读完就被丢弃，如客户端断开）。
 - 用量从响应字节流里取各协议字段的最后一次出现值：Anthropic `input_tokens`(+缓存读写) / `output_tokens`；Gemini `promptTokenCount` / `candidatesTokenCount`(+`thoughtsTokenCount`)；OpenAI `prompt_tokens` / `completion_tokens`。OpenAI→Claude 的流式请求只有客户端开了 `stream_options.include_usage` 才有用量。
 
 `/metrics`（Prometheus 文本，**需要代理 API key**）：`vertexswitch_requests_total{protocol,backend,status}`、`vertexswitch_request_duration_seconds_{sum,count}{protocol,backend}`、`vertexswitch_tokens_total{protocol,backend,kind}`、`vertexswitch_requests_in_flight`、`vertexswitch_uptime_seconds`。

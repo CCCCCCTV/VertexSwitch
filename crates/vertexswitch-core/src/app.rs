@@ -15,6 +15,7 @@ use axum::{
 };
 use serde_json::json;
 use tokio::net::TcpListener;
+use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tower_http::catch_panic::CatchPanicLayer;
 
@@ -41,6 +42,9 @@ pub struct AppState {
     /// 用户模型表；文件存在时优先于内置表，变化时自动重载
     pub models_path: Option<PathBuf>,
     refresher: Mutex<Option<JoinHandle<()>>>,
+    /// 监听地址变了（不论是界面、管理接口还是手改配置文件改的）：负责监听的外壳等这个通知来重启监听。
+    /// 用 `notify_one`，没人在等时也会留一次，不会漏掉。
+    pub listen_changed: Notify,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -61,6 +65,7 @@ impl AppState {
             config_path: None,
             models_path: None,
             refresher: Mutex::new(None),
+            listen_changed: Notify::new(),
         }
     }
 
@@ -105,6 +110,9 @@ impl AppState {
         self.set_runtime(new);
         if tokens_changed {
             self.start_refresher();
+        }
+        if restart_required {
+            self.listen_changed.notify_one();
         }
         tracing::info!("{}", tr!("配置已更新", "Config updated"));
         ApplyOutcome { restart_required }

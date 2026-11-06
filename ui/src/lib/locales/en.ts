@@ -117,6 +117,8 @@ export const en: Record<MessageKey, string> = {
   "requests.tier": "Tier",
   "requests.status": "Status",
   "requests.duration": "Time taken",
+  "requests.firstByte": "First byte",
+  "requests.firstByteHint": "Time to first byte: from receiving the request to sending the first piece of the response. For streams it covers queueing, retries and model thinking; the rest is output time. For non-streaming requests it's about the total time",
   "requests.stream": "Stream",
   "requests.noMatch": "No matching requests.",
   "requests.empty": "No requests yet. They show up here live as clients send them.",

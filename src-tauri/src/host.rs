@@ -138,6 +138,19 @@ impl CoreHost {
         Ok(addr)
     }
 
+    /// 跟着核心的“监听地址变了”通知重启监听：手改配置文件里的端口也能生效
+    /// （界面保存时命令里已经重启过，这里再调用一次不会有动作）。
+    pub fn follow_listen_changes(self: &Arc<Self>) {
+        let host = self.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                host.state.listen_changed.notified().await;
+                // 失败原因已在 listen() 里记日志，界面状态里也能看到
+                let _ = host.ensure_listening().await;
+            }
+        });
+    }
+
     /// 监听地址与配置不一致时重启监听。
     pub async fn ensure_listening(&self) -> Result<String, String> {
         let wanted = self.listen_addr();

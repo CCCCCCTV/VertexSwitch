@@ -105,11 +105,15 @@ function request(i: number, ts = Date.now()) {
     stream: s.stream ?? false,
     status: s.status ?? 200,
     duration_ms: s.status ? 1 : 400 + ((i * 937) % 9000),
+    first_byte_ms: null,
     input_tokens: s.input_tokens ?? null,
     output_tokens: s.output_tokens ?? null,
     outcome: s.outcome ?? "ok",
     error: s.error ?? null,
   };
+  // 流式先出第一段再慢慢出完；非流式一次给完；出错的没有内容
+  if (record.status < 400 && record.outcome !== "cancelled")
+    record.first_byte_ms = record.stream ? Math.round(record.duration_ms * (0.15 + ((i * 37) % 40) / 100)) : record.duration_ms;
   requests.push(record);
   requestListeners.forEach((cb) => cb(record));
 }

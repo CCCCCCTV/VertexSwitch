@@ -166,6 +166,8 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 let _ = starter.start().await;
             });
+            // 之后监听地址再变（含手改配置文件）就自动重启监听
+            host.follow_listen_changes();
 
             // 托盘勾选与提示跟上配置（配置也可能被文件热加载修改）
             let syncer = handle.clone();

@@ -318,7 +318,8 @@ async fn via_gemini_native(
                 };
                 if let Some(message) = data.pointer("/error/message").and_then(Value::as_str) {
                     let err = ProxyError::new(500, message);
-                    yield Ok(sse_data(&err.body(Protocol::OpenAi).to_string()));
+                    // 与其他流内错误一样由 stream_event 生成，请求记录才能认出“流中出错”
+                    yield Ok(err.stream_event(Protocol::OpenAi));
                     return;
                 }
                 for out in translator.handle(&data) {
@@ -430,7 +431,8 @@ async fn via_claude(
                         .map(str::to_owned)
                         .unwrap_or_else(|| tr!("上游返回错误事件", "Upstream sent an error event"));
                     let err = ProxyError::new(500, message);
-                    yield Ok(sse_data(&err.body(Protocol::OpenAi).to_string()));
+                    // 与其他流内错误一样由 stream_event 生成，请求记录才能认出“流中出错”
+                    yield Ok(err.stream_event(Protocol::OpenAi));
                     return;
                 }
                 for out in translator.handle(&event, &data) {

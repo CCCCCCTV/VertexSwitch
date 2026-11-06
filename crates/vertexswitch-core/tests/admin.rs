@@ -252,6 +252,35 @@ async fn config_file_hot_reload() {
     assert_eq!(h.state.runtime().settings.gemini.tier, "priority");
 }
 
+/// 手改配置文件里的端口：要通知负责监听的外壳重启监听；改别的不通知。
+#[tokio::test]
+async fn port_change_in_config_file_asks_for_relisten() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("config.toml");
+    std::fs::write(&config, "[gemini]\ntier = \"standard\"\n").unwrap();
+    let h = common::start_with_paths(common::settings(), Some(config.clone()), None).await;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    std::fs::write(&config, "[gemini]\ntier = \"priority\"\n").unwrap();
+    eventually(|| async { h.state.runtime().settings.gemini.tier == "priority" }).await;
+    let quiet = tokio::time::timeout(
+        Duration::from_millis(300),
+        h.state.listen_changed.notified(),
+    )
+    .await;
+    assert!(quiet.is_err(), "只改档位不应要求重新监听");
+
+    std::fs::write(
+        &config,
+        "[gemini]\ntier = \"priority\"\n\n[server]\nport = 18234\n",
+    )
+    .unwrap();
+    tokio::time::timeout(Duration::from_secs(8), h.state.listen_changed.notified())
+        .await
+        .expect("改端口后应通知重新监听");
+    assert_eq!(h.state.runtime().settings.server.port, 18234);
+}
+
 #[tokio::test]
 async fn models_hot_reload_and_admin_view() {
     let dir = tempfile::tempdir().unwrap();
@@ -401,6 +430,109 @@ async fn stream_error_is_recorded_as_stream_error() {
     assert_eq!(record["status"], 200);
     assert_eq!(record["outcome"], "stream_error");
     assert!(record["error"].as_str().unwrap().contains("error"));
+}
+
+/// 首字耗时 = 第一段响应体发出的时刻：不是响应头到达的时刻，也不是整个流结束的时刻。
+#[tokio::test]
+async fn first_byte_time_is_recorded_for_streams() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let slow = format!("http://{}", listener.local_addr().unwrap());
+    tokio::spawn(async move {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut buf = vec![0u8; 16384];
+        let _ = socket.read(&mut buf).await;
+        let chunk = |s: &str| format!("{:x}\r\n{s}\r\n", s.len());
+        let _ = socket
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n")
+            .await;
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        let _ = socket
+            .write_all(chunk("event: ping\ndata: {}\n\n").as_bytes())
+            .await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let _ = socket
+            .write_all(chunk("event: message_stop\ndata: {}\n\n").as_bytes())
+            .await;
+        let _ = socket.write_all(b"0\r\n\r\n").await;
+    });
+    let mut s = common::settings();
+    s.google.api_base_override = Some(slow);
+    let h = common::start_with_override(s).await;
+    h.client
+        .post(h.url("/v1/messages"))
+        .json(&json!({"model": "claude-opus-4-6", "max_tokens": 5, "stream": true, "messages": []}))
+        .send()
+        .await
+        .unwrap()
+        .text()
+        .await
+        .unwrap();
+    let record = first_record(&h).await;
+    let first = record["first_byte_ms"].as_u64().expect("应有首字耗时");
+    let total = record["duration_ms"].as_u64().unwrap();
+    assert!((350..800).contains(&first), "首字 {first}ms：{record}");
+    assert!(total >= first + 400, "总耗时 {total}ms，首字 {first}ms");
+
+    // 上游直接报错：没发出任何内容，首字耗时为空
+    let h = common::start(common::settings()).await;
+    mount(
+        &h,
+        ResponseTemplate::new(429)
+            .set_body_json(json!({"error": {"code": 429, "message": "busy"}})),
+    )
+    .await;
+    h.client
+        .post(h.url("/v1/messages"))
+        .json(&json!({"model": "claude-opus-4-6", "max_tokens": 5, "messages": []}))
+        .send()
+        .await
+        .unwrap();
+    let record = first_record(&h).await;
+    assert_eq!(record["status"], 429);
+    assert!(record["first_byte_ms"].is_null(), "{record}");
+}
+
+/// OpenAI 入口转成 Claude / Gemini 原生后，上游在流里报错：记录同样要落成 stream_error。
+#[tokio::test]
+async fn translated_openai_stream_errors_are_recorded() {
+    for (model, sse) in [
+        (
+            "claude-opus-4-6",
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"usage\":{\"input_tokens\":1}}}\n\n\
+             event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n",
+        ),
+        (
+            "gemini-3.5-flash",
+            "data: {\"error\":{\"code\":429,\"message\":\"Resource exhausted\",\"status\":\"RESOURCE_EXHAUSTED\"}}\n\n",
+        ),
+    ] {
+        let mut s = common::settings();
+        s.gemini.openai_native = "always".into();
+        let h = common::start(s).await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(sse, "text/event-stream"))
+            .mount(&h.upstream)
+            .await;
+        let text = h
+            .client
+            .post(h.url("/v1/chat/completions"))
+            .json(&json!({"model": model, "stream": true, "messages": [{"role": "user", "content": "hi"}]}))
+            .send()
+            .await
+            .unwrap()
+            .text()
+            .await
+            .unwrap();
+        assert!(text.contains("\"error\""), "{model}: {text}");
+        let record = first_record(&h).await;
+        assert_eq!(record["status"], 200, "{model}");
+        assert_eq!(record["outcome"], "stream_error", "{model}: {record}");
+        assert!(
+            record["error"].as_str().unwrap().contains("error"),
+            "{model}"
+        );
+    }
 }
 
 #[tokio::test]
