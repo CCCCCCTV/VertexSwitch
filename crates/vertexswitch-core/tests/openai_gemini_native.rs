@@ -132,9 +132,10 @@ async fn model_tier_sends_request_through_native_api() {
     assert_eq!(gbody["systemInstruction"]["parts"][0]["text"], "be brief");
     assert_eq!(gbody["contents"][0]["parts"][0]["text"], "weather?");
     assert_eq!(gbody["generationConfig"]["maxOutputTokens"], 20);
+    // Gemini 3 起发思考等级，不发已弃用的预算
     assert_eq!(
-        gbody["generationConfig"]["thinkingConfig"]["thinkingBudget"],
-        1024
+        gbody["generationConfig"]["thinkingConfig"],
+        json!({"thinkingLevel": "LOW"})
     );
     assert_eq!(
         gbody["tools"][0]["functionDeclarations"][0]["parametersJsonSchema"]["type"],

@@ -5,8 +5,8 @@
 //!   tool_result 照转，`cache_control` 忽略
 //! - 工具：`input_schema` 放进 `parametersJsonSchema`；`tool_choice` auto / any / tool / none →
 //!   AUTO / ANY（指定函数）/ NONE。服务端工具（web_search 等）Gemini 这边没有对应物，跳过并记日志
-//! - `thinking`：enabled 的 `budget_tokens` → `thinkingBudget`，并要回思考摘要（`includeThoughts`），
-//!   转成 thinking 块
+//! - `thinking`：enabled 时按 `budget_tokens` 定思考力度（Gemini 3 起折成思考等级，更早的模型用预算，
+//!   见 `gemini_thinking`），并要回思考摘要（`includeThoughts`），转成 thinking 块；adaptive 只要思考摘要
 //! - 思考签名：Gemini 3 起函数调用必须带回签名。签名放在 tool_use 前面的 thinking 块的 `signature` 里，
 //!   加 [`SIGNATURE_PREFIX`] 区分 Claude 自己的签名；客户端原样带回时挂回函数调用，没带回时填文档给的占位值
 //! - Gemini 不给工具调用 ID，自己生成 `toolu_…`；工具结果按 ID 在历史里找回函数名
@@ -23,6 +23,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use bytes::Bytes;
 use serde_json::{Map, Value, json};
 
+use super::gemini_thinking::{Effort, thinking_config};
 use super::openai_to_anthropic::bad;
 use super::openai_to_gemini::{SKIP_SIGNATURE, requires_signatures};
 use crate::errors::ProxyResult;
@@ -295,7 +296,7 @@ fn tool_config(body: &Value) -> Option<Value> {
     Some(json!({"functionCallingConfig": config}))
 }
 
-fn generation_config(body: &Value) -> Map<String, Value> {
+fn generation_config(body: &Value, model: &str) -> Map<String, Value> {
     let mut config = Map::new();
     if let Some(max) = body
         .get("max_tokens")
@@ -322,14 +323,14 @@ fn generation_config(body: &Value) -> Map<String, Value> {
     }
     match body.pointer("/thinking/type").and_then(Value::as_str) {
         Some("enabled") => {
-            let mut thinking = json!({"includeThoughts": true});
-            if let Some(budget) = body
+            let budget = body
                 .pointer("/thinking/budget_tokens")
-                .and_then(Value::as_u64)
-            {
-                thinking["thinkingBudget"] = budget.into();
-            }
-            config.insert("thinkingConfig".into(), thinking);
+                .and_then(Value::as_u64);
+            let effort = budget.map_or(Effort::Medium, Effort::from_budget);
+            config.insert(
+                "thinkingConfig".into(),
+                thinking_config(model, effort, budget, true),
+            );
         }
         Some("adaptive") => {
             config.insert("thinkingConfig".into(), json!({"includeThoughts": true}));
@@ -400,7 +401,7 @@ pub fn request_to_gemini(body: &Value, model: &str) -> ProxyResult<Value> {
             out.insert("toolConfig".into(), config);
         }
     }
-    let generation = generation_config(body);
+    let generation = generation_config(body, model);
     if !generation.is_empty() {
         out.insert("generationConfig".into(), generation.into());
     }

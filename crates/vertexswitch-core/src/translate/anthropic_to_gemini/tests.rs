@@ -186,13 +186,30 @@ fn tool_round_trip_with_signatures() {
 #[test]
 fn thinking_config() {
     let base = json!({"max_tokens": 4096, "messages": [{"role": "user", "content": "x"}]});
-    let with = |thinking: Value| {
+    let with_model = |model: &str, thinking: Value| {
         let mut b = base.clone();
         b["thinking"] = thinking;
-        request_to_gemini(&b, "m").unwrap()["generationConfig"]["thinkingConfig"].clone()
+        request_to_gemini(&b, model).unwrap()["generationConfig"]["thinkingConfig"].clone()
     };
+    let with = |thinking: Value| with_model("gemini-3.5-flash", thinking);
+    // Gemini 3 起按预算大小折成思考等级（Gemini 4 收到预算会 400）
     assert_eq!(
         with(json!({"type": "enabled", "budget_tokens": 2048})),
+        json!({"includeThoughts": true, "thinkingLevel": "LOW"})
+    );
+    assert_eq!(
+        with_model(
+            "gemini-4-argon",
+            json!({"type": "enabled", "budget_tokens": 31999})
+        ),
+        json!({"includeThoughts": true, "thinkingLevel": "HIGH"})
+    );
+    // 更早的模型仍用预算
+    assert_eq!(
+        with_model(
+            "gemini-2.5-flash",
+            json!({"type": "enabled", "budget_tokens": 2048})
+        ),
         json!({"includeThoughts": true, "thinkingBudget": 2048})
     );
     assert_eq!(

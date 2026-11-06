@@ -261,7 +261,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - 工具：`tools[].function` / 已弃用的 `functions` → `functionDeclarations[]{name, description, parametersJsonSchema}`（参数原样当 JSON Schema）；`web_search_options` → `googleSearch`；其他工具类型 → 400。
 - `tool_choice`：auto / none / required / validated → AUTO / NONE / ANY / VALIDATED；指定函数 → ANY + `allowedFunctionNames`。
 - `generationConfig`：temperature、top_p→topP、n→candidateCount、presence_penalty、frequency_penalty、seed；`max_completion_tokens` 优先于 `max_tokens` → maxOutputTokens；stop → stopSequences；`response_format` json_object → `responseMimeType: application/json`，json_schema → 再加 `responseJsonSchema`。
-- `reasoning_effort` low / medium / high → `thinkingConfig.thinkingBudget` 1024 / 8192 / 24576（与兼容接口相同），其他值忽略；`extra_body.google`（或顶层 `google`）的 `thinking_config` → thinkingConfig（顶层键改 camelCase），与 reasoning_effort 同时给 → 400；`safety_settings` → safetySettings；`cached_content` → cachedContent。
+- `reasoning_effort` → 思考设置（§15）：none / minimal → MINIMAL，low / medium / high → 同名，xhigh → HIGH，其他值忽略；`extra_body.google`（或顶层 `google`）的 `thinking_config` → thinkingConfig（顶层键改 camelCase），与 reasoning_effort 同时给 → 400；`safety_settings` → safetySettings；`cached_content` → cachedContent。
 - 其他字段（user、logprobs、stream_options 以外的 OpenAI 专有字段）忽略。
 
 响应：
@@ -287,8 +287,8 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
   带版本号 `type` 的服务端工具（web_search、bash、text_editor 等）跳过并记 WARN。`tool_choice` auto / any / none → AUTO / ANY / NONE，
   `tool` → ANY + `allowedFunctionNames`；没有可用工具时不发 `toolConfig`。
 - `max_tokens` → `maxOutputTokens`；`temperature`、`top_p` → `topP`、`top_k` → `topK`、`stop_sequences` → `stopSequences`。
-- `thinking.type = enabled` → `thinkingConfig.thinkingBudget = budget_tokens` 且 `includeThoughts: true`；`adaptive` → 只要 `includeThoughts`；
-  `disabled` 或没写 → 不发（用模型默认）。
+- `thinking.type = enabled` → 思考设置（§15）：`budget_tokens` < 4096 → LOW，< 16384 → MEDIUM，其余 → HIGH（老模型直接用这个预算），且 `includeThoughts: true`；
+  `adaptive` → 只要 `includeThoughts`；`disabled` 或没写 → 不发（用模型默认）。
 - countTokens 只发 `contents` / `systemInstruction` / `tools`（Vertex 的 CountTokensRequest 只认这些），回复 `{"input_tokens": totalTokens}`。
 
 思考签名（Gemini 3 起函数调用必须带回，见 §13）：回复里带签名的 `functionCall` 前面插一个 thinking 块，`signature` 为 `vsg1:` + 签名；
@@ -311,3 +311,17 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 **实测**（2026-11-06，`gemini-3.5-flash-lite`，global，Standard）：普通对话（非流式 / 流式）、工具调用来回（思考签名原样带回、签名丢失时补占位值两种都成功）、
 流式工具调用（签名经 `signature_delta` 往返）、思考摘要（非流式返回 thinking 块）、计数均正常；带 `$schema`、`additionalProperties` 的 Claude Code 风格
 `input_schema` 被 `parametersJsonSchema` 接受。`flash-lite` 流式时上游本身不返回思考片段（只在最后一段带签名），不是翻译问题。
+
+## 15. Gemini 思考设置
+
+客户端没指定思考时代理什么都不发，用模型自己的默认值（Vertex 文档 Thinking 页，2026-11：Gemini 4 Argon、3.5 / 3.6 / 3.7 / 3.8 Flash 为 MEDIUM，
+3.5 Flash-Lite、3.1 Flash-Lite 为 MINIMAL，3.1 Pro、3 Flash 为 HIGH；2.5 系列为动态预算）。客户端指定了思考力度时（§13 的 `reasoning_effort`、
+§14 的 `thinking`）按模型换成 `generationConfig.thinkingConfig`（`translate::gemini_thinking`）：
+
+- Gemini 3 起（`gemini-<主版本>` ≥ 3）发 `thinkingLevel`（MINIMAL / LOW / MEDIUM / HIGH）。文档：`thinkingBudget` 对 Gemini 3 起已弃用，
+  Gemini 4 收到直接 400，Gemini 3 偶尔 400，与 `thinkingLevel` 同时给也报错。
+- 各模型支持的等级：Gemini 4、3.7 / 3.8 Flash、3.1 Pro 没有 MINIMAL；3.1 Flash Image 与 3.1 Flash-Lite Image 只有 MINIMAL / HIGH；
+  3 Pro Image 只有 HIGH；其余四档都有。请求的等级不支持时换成最近的一档，距离相同取更高的一档（如 Gemini 4 的 MINIMAL → LOW）。
+- 更早的模型发 `thinkingBudget`：客户端给了具体预算（Claude 格式的 `budget_tokens`）就用它，否则按力度取 512 / 1024 / 8192 / 24576；
+  夹在模型允许的范围内（Pro 128–32768，Flash-Lite 512–24576，Flash 1–24576）。
+- `extra_body.google.thinking_config`（OpenAI 格式）是客户端自己写的原生设置，原样照转，不换算。

@@ -83,7 +83,7 @@ fn generation_parameters() {
             "stopSequences": ["END"],
             "responseMimeType": "application/json",
             "responseJsonSchema": {"type": "object"},
-            "thinkingConfig": {"thinkingBudget": 8192},
+            "thinkingConfig": {"thinkingLevel": "MEDIUM"},
         })
     );
 }

@@ -2,7 +2,8 @@
 //!
 //! Vertex 的 OpenAI 兼容接口不接受服务档位头，需要档位时就把请求转成原生格式发出。
 //! 字段对应照 Vertex 自己的兼容接口文档，客户端换到这条路上时行为尽量不变：
-//! - `reasoning_effort` low / medium / high → `thinkingBudget` 1024 / 8192 / 24576
+//! - `reasoning_effort` → 思考设置：Gemini 3 起是思考等级（none / minimal → MINIMAL，low / medium / high → 同名，
+//!   模型不支持的等级就近换），更早的模型是预算 1024 / 8192 / 24576（见 `gemini_thinking`）
 //! - 工具参数本来就是 JSON Schema，放进 `parametersJsonSchema`
 //! - 思考签名放在 `tool_calls[].extra_content.google.thought_signature` 里往返；Gemini 3 起
 //!   函数调用缺签名会被拒（400），客户端没带回来时按文档填 `skip_thought_signature_validator`
@@ -19,6 +20,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 
+use super::gemini_thinking::{Effort, gemini_major, thinking_config};
 use super::openai_to_anthropic::{DATA_URL, bad, now_secs, text_of};
 use crate::errors::ProxyResult;
 use crate::tr;
@@ -26,16 +28,9 @@ use crate::tr;
 /// 文档给出的占位签名：历史里的函数调用不是这个 API 生成的（或签名丢了）时使用
 pub const SKIP_SIGNATURE: &str = "skip_thought_signature_validator";
 
-/// 与 Vertex OpenAI 兼容接口相同的映射
-const REASONING_BUDGETS: &[(&str, u64)] = &[("low", 1024), ("medium", 8192), ("high", 24576)];
-
 /// Gemini 3 起函数调用必须带回思考签名；更早的模型不强制，也不填占位值。
 pub fn requires_signatures(model: &str) -> bool {
-    model
-        .strip_prefix("gemini-")
-        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
-        .and_then(|major| major.parse::<u32>().ok())
-        .is_some_and(|major| major >= 3)
+    gemini_major(model).is_some_and(|major| major >= 3)
 }
 
 /// 客户端会按 id 把工具结果对回调用；Gemini 在 v1 上不一定给 id，就自己生成一个不重复的。
@@ -352,7 +347,7 @@ fn camel_keys(value: &Value) -> Value {
         .into()
 }
 
-fn generation_config(body: &Value) -> ProxyResult<Map<String, Value>> {
+fn generation_config(body: &Value, model: &str) -> ProxyResult<Map<String, Value>> {
     let mut config = Map::new();
     for (from, to) in [
         ("temperature", "temperature"),
@@ -409,13 +404,11 @@ fn generation_config(body: &Value) -> ProxyResult<Map<String, Value>> {
             "Use either reasoning_effort or extra_body.google.thinking_config, not both"
         )));
     }
-    if let Some(budget) = effort.and_then(|e| {
-        REASONING_BUDGETS
-            .iter()
-            .find(|(name, _)| *name == e)
-            .map(|(_, b)| *b)
-    }) {
-        config.insert("thinkingConfig".into(), json!({"thinkingBudget": budget}));
+    if let Some(effort) = effort.and_then(Effort::from_reasoning_effort) {
+        config.insert(
+            "thinkingConfig".into(),
+            thinking_config(model, effort, None, false),
+        );
     }
     if let Some(thinking) = thinking {
         config.insert("thinkingConfig".into(), camel_keys(thinking));
@@ -518,7 +511,7 @@ pub fn request_to_gemini(body: &Value, model: &str) -> ProxyResult<Value> {
     if let Some(config) = tool_config(body)? {
         out.insert("toolConfig".into(), config);
     }
-    let generation = generation_config(body)?;
+    let generation = generation_config(body, model)?;
     if !generation.is_empty() {
         out.insert("generationConfig".into(), generation.into());
     }
