@@ -21,6 +21,7 @@
 - Gemini 原生：`/v1beta/models/{model}:generateContent | streamGenerateContent | countTokens`
 - Gemini 服务档位：Standard / Flex / Priority，并用 `usageMetadata.trafficType` 核对实际档位
 - OpenAI Chat Completions：Gemini 兼容接口、MaaS 开放模型、OpenAI→Claude 转换（含工具调用与流式）
+- Claude 格式调用 Gemini：`/v1/messages` 收到 Gemini 模型时翻译成 Gemini 原生请求（含工具调用、思考、流式、计数），Claude Code 等客户端可以直接用 Gemini 模型
 - 模型列表：`/v1/models`（Anthropic / OpenAI 格式）、`/v1beta/models`（Gemini 格式）
 - 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
 - 上游繁忙（429 资源耗尽 / 限流、503、Claude 的 529 过载）时自动重试：默认最多 3 次、依次约等 1、2、4 秒，带随机抖动、遵守 `Retry-After`；可在“设置 → 代理服务”关掉、改次数，等待时间可以写成数字或关于第几次重试 `n` 的算式（如 `5`、`min(30, 3*n)`）；客户端断开即停止
@@ -49,6 +50,8 @@
 | Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8787` | Claude Code、Anthropic SDK |
 | OpenAI 兼容 | `OPENAI_BASE_URL` | `http://127.0.0.1:8787/v1` | OpenAI SDK |
 | Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8787` | Gemini CLI、JS SDK（Python SDK 要在代码里设 `http_options.base_url`） |
+
+想让 Claude Code 用 Gemini 模型，除了 `ANTHROPIC_BASE_URL`，再把模型名设成 Gemini 的：`ANTHROPIC_MODEL` 是主模型，`ANTHROPIC_DEFAULT_HAIKU_MODEL` 是后台小任务用的模型，例如 `gemini-3.5-flash` 和 `gemini-3.5-flash-lite`。Claude 的联网搜索等服务端工具在 Gemini 上用不了，会被跳过。
 
 “设置”里的 API key（`server.api_key`）留空时，代理不检查客户端的 key；客户端如果必须填 key，随便填一个即可。设置了 API key 后，客户端要把它作为 API key 发送（`Authorization: Bearer`、`x-api-key`、`x-goog-api-key` 或查询参数 `key` 都可以）。
 

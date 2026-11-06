@@ -216,12 +216,18 @@ async fn connection_failure_returns_anthropic_502() {
 #[tokio::test]
 async fn bad_requests_use_anthropic_format() {
     let h = common::start(common::settings()).await;
-    let cases: [(&str, u16); 5] = [
+    let cases: [(&str, u16); 6] = [
         ("not json", 400),
         ("[1,2]", 400),
         (r#"{"max_tokens": 1}"#, 400),
         (r#"{"model": "  ", "max_tokens": 1}"#, 400),
-        (r#"{"model": "gemini-3.5-flash", "max_tokens": 1}"#, 404),
+        // Gemini 模型可以走这个入口（翻译），但没有 messages 时是请求错误
+        (r#"{"model": "gemini-3.5-flash", "max_tokens": 1}"#, 400),
+        // MaaS 开放模型不走这个入口
+        (
+            r#"{"model": "deepseek-ai/deepseek-v3.1-maas", "max_tokens": 1}"#,
+            404,
+        ),
     ];
     for (payload, status) in cases {
         let r = h

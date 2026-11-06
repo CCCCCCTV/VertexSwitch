@@ -3,6 +3,7 @@
 //! 每个翻译模块提供请求翻译、非流式响应翻译，以及实现 [`StreamTranslate`] 的流式翻译器。
 //! 发请求、解析上游 SSE、处理上游错误事件与提前结束都由后端模块负责（见 `backends`），翻译器只管正常事件。
 
+pub mod anthropic_to_gemini;
 pub mod openai_to_anthropic;
 pub mod openai_to_gemini;
 pub mod sse;

@@ -21,6 +21,7 @@ The proxy core (`crates/vertexswitch-core`) implements:
 - Native Gemini: `/v1beta/models/{model}:generateContent | streamGenerateContent | countTokens`
 - Gemini service tiers: Standard / Flex / Priority, checked against `usageMetadata.trafficType`
 - OpenAI Chat Completions: the Gemini compatible endpoint, MaaS open models, and OpenAI→Claude translation (including tool calls and streaming)
+- Claude format for Gemini: when `/v1/messages` gets a Gemini model, it is translated to a native Gemini request (tool calls, thinking, streaming and token counting included), so Claude Code and similar clients can use Gemini models directly
 - Model lists: `/v1/models` (Anthropic / OpenAI format) and `/v1beta/models` (Gemini format)
 - Admin API `/admin/api/*`: status, config read/write (applied immediately), model table, logs and request records (with live SSE streams), metrics and test requests; config and model table files reload automatically
 - Automatic retries when upstream is busy (429 resource exhausted / rate limited, 503, Claude's 529 overloaded): up to 3 retries by default, waiting about 1, 2 and 4 s with random jitter and honouring `Retry-After`; under Settings → Proxy server you can turn it off, change the count, and set the wait as a number or a formula of the retry number `n` (e.g. `5`, `min(30, 3*n)`); stops as soon as the client disconnects
@@ -49,6 +50,8 @@ The proxy listens on `http://127.0.0.1:8787` by default (you can change the port
 | Anthropic | `ANTHROPIC_BASE_URL` | `http://127.0.0.1:8787` | Claude Code, Anthropic SDK |
 | OpenAI compatible | `OPENAI_BASE_URL` | `http://127.0.0.1:8787/v1` | OpenAI SDK |
 | Gemini | `GOOGLE_GEMINI_BASE_URL` | `http://127.0.0.1:8787` | Gemini CLI, JS SDK (in the Python SDK, set `http_options.base_url` in code) |
+
+To use Gemini models in Claude Code, besides `ANTHROPIC_BASE_URL`, set the model names to Gemini ones: `ANTHROPIC_MODEL` for the main model and `ANTHROPIC_DEFAULT_HAIKU_MODEL` for background tasks, e.g. `gemini-3.5-flash` and `gemini-3.5-flash-lite`. Claude's server tools such as web search aren't available on Gemini and are skipped.
 
 When the API key under Settings (`server.api_key`) is empty, the proxy doesn't check client keys; if a client insists on a key, any value works. Once you set an API key, clients must send it as their API key (`Authorization: Bearer`, `x-api-key`, `x-goog-api-key` or the `key` query parameter all work).
 

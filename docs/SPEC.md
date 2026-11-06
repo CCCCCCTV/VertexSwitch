@@ -122,7 +122,7 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 ### 8.1 Anthropic Messages（最高优先级）
 
 - `POST /v1/messages`、`/anthropic/v1/messages`；`POST .../v1/messages/count_tokens`
-- 请求体必须是 JSON 对象（否则 400）；`model` 必填非空（否则 400）；解析结果不是 Claude → 404。
+- 请求体必须是 JSON 对象（否则 400）；`model` 必填非空（否则 400）；解析结果是 Claude → 下面的原样转发；是 Gemini → 按 §14 翻译成 Gemini 原生请求（服务档位照 §9 生效，`X-VertexSwitch-Tier` 同样可用）；其他（MaaS）→ 404。
 - 先取 token，再取项目 ID，再拼 URL。
 - 上游非 2xx（含流式请求）→ 读完错误体，按 §5 返回 JSON。
 - 非流式：正文与 content-type 原样返回。流式：`text/event-stream`，`Cache-Control: no-cache`，字节原样转发；中途断开按 §5 发 `event: error`。
@@ -272,3 +272,38 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - 流式：每个上游事件转成 `chat.completion.chunk`；候选第一段先发 role；函数调用整段到达，转成一次带完整 arguments 的 tool_calls 增量；收到 finishReason 发结束块；正常结束后客户端开了 `stream_options.include_usage` 时补一个只有 usage 的块，再发 `[DONE]`。没收到 finishReason 就断了 → 发 OpenAI 格式错误事件（"流式响应提前结束"），不发 `[DONE]`。上游 SSE 里出现 `error.message` → 转成错误事件并结束。
 - 上游非 2xx → 按 §5 转成 OpenAI 错误格式。trafficType 核对同 §9。
 
+## 14. Claude 格式 → Gemini 原生转换
+
+让只会说 Claude 格式的客户端（如 Claude Code）调用 Gemini 模型：`/v1/messages` 与 `/v1/messages/count_tokens` 收到 Gemini 模型时，
+把 Anthropic Messages 请求翻译成 Gemini 原生 generateContent / countTokens，回复翻译回 Claude 格式（`translate::anthropic_to_gemini`）。
+
+请求：
+- `system`（字符串或 text 块）→ `systemInstruction`；`messages` 的 user / assistant → `contents` 的 user / model；空消息跳过。
+- 内容块：text → text；image / document 的 `source`：base64 → `inlineData`，url → `fileData`（按扩展名猜 MIME），text → text；
+  `cache_control` 一律忽略；历史里的 `redacted_thinking`、服务端工具调用与结果跳过；其他未知类型 → 400。
+- tool_use → `functionCall`（`input` → `args`）；tool_result → `functionResponse`，函数名按 `tool_use_id` 在整段历史的 tool_use 里找，找不到 → 400；
+  内容的文字合成一段，能解析成 JSON 就按 JSON，`is_error` 时放在 `response.error`，否则放在 `response.output`；内容里的图片 / 文档作为单独的 part 跟在后面。
+- 工具：没有 `type` 或 `type: custom` 的工具 → `functionDeclarations`，`input_schema` 去掉 `$schema` 后放进 `parametersJsonSchema`；
+  带版本号 `type` 的服务端工具（web_search、bash、text_editor 等）跳过并记 WARN。`tool_choice` auto / any / none → AUTO / ANY / NONE，
+  `tool` → ANY + `allowedFunctionNames`；没有可用工具时不发 `toolConfig`。
+- `max_tokens` → `maxOutputTokens`；`temperature`、`top_p` → `topP`、`top_k` → `topK`、`stop_sequences` → `stopSequences`。
+- `thinking.type = enabled` → `thinkingConfig.thinkingBudget = budget_tokens` 且 `includeThoughts: true`；`adaptive` → 只要 `includeThoughts`；
+  `disabled` 或没写 → 不发（用模型默认）。
+- countTokens 只发 `contents` / `systemInstruction` / `tools`（Vertex 的 CountTokensRequest 只认这些），回复 `{"input_tokens": totalTokens}`。
+
+思考签名（Gemini 3 起函数调用必须带回，见 §13）：回复里带签名的 `functionCall` 前面插一个 thinking 块，`signature` 为 `vsg1:` + 签名；
+客户端把这个块原样带回时，签名挂回它后面的第一个 `functionCall`。不是 `vsg1:` 开头的签名（Claude 自己的）忽略。
+需要签名的模型（§13 的判断）在一组函数调用都没带签名时，给第一个填 `skip_thought_signature_validator`。
+
+回复（只取第一个候选）：
+- 思考片段（`thought: true`）→ thinking 块（`signature` 为空）；文本 → text 块；相邻同类片段合并；`functionCall` → tool_use 块，ID 自己生成（`toolu_vs…`）。
+- `stop_reason`：有工具调用 → `tool_use`；`MAX_TOKENS` → `max_tokens`；安全类（SAFETY、RECITATION、BLOCKLIST、PROHIBITED_CONTENT、SPII、MODEL_ARMOR、IMAGE_*）→ `refusal`；
+  提示词被拦截（没有候选、有 `promptFeedback.blockReason`）→ `refusal`；其他 → `end_turn`。`stop_sequence` 恒为 null。
+- `usage`：`input_tokens` = promptTokenCount + toolUsePromptTokenCount − cachedContentTokenCount；命中缓存的部分放 `cache_read_input_tokens`；
+  `output_tokens` = candidatesTokenCount + thoughtsTokenCount。`id` = `msg_` + responseId，`model` 为客户端写的名字。
+
+流式（`streamGenerateContent?alt=sse`）：首段先发 `message_start`（usage 里 output_tokens 为 0）；文本与思考片段按增量发
+`content_block_start` / `content_block_delta`（text_delta / thinking_delta）/ `content_block_stop`，类型变了就换一个块；
+`functionCall` 整段到达，先发签名块（一个 `signature_delta`），再发一个 tool_use 块（`input` 为 `{}`，参数用一个 `input_json_delta` 给完）；
+带 `finishReason`（或提示词被拦截）的一段之后发 `message_delta`（`stop_reason` 与最终 usage）和 `message_stop`。
+上游流里的错误事件、中途断开、没有 `finishReason` 就结束，都按 §5 补发 `event: error`（请求记录为 stream_error）。
