@@ -565,27 +565,52 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    /* 吸顶：铺满内容区宽度并带一条分隔线，滚动时下面的内容不会从边缘露出 */
+    /* 吸顶：铺满内容区宽度，滚动时下面的内容不会从边缘露出 */
     position: sticky;
     top: -22px;
     z-index: 2;
     margin: -22px -28px 16px;
     padding: 22px 28px 12px;
-    background: var(--bg);
+    --head-bg: var(--bg);
+    --head-filter: none;
+  }
+
+  /* 吸顶栏的底色、模糊和分隔线：没滚动时完全透明，和别的页面的页头一样直接露出页面背景；
+     往下滚时跟着滚动显出来，滚过页头上边距（22px）时完全显出，这时内容还没滚到页头下面。
+     不支持滚动驱动动画时停在终点，一直显示 */
+  header::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: var(--head-bg);
+    backdrop-filter: var(--head-filter);
     border-bottom: 1px solid var(--border);
+    animation: head-solid linear both;
+    animation-timeline: scroll(nearest block);
+    animation-range: 0 22px;
+  }
+
+  @keyframes head-solid {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 
   /* 半透明窗口材质下底色很薄：吸顶栏用更不透明的同色底再加模糊，滚过的内容不会透出来 */
   :global(:root[data-mica]) header {
-    background: oklch(from var(--bg) l c h / 0.92);
-    backdrop-filter: blur(24px) saturate(1.2);
+    --head-bg: oklch(from var(--bg) l c h / 0.92);
+    --head-filter: blur(24px) saturate(1.2);
   }
 
   /* 实时取色时背后是颜色场：吸顶栏半透明加模糊，颜色连贯，滚过的内容也看不清 */
   :global(:root[data-field]) header,
   :global(:root[data-glass]) header {
-    background: oklch(from var(--bg) l c h / 0.35);
-    backdrop-filter: blur(28px) saturate(1.2);
+    --head-bg: oklch(from var(--bg) l c h / 0.35);
+    --head-filter: blur(28px) saturate(1.2);
   }
 
   h1 {
