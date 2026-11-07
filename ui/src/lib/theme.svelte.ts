@@ -364,6 +364,8 @@ function applyBackgroundImage() {
   }
 }
 
+// 背景图片和设置页的缩略图都用 blob: 地址显示，正式版的 CSP（tauri.conf.json）的 img-src 必须允许 blob:，
+// 否则图片会被拦下；浏览器预览（npm run dev）没有这条 CSP，看不出来
 function showBackground(blob: Blob | null) {
   if (theme.bgImage) URL.revokeObjectURL(theme.bgImage);
   theme.bgImage = blob ? URL.createObjectURL(blob) : null;
