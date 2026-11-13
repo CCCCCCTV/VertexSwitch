@@ -26,6 +26,11 @@ pub const FLEX_MAX_TIMEOUT: u64 = 30 * 60;
 const FLEX_REGIONS: &[&str] = &["global"];
 const PRIORITY_REGIONS: &[&str] = &["global", "us", "eu"];
 
+/// 不支持 Flex 的模型：Flex PayGo 文档的支持列表里没有，argon 另有明确注明（2026-11-14 核对）。
+/// 不管配置里的 `gemini.flex_unsupported_models` 怎么写都按不支持处理；读配置时也会并进那份名单，
+/// 旧配置文件里存的名单不会因为出了新模型而过时，界面上也看得到。
+pub const FLEX_UNSUPPORTED_MODELS: &[&str] = &["gemini-4-carbon", "gemini-4-argon"];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
     Standard,
@@ -94,7 +99,10 @@ pub fn plan_tier(tier: Tier, model: &str, region: &str, opts: &TierOptions<'_>) 
             ));
             effective = Tier::Standard;
         }
-        Tier::Flex if opts.flex_unsupported_models.iter().any(|m| m == model) => {
+        Tier::Flex
+            if FLEX_UNSUPPORTED_MODELS.contains(&model)
+                || opts.flex_unsupported_models.iter().any(|m| m == model) =>
+        {
             warnings.push(tr!(
                 "模型 {model} 不支持 Flex，已改用 Standard",
                 "Model {model} doesn't support Flex; using Standard instead"
@@ -282,6 +290,26 @@ mod tests {
         assert_eq!(p.effective, Tier::Standard);
         assert!(p.headers.is_empty());
         assert!(p.warnings[0].contains("gemini-4-argon"));
+    }
+
+    #[test]
+    fn builtin_flex_unsupported_applies_without_config() {
+        // 旧配置文件里的名单没有 carbon，照样降级；hydrogen 在 Flex 支持列表里，照常发 flex
+        let carbon = plan_tier(
+            Tier::Flex,
+            "gemini-4-carbon",
+            "global",
+            &TierOptions {
+                shared_only: false,
+                flex_timeout: 1800,
+                flex_unsupported_models: &[],
+            },
+        );
+        assert_eq!(carbon.effective, Tier::Standard);
+        assert!(carbon.headers.is_empty());
+        let hydrogen = plan(Tier::Flex, "gemini-4-hydrogen", "global", false, 1800);
+        assert_eq!(hydrogen.effective, Tier::Flex);
+        assert!(hydrogen.warnings.is_empty());
     }
 
     #[test]

@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use crate::tiers::FLEX_UNSUPPORTED_MODELS;
 use crate::tr;
 use serde::{Deserialize, Serialize};
 
@@ -218,7 +219,7 @@ pub struct GeminiSettings {
     pub shared_only: bool,
     /// Flex 排队超时（秒，X-Server-Timeout），上限 1800
     pub flex_server_timeout: u64,
-    /// 官方注明不支持 Flex 的模型
+    /// 不支持 Flex 的模型；内置名单（`tiers::FLEX_UNSUPPORTED_MODELS`）读配置时总会并进来
     pub flex_unsupported_models: Vec<String>,
     /// OpenAI 兼容接口的 API 版本
     pub openai_api_version: String,
@@ -229,6 +230,17 @@ pub struct GeminiSettings {
 
 pub const OPENAI_NATIVE_MODES: &[&str] = &["auto", "always", "never"];
 
+impl GeminiSettings {
+    /// 把内置的不支持 Flex 名单并进来，旧配置文件里存的名单不会因为出了新模型而过时。
+    fn merge_builtin_flex_unsupported(&mut self) {
+        for model in FLEX_UNSUPPORTED_MODELS {
+            if !self.flex_unsupported_models.iter().any(|m| m == model) {
+                self.flex_unsupported_models.push((*model).into());
+            }
+        }
+    }
+}
+
 impl Default for GeminiSettings {
     fn default() -> Self {
         Self {
@@ -237,7 +249,10 @@ impl Default for GeminiSettings {
             model_tiers: BTreeMap::new(),
             shared_only: false,
             flex_server_timeout: 1800,
-            flex_unsupported_models: vec!["gemini-4-argon".into()],
+            flex_unsupported_models: FLEX_UNSUPPORTED_MODELS
+                .iter()
+                .map(|m| (*m).into())
+                .collect(),
             openai_api_version: "v1beta1".into(),
             openai_native: "auto".into(),
         }
@@ -279,11 +294,12 @@ impl Settings {
     pub fn load(path: &Path) -> Result<Self, ConfigError> {
         match std::fs::read_to_string(path) {
             Ok(text) => {
-                let settings: Self =
+                let mut settings: Self =
                     toml::from_str(&text).map_err(|source| ConfigError::Parse {
                         path: path.into(),
                         source,
                     })?;
+                settings.gemini.merge_builtin_flex_unsupported();
                 settings
                     .validate()
                     .map_err(|message| ConfigError::Invalid {
@@ -375,7 +391,27 @@ mod tests {
         let s = Settings::load(&dir.path().join("nope.toml")).unwrap();
         assert_eq!(s.server.port, 8787);
         assert_eq!(s.google.region, "global");
-        assert_eq!(s.gemini.flex_unsupported_models, ["gemini-4-argon"]);
+        assert_eq!(
+            s.gemini.flex_unsupported_models,
+            ["gemini-4-carbon", "gemini-4-argon"]
+        );
+    }
+
+    #[test]
+    fn old_flex_unsupported_list_gets_new_builtin_models() {
+        // 旧版本存下的名单只有 argon；用户自己加的保留，内置的新模型补在后面
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(
+            &path,
+            "[gemini]\nflex_unsupported_models = [\"gemini-4-argon\", \"my-model\"]\n",
+        )
+        .unwrap();
+        let s = Settings::load(&path).unwrap();
+        assert_eq!(
+            s.gemini.flex_unsupported_models,
+            ["gemini-4-argon", "my-model", "gemini-4-carbon"]
+        );
     }
 
     #[test]

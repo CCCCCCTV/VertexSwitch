@@ -23,9 +23,12 @@
 
 # Gemini。来源：https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/model-versions
 #   2026-11-03 用 countTokens 在 global 端点逐个核实可用。未列出的 gemini-* 名字原样转发。
+#   gemini-4-carbon / 4-hydrogen 按 2026-11-14 的官方文档加入（模型页、Flex PayGo 页），没有实测。
 #   已下线、不再列出：gemini-2.5-pro / 2.5-flash / 2.5-flash-lite（2026-10-20），
 #   gemini-2.0-flash（2026-06-01），gemini-3-pro-preview。
 [gemini]
+"gemini-4-carbon" = "gemini-4-carbon"              # 2026-11-10 发布，最强；不支持 Flex；官方注明面向经过验证的企业客户
+"gemini-4-hydrogen" = "gemini-4-hydrogen"          # 2026-11-12 发布，偏速度；支持 Flex（仅 global）
 "gemini-4-argon" = "gemini-4-argon"
 "gemini-3.8-flash" = "gemini-3.8-flash"
 "gemini-3.7-flash" = "gemini-3.7-flash"            # 计划 2027-01-28 下线

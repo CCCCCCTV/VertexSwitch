@@ -294,7 +294,7 @@ mod tests {
     #[test]
     fn aliases_keep_declaration_order() {
         let reg = ModelRegistry::builtin();
-        assert_eq!(reg.aliases(Backend::Gemini)[0], "gemini-4-argon");
+        assert_eq!(reg.aliases(Backend::Gemini)[0], "gemini-4-carbon");
         assert_eq!(reg.aliases(Backend::Claude)[0], "claude-fable-5-1");
         assert!(reg.aliases(Backend::Maas).is_empty());
     }
