@@ -113,7 +113,7 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 
 默认表（2026-11-03 核实，Gemini 已用 countTokens 在 global 实测）：
 - Claude：fable-5-1、fable-5、opus-5-5、opus-5、opus-4-8、opus-4-7、opus-4-6、sonnet-5-5、sonnet-5、sonnet-4-6、haiku-5-5 原样；opus-4-5→`@20251101`；sonnet-4-5→`@20250929`；haiku-4-5→`@20251001`
-- Gemini：4-carbon、4-hydrogen（这两个 2026-11-14 按官方文档加入，未实测；carbon 官方注明面向经过验证的企业客户）、4-argon、3.8-flash、3.7-flash（2027-01-28 下线）、3.6-flash（**2026-11-19 下线**）、3.5-flash、3.5-flash-lite、3.1-flash-lite、3.1-pro-preview、3-flash-preview 原样；3.1-pro、3-pro → 3.1-pro-preview；3-flash → 3-flash-preview
+- Gemini：4-carbon、4-hydrogen（这两个 2026-11-14 按官方文档加入，同日用 countTokens 在 global 实测可用；carbon 官方注明面向经过验证的企业客户）、4-argon、3.8-flash、3.7-flash（2027-01-28 下线）、3.6-flash（**2026-11-19 下线**）、3.5-flash、3.5-flash-lite、3.1-flash-lite、3.1-pro-preview、3-flash-preview 原样；3.1-pro、3-pro → 3.1-pro-preview；3-flash → 3-flash-preview
 - 已下线、不得出现在默认表：gemini-2.5-pro/flash/flash-lite、2.0-flash(-001)、3-pro-preview
 - MaaS：空（官方未给出清单，核实后再加）
 
