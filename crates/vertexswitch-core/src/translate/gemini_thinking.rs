@@ -173,6 +173,7 @@ mod tests {
         // Gemini 4、3.7 / 3.8 Flash、3.1 Pro 没有 MINIMAL（carbon、hydrogen 发 MINIMAL 官方注明返回 400）
         for model in [
             "gemini-4-carbon",
+            "gemini-4-neon",
             "gemini-4-hydrogen",
             "gemini-4-argon",
             "gemini-3.8-flash",

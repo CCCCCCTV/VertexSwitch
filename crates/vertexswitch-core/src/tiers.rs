@@ -5,8 +5,8 @@
 //! - <https://docs.cloud.google.com/vertex-ai/generative-ai/docs/priority-paygo>
 //!
 //! 要点：`X-Vertex-AI-LLM-Shared-Request-Type: flex|priority` 选档位（只带它时先用预配吞吐量）；
-//! 再加 `X-Vertex-AI-LLM-Request-Type: shared` 则只走 PayGo。Flex 只支持 global 且不支持部分
-//! 新模型；Priority 支持 global / us / eu。只有 Gemini 原生生成请求支持这些头。
+//! 再加 `X-Vertex-AI-LLM-Request-Type: shared` 则只走 PayGo。Flex 只支持 global，且只支持
+//! Gemini 3.8 Flash 及更早的模型；Priority 支持 global / us / eu。只有 Gemini 原生生成请求支持这些头。
 
 use std::sync::LazyLock;
 
@@ -26,10 +26,25 @@ pub const FLEX_MAX_TIMEOUT: u64 = 30 * 60;
 const FLEX_REGIONS: &[&str] = &["global"];
 const PRIORITY_REGIONS: &[&str] = &["global", "us", "eu"];
 
-/// 不支持 Flex 的模型：Flex PayGo 文档的支持列表里没有，argon 另有明确注明（2026-11-14 核对）。
-/// 不管配置里的 `gemini.flex_unsupported_models` 怎么写都按不支持处理；读配置时也会并进那份名单，
-/// 旧配置文件里存的名单不会因为出了新模型而过时，界面上也看得到。
-pub const FLEX_UNSUPPORTED_MODELS: &[&str] = &["gemini-4-carbon", "gemini-4-argon"];
+/// 不支持 Flex 的模型。Flex PayGo 文档注明只支持 3.8 Flash 及更早的模型，Gemini 4 起都不支持
+/// （2026-11-19 核对），所以 `gemini-4*` 及更新的模型一律不发 Flex（[`flex_supported`]）；
+/// 这份名单列出已知的几个，读配置时并进 `gemini.flex_unsupported_models`，旧配置文件里存的名单
+/// 不会因为出了新模型而过时，界面上也看得到。
+pub const FLEX_UNSUPPORTED_MODELS: &[&str] = &[
+    "gemini-4-carbon",
+    "gemini-4-neon",
+    "gemini-4-hydrogen",
+    "gemini-4-argon",
+];
+
+/// 这个模型能不能用 Flex：Gemini 4 及更新的不能，内置名单和配置里另加的也不能。
+fn flex_supported(model: &str, extra_unsupported: &[String]) -> bool {
+    let newer_than_flex =
+        crate::translate::gemini_thinking::gemini_major(model).is_some_and(|major| major >= 4);
+    !newer_than_flex
+        && !FLEX_UNSUPPORTED_MODELS.contains(&model)
+        && !extra_unsupported.iter().any(|m| m == model)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
@@ -99,10 +114,7 @@ pub fn plan_tier(tier: Tier, model: &str, region: &str, opts: &TierOptions<'_>) 
             ));
             effective = Tier::Standard;
         }
-        Tier::Flex
-            if FLEX_UNSUPPORTED_MODELS.contains(&model)
-                || opts.flex_unsupported_models.iter().any(|m| m == model) =>
-        {
+        Tier::Flex if !flex_supported(model, opts.flex_unsupported_models) => {
             warnings.push(tr!(
                 "模型 {model} 不支持 Flex，已改用 Standard",
                 "Model {model} doesn't support Flex; using Standard instead"
@@ -293,23 +305,32 @@ mod tests {
     }
 
     #[test]
-    fn builtin_flex_unsupported_applies_without_config() {
-        // 旧配置文件里的名单没有 carbon，照样降级；hydrogen 在 Flex 支持列表里，照常发 flex
-        let carbon = plan_tier(
-            Tier::Flex,
+    fn gemini_4_never_gets_flex() {
+        // 旧配置文件里的名单没有这些模型，照样降级；名单之外的新 Gemini 4 模型也一样
+        for model in [
             "gemini-4-carbon",
-            "global",
-            &TierOptions {
-                shared_only: false,
-                flex_timeout: 1800,
-                flex_unsupported_models: &[],
-            },
-        );
-        assert_eq!(carbon.effective, Tier::Standard);
-        assert!(carbon.headers.is_empty());
-        let hydrogen = plan(Tier::Flex, "gemini-4-hydrogen", "global", false, 1800);
-        assert_eq!(hydrogen.effective, Tier::Flex);
-        assert!(hydrogen.warnings.is_empty());
+            "gemini-4-neon",
+            "gemini-4-hydrogen",
+            "gemini-4-future",
+            "gemini-5-future",
+        ] {
+            let p = plan_tier(
+                Tier::Flex,
+                model,
+                "global",
+                &TierOptions {
+                    shared_only: false,
+                    flex_timeout: 1800,
+                    flex_unsupported_models: &[],
+                },
+            );
+            assert_eq!(p.effective, Tier::Standard, "{model}");
+            assert!(p.headers.is_empty(), "{model}");
+        }
+        // 3.8 Flash 及更早的照常发 flex
+        let p = plan(Tier::Flex, "gemini-3.8-flash", "global", false, 1800);
+        assert_eq!(p.effective, Tier::Flex);
+        assert!(p.warnings.is_empty());
     }
 
     #[test]

@@ -393,7 +393,12 @@ mod tests {
         assert_eq!(s.google.region, "global");
         assert_eq!(
             s.gemini.flex_unsupported_models,
-            ["gemini-4-carbon", "gemini-4-argon"]
+            [
+                "gemini-4-carbon",
+                "gemini-4-neon",
+                "gemini-4-hydrogen",
+                "gemini-4-argon"
+            ]
         );
     }
 
@@ -410,7 +415,13 @@ mod tests {
         let s = Settings::load(&path).unwrap();
         assert_eq!(
             s.gemini.flex_unsupported_models,
-            ["gemini-4-argon", "my-model", "gemini-4-carbon"]
+            [
+                "gemini-4-argon",
+                "my-model",
+                "gemini-4-carbon",
+                "gemini-4-neon",
+                "gemini-4-hydrogen"
+            ]
         );
     }
 

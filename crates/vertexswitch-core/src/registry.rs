@@ -284,6 +284,7 @@ mod tests {
             "gemini-2.0-flash",
             "gemini-2.0-flash-001",
             "gemini-3-pro-preview",
+            "gemini-3.6-flash",
         ];
         let reg = ModelRegistry::builtin();
         for (k, v) in &reg.gemini {

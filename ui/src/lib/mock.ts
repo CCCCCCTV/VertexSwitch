@@ -36,7 +36,7 @@ const settings: Settings = {
     model_tiers: { "gemini-3.5-flash-lite": "flex" },
     shared_only: false,
     flex_server_timeout: 1800,
-    flex_unsupported_models: ["gemini-4-carbon", "gemini-4-argon"],
+    flex_unsupported_models: ["gemini-4-carbon", "gemini-4-neon", "gemini-4-hydrogen", "gemini-4-argon"],
     openai_api_version: "v1beta1",
     openai_native: "auto",
   },
@@ -52,6 +52,7 @@ const models: Models = {
   },
   gemini: {
     "gemini-4-carbon": "gemini-4-carbon",
+    "gemini-4-neon": "gemini-4-neon",
     "gemini-4-hydrogen": "gemini-4-hydrogen",
     "gemini-4-argon": "gemini-4-argon",
     "gemini-3.8-flash": "gemini-3.8-flash",

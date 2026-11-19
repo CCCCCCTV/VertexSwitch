@@ -11,6 +11,8 @@
   const defaultTier = $derived((live.status?.gemini_tier ?? "standard") as Tier);
   const modelTiers = $derived(live.status?.gemini_model_tiers ?? {});
   let flexUnsupported = $state<string[]>([]);
+  // 和核心的规则一致：Flex 只支持 Gemini 3.8 Flash 及更早的模型，gemini-4 起都不支持
+  const newerThanFlex = (model: string) => Number(/^gemini-(\d+)/.exec(model)?.[1] ?? 0) >= 4;
   let tierSaving = $state<string | null>(null);
   let tab = $state<"gemini" | "claude" | "maas">("gemini");
   let busy = $state(false);
@@ -106,7 +108,7 @@
             <td class="mono" class:same={alias === upstream}>{upstream}</td>
             {#if tab === "gemini"}
               {@const own = modelTiers[upstream]}
-              {@const noFlex = flexUnsupported.includes(upstream)}
+              {@const noFlex = flexUnsupported.includes(upstream) || newerThanFlex(upstream)}
               <td class="tier-col">
                 <select
                   class="tier-select"

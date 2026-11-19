@@ -28,7 +28,7 @@
 | gemini | model_tiers | `{}` | 按上游模型 ID 单独设的档位，如 `{"gemini-3.5-flash" = "flex"}`；优先于 tier |
 | gemini | shared_only | false | 加 `X-Vertex-AI-LLM-Request-Type: shared` |
 | gemini | flex_server_timeout | 1800 | 封顶 1800 |
-| gemini | flex_unsupported_models | `["gemini-4-carbon", "gemini-4-argon"]` | 不支持 Flex 的模型；内置名单（Flex PayGo 文档支持列表里没有的）不管这里怎么写都按不支持处理，读配置时也并进这份名单 |
+| gemini | flex_unsupported_models | `["gemini-4-carbon", "gemini-4-neon", "gemini-4-hydrogen", "gemini-4-argon"]` | 另外不支持 Flex 的模型；Gemini 4 起一律不发 Flex，内置的已知名单读配置时也并进这份名单 |
 | gemini | openai_api_version | `v1beta1` | Gemini 的 OpenAI 兼容接口版本 |
 | gemini | openai_native | `auto` | OpenAI 格式的 Gemini 请求：auto 需要档位头时转原生（§13）/ always 总是转 / never 总走兼容接口（档位不生效） |
 | maas | region / api_version | `""` / `v1` | |
@@ -113,8 +113,10 @@ publisher 模型：`{base}/projects/{p}/locations/{region}/publishers/{publisher
 
 默认表（2026-11-03 核实，Gemini 已用 countTokens 在 global 实测）：
 - Claude：fable-5-1、fable-5、opus-5-5、opus-5、opus-4-8、opus-4-7、opus-4-6、sonnet-5-5、sonnet-5、sonnet-4-6、haiku-5-5 原样；opus-4-5→`@20251101`；sonnet-4-5→`@20250929`；haiku-4-5→`@20251001`
-- Gemini：4-carbon、4-hydrogen（这两个 2026-11-14 按官方文档加入，同日用 countTokens 在 global 实测可用；carbon 官方注明面向经过验证的企业客户）、4-argon、3.8-flash、3.7-flash（2027-01-28 下线）、3.6-flash（**2026-11-19 下线**）、3.5-flash、3.5-flash-lite、3.1-flash-lite、3.1-pro-preview、3-flash-preview 原样；3.1-pro、3-pro → 3.1-pro-preview；3-flash → 3-flash-preview
-- 已下线、不得出现在默认表：gemini-2.5-pro/flash/flash-lite、2.0-flash(-001)、3-pro-preview
+- Gemini：4-carbon、4-neon、4-hydrogen、4-argon、3.8-flash、3.7-flash（2027-01-28 下线）、3.5-flash、3.5-flash-lite、3.1-flash-lite、3.1-pro-preview、3-flash-preview 原样；3.1-pro、3-pro → 3.1-pro-preview；3-flash → 3-flash-preview
+  - carbon、hydrogen 2026-11-14 按官方文档加入，同日 countTokens 在 global 实测可用；carbon 官方注明面向经过验证的企业客户。
+  - neon 2026-11-18 发布（Google 博客），2026-11-19 Vertex 文档还没收录，countTokens 在 global 实测可用。
+- 已下线、不得出现在默认表：gemini-2.5-pro/flash/flash-lite、2.0-flash(-001)、3-pro-preview、3.6-flash（2026-11-19）
 - MaaS：空（官方未给出清单，核实后再加）
 
 ## 8. 入口
@@ -164,7 +166,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - 用哪个档位：请求头 `X-VertexSwitch-Tier`（写错时忽略）> `gemini.model_tiers[上游模型 ID]` > `gemini.tier`。配置里的档位名在加载 / 修改时校验，错了拒绝（400 / 保留旧配置）。
 - 只有原生接口能带档位头：Gemini 原生入口直接带；OpenAI 入口的 Gemini 请求需要时转成原生格式（§13）。
 - 头：`X-Vertex-AI-LLM-Shared-Request-Type: flex|priority`；`shared_only` 时再加 `X-Vertex-AI-LLM-Request-Type: shared`；Flex 加 `X-Server-Timeout: <秒>`（1..1800）。
-- Flex：只支持 `global`；不支持 gemini-4-carbon、gemini-4-argon（Flex PayGo 文档的支持列表里没有，2026-11-14 核对）以及 flex_unsupported_models 里另加的模型。gemini-4-hydrogen 在支持列表里。
+- Flex：只支持 `global`；只支持 Gemini 3.8 Flash 及更早的模型（Flex PayGo 文档，2026-11-19 核对），所以 `gemini-4*` 及更新的一律不发 Flex，flex_unsupported_models 里另加的也不发。2026-11-14 曾读到 hydrogen 在支持列表里，11-19 复核时列表里已没有它。
 - Priority：支持 `global`、`us`、`eu`（旧项目误以为只支持 global）；argon 可用，carbon、hydrogen 官方注明支持。
 - 不支持 → 降级为 Standard、记告警，且**任何档位头都不发**（包括 shared）。
 - 明确选 Standard 且 shared_only → 只发 `Request-Type: shared`。
