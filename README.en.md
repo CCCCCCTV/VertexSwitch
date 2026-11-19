@@ -98,7 +98,7 @@ api_key = ""           # when set, clients must send this key
 
 [retry]
 busy = true            # retry when upstream is busy (429 / 503 / 529)
-busy_attempts = 3      # max retries (1-10)
+busy_attempts = 3      # max retries (1-9999)
 busy_wait = "2^(n-1)"  # seconds before retry n: a number or a formula with + - * / ^, brackets, min(), max()
 ```
 

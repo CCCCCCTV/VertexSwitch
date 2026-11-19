@@ -54,14 +54,20 @@
   let autostart = $state<boolean | null>(null);
   let systemMessage = $state<{ tone: "ok" | "bad"; text: string } | null>(null);
 
-  // 繁忙重试的等待算式：交给核心解析，显示每次大约等几秒；写错时显示原因
+  // 繁忙重试的等待算式：交给核心解析，显示每次大约等几秒；写错时显示原因。
+  // 次数最多 9999，预览只列前 10 次，后面用“…”表示
+  const MAX_BUSY_ATTEMPTS = 9999;
+  const WAIT_PREVIEW_COUNT = 10;
   const WAIT_EXAMPLES = ["2^(n-1)", "5", "min(30, 3*n)"] as const;
   let waitPreview = $state<number[]>([]);
   let waitError = $state("");
   let waitSeq = 0;
+  const busyAttempts = $derived(
+    Math.min(Math.max(Math.trunc(Number(draft?.retry.busy_attempts)) || 1, 1), MAX_BUSY_ATTEMPTS),
+  );
   $effect(() => {
     const expr = draft?.retry.busy_wait;
-    const count = Math.min(Math.max(Math.trunc(Number(draft?.retry.busy_attempts)) || 1, 1), 10);
+    const count = Math.min(busyAttempts, WAIT_PREVIEW_COUNT);
     if (expr === undefined) return;
     const seq = ++waitSeq;
     const timer = setTimeout(() => {
@@ -299,7 +305,7 @@
         </label>
         <label class="field">
           <span>{t("settings.busyAttempts")}</span>
-          <input type="number" min="1" max="10" bind:value={draft.retry.busy_attempts} disabled={!draft.retry.busy} />
+          <input type="number" min="1" max={MAX_BUSY_ATTEMPTS} bind:value={draft.retry.busy_attempts} disabled={!draft.retry.busy} />
           <small>{t("settings.busyAttemptsHint")}</small>
         </label>
         <label class="field">
@@ -310,7 +316,11 @@
           {#if waitError}
             <small class="wait-error">{waitError}</small>
           {:else if waitPreview.length}
-            <small>{t("settings.busyWaitPreview", { list: waitPreview.map(seconds).join(" → ") })}</small>
+            <small
+              >{t("settings.busyWaitPreview", {
+                list: waitPreview.map(seconds).join(" → ") + (busyAttempts > waitPreview.length ? " → …" : ""),
+              })}</small
+            >
           {/if}
         </label>
         <div class="field">

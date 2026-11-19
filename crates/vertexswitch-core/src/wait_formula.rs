@@ -3,10 +3,14 @@
 //! 支持数字、`n`、`+ - * / ^`（`^` 也可写成 `**`）、括号、`min(…)`、`max(…)`；全角括号、逗号与
 //! `×` `÷` 当作对应的半角符号。`^` 右结合且比负号优先：`-2^2` = -4，`2^-1` = 0.5。
 //! 一个数字本身就是合法的算式（每次等这么久）。结果为负按 0 算，超过 [`MAX_WAIT_SECONDS`] 按上限算；
-//! 对 1..=10 次重试中任何一次算不出有限数（如 `1/(n-1)`）的算式视为无效。
+//! 对前 [`CHECKED_RETRIES`] 次重试中任何一次算不出有限数（如 `1/(n-1)`）的算式视为无效。
+//! 再往后（重试次数最多可设到 9999）指数类算式会溢出成无穷大，按上限算；算不出数的也按上限算，
+//! 宁可多等也不连发。
 
 use crate::tr;
-use crate::transport::MAX_BUSY_RETRIES;
+
+/// 解析时检查前几次重试都能算出有限数，用来发现 `1/(n-1)` 这类写错的算式
+const CHECKED_RETRIES: u32 = 10;
 
 /// 默认：1、2、4、8……秒
 pub const DEFAULT: &str = "2^(n-1)";
@@ -62,7 +66,7 @@ impl WaitFormula {
             return Err(unexpected(extra));
         }
         let formula = Self { node };
-        for n in 1..=MAX_BUSY_RETRIES {
+        for n in 1..=CHECKED_RETRIES {
             let value = formula.raw(n);
             if !value.is_finite() {
                 return Err(tr!(
@@ -78,13 +82,14 @@ impl WaitFormula {
         eval(&self.node, f64::from(n))
     }
 
-    /// 第 `n` 次重试前等待的秒数，限制在 0 ~ [`MAX_WAIT_SECONDS`]。
+    /// 第 `n` 次重试前等待的秒数，限制在 0 ~ [`MAX_WAIT_SECONDS`]。溢出成无穷大的按上限算，
+    /// 算不出数（NaN）的也按上限算，不会变成 0 秒连发。
     pub fn seconds(&self, n: u32) -> f64 {
         let value = self.raw(n);
-        if value.is_finite() {
-            value.clamp(0.0, MAX_WAIT_SECONDS)
+        if value.is_nan() {
+            MAX_WAIT_SECONDS
         } else {
-            0.0
+            value.clamp(0.0, MAX_WAIT_SECONDS)
         }
     }
 }
@@ -381,6 +386,24 @@ mod tests {
         assert_eq!(waits("-5"), [0.0; 5]);
         assert_eq!(waits("1000"), [MAX_WAIT_SECONDS; 5]);
         assert_eq!(waits("10^n")[..3], [10.0, 100.0, MAX_WAIT_SECONDS]);
+    }
+
+    #[test]
+    fn late_retries_never_drop_to_zero() {
+        // 重试次数可设到 9999：默认算式第 1025 次起溢出成无穷大，仍按上限等，不能变成 0 秒连发
+        let f = WaitFormula::default();
+        assert_eq!(f.seconds(1025), MAX_WAIT_SECONDS);
+        assert_eq!(
+            f.seconds(crate::transport::MAX_BUSY_RETRIES),
+            MAX_WAIT_SECONDS
+        );
+        // 无穷大减无穷大算不出数，也按上限
+        let f = WaitFormula::parse("2^n - 2^n").unwrap();
+        assert_eq!(f.seconds(1), 0.0);
+        assert_eq!(f.seconds(2000), MAX_WAIT_SECONDS);
+        // 负无穷按 0
+        let f = WaitFormula::parse("-(2^n)").unwrap();
+        assert_eq!(f.seconds(2000), 0.0);
     }
 
     #[test]

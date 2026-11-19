@@ -17,8 +17,8 @@ use crate::wait_formula::{MAX_WAIT_SECONDS, WaitFormula};
 
 pub const VERTEX: &str = "Vertex AI";
 
-/// 繁忙重试次数的上限（配置写得再大也按这个算）
-pub const MAX_BUSY_RETRIES: u32 = 10;
+/// 繁忙重试次数的上限（配置写得再大也按这个算）。单次等待最多 300 秒，客户端断开时重试随之停止
+pub const MAX_BUSY_RETRIES: u32 = 9999;
 /// 日志字段 kind：上游繁忙，即将重试 / 重试后成功（界面“运行状况”按它识别）
 pub const LOG_KIND_RETRY: &str = "upstream_retry";
 pub const LOG_KIND_RETRY_OK: &str = "upstream_retry_ok";
@@ -159,11 +159,7 @@ impl Transport {
     /// 最多等多久由客户端决定：客户端断开时整个请求被丢弃，重试随之停止。
     pub async fn open(&self, req: &UpstreamRequest) -> ProxyResult<reqwest::Response> {
         let headers = header_map(&req.headers)?;
-        let limit = if self.retry.busy {
-            self.retry.busy_attempts.min(MAX_BUSY_RETRIES)
-        } else {
-            0
-        };
+        let limit = busy_retry_limit(self.retry.busy, self.retry.busy_attempts);
         let upstream = VERTEX;
         // 只在要写日志时才解析请求体取模型名
         let mut model_cache: Option<String> = None;
@@ -401,9 +397,26 @@ fn describe(error: &reqwest::Error) -> String {
     text
 }
 
+/// 实际最多重试几次：关掉时 0，否则按配置，超过 [`MAX_BUSY_RETRIES`] 按上限。
+fn busy_retry_limit(busy: bool, attempts: u32) -> u32 {
+    if busy {
+        attempts.min(MAX_BUSY_RETRIES)
+    } else {
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn busy_retry_limit_is_capped() {
+        assert_eq!(busy_retry_limit(true, 3), 3);
+        assert_eq!(busy_retry_limit(true, 9999), 9999);
+        assert_eq!(busy_retry_limit(true, 20_000), MAX_BUSY_RETRIES);
+        assert_eq!(busy_retry_limit(false, 9999), 0);
+    }
 
     fn retry_after(value: &str) -> HeaderMap {
         let mut h = HeaderMap::new();

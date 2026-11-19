@@ -206,7 +206,7 @@ export const zh = {
   "settings.busyRetry": "上游繁忙时自动重试",
   "settings.busyRetryHint": "遇到 429（限流 / 资源耗尽）、503、529 时等一会儿再发（等多久见下方）；500 只重试一次；客户端断开即停止",
   "settings.busyAttempts": "最多重试次数",
-  "settings.busyAttemptsHint": "1–10 次",
+  "settings.busyAttemptsHint": "1–9999 次，单次最多等 300 秒；客户端断开时停止重试",
   "settings.busyWait": "重试前等待（秒）",
   "settings.busyWaitPreview": "依次约等 {list} 秒（实际会上下浮动 25%）",
   "settings.busyWaitSyntax": "写法",

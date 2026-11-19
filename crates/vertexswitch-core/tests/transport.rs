@@ -163,14 +163,15 @@ async fn busy_retry_can_be_turned_off() {
 }
 
 #[tokio::test]
-async fn busy_limit_is_capped() {
+async fn busy_attempts_above_ten_are_honored() {
+    // 上限是 9999（压到上限的逻辑见 transport 里的单元测试），超过 10 次的设置要照做
     let (url, count) = status_server(|_| ("529 Overloaded", "")).await;
-    let response = busy_transport(true, 1000)
+    let response = busy_transport(true, 25)
         .open(&req(&url, false))
         .await
         .unwrap();
     assert_eq!(response.status(), 529);
-    assert_eq!(count.load(Ordering::SeqCst), 11);
+    assert_eq!(count.load(Ordering::SeqCst), 26);
 }
 
 #[tokio::test]

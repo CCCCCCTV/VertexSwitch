@@ -200,7 +200,7 @@ export const en: Record<MessageKey, string> = {
   "settings.busyRetry": "Retry when upstream is busy",
   "settings.busyRetryHint": "On 429 (rate limited / resource exhausted), 503 or 529, wait and resend (see below for how long); 500 is retried once; stops when the client disconnects",
   "settings.busyAttempts": "Max retries",
-  "settings.busyAttemptsHint": "1–10",
+  "settings.busyAttemptsHint": "1–9999; each wait is at most 300 s, and retries stop when the client disconnects",
   "settings.busyWait": "Wait before retrying (s)",
   "settings.busyWaitPreview": "Waits about {list} s in turn (±25% random jitter)",
   "settings.busyWaitSyntax": "How to write it",
