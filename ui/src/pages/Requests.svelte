@@ -59,7 +59,11 @@
               <div class="mono ellipsis" title={r.model ?? undefined}>{r.model ?? "—"}</div>
               {#if r.error}<div class="err" title={r.error}>{r.error}</div>{/if}
             </td>
-            <td class="tier-col">{#if r.tier}<span class="pill accent">{r.tier}</span>{:else}<span class="faint">—</span>{/if}</td>
+            <td class="tier-col nowrap">
+              {#if r.tier}<span class="pill accent">{r.tier}</span>{:else}<span class="faint">—</span>{/if}{#if r.region}<span
+                  class="region mono faint">{r.region}</span
+                >{/if}
+            </td>
             <td>
               <span class="pill {OUTCOME_TONE[r.outcome]}">
                 {r.status} {t(`outcome.${r.outcome}`)}
@@ -151,6 +155,11 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .region {
+    margin-left: 6px;
+    font-size: 12px;
   }
 
   @media (max-width: 900px) {

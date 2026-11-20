@@ -89,7 +89,15 @@ fn model_in_url(url: &str) -> String {
         .unwrap_or_default()
 }
 
+/// 上游返回非 2xx 时换个地方立刻重发（区域切换，见 `regions`）。
+pub trait Reroute: Send {
+    /// 当前请求收到了 `status`：要马上改发别处时返回新的请求，否则 None（照常处理）。
+    /// 必须保证一直重复下去终会返回 None（例如一圈区域都试过之后）。
+    fn reroute(&mut self, status: u16) -> Option<UpstreamRequest>;
+}
+
 /// 一次上游请求（都发往 Vertex AI）。
+#[derive(Clone)]
 pub struct UpstreamRequest {
     pub url: String,
     pub headers: Vec<(String, String)>,
@@ -158,12 +166,22 @@ impl Transport {
     /// 所以对流式请求同样适用。不管上游过了多久才返回繁忙都会重试（Standard 也可能先挂一分多钟再回 429）；
     /// 最多等多久由客户端决定：客户端断开时整个请求被丢弃，重试随之停止。
     pub async fn open(&self, req: &UpstreamRequest) -> ProxyResult<reqwest::Response> {
-        let headers = header_map(&req.headers)?;
+        self.open_with(req.clone(), None).await
+    }
+
+    /// 同 [`open`](Self::open)，另外上游返回非 2xx 时先问 `reroute` 要不要立刻改发别处
+    /// （区域切换）：给了新请求就马上发它，不等待、不算繁忙重试；没给就照常处理。
+    pub async fn open_with(
+        &self,
+        mut req: UpstreamRequest,
+        mut reroute: Option<&mut (dyn Reroute + '_)>,
+    ) -> ProxyResult<reqwest::Response> {
+        let mut headers = header_map(&req.headers)?;
         let limit = busy_retry_limit(self.retry.busy, self.retry.busy_attempts);
         let upstream = VERTEX;
-        // 只在要写日志时才解析请求体取模型名
+        // 只在要写日志时才解析请求体取模型名（换区域不换模型）
         let mut model_cache: Option<String> = None;
-        let mut model = || {
+        let mut model = |req: &UpstreamRequest| {
             model_cache
                 .get_or_insert_with(|| upstream_model(&req.url, &req.body))
                 .clone()
@@ -171,8 +189,16 @@ impl Transport {
         let mut retried = 0;
         let mut retried_500 = false;
         loop {
-            let response = self.send(req, &headers).await?;
+            let response = self.send(&req, &headers).await?;
             let status = response.status().as_u16();
+            if !response.status().is_success()
+                && let Some(next) = reroute.as_deref_mut().and_then(|r| r.reroute(status))
+            {
+                let _ = tokio::time::timeout(Duration::from_secs(5), response.bytes()).await;
+                req = next;
+                headers = header_map(&req.headers)?;
+                continue;
+            }
             let busy = is_busy(status, retried_500);
             let wait = if busy && retried < limit {
                 busy_wait(&self.busy_wait, retried, response.headers())
@@ -183,7 +209,7 @@ impl Transport {
                 if retried > 0 && response.status().is_success() {
                     tracing::info!(
                         kind = LOG_KIND_RETRY_OK,
-                        model = %model(),
+                        model = %model(&req),
                         retries = retried,
                         "{}",
                         tr!(
@@ -193,7 +219,7 @@ impl Transport {
                     );
                 } else if retried > 0 {
                     tracing::warn!(
-                        model = %model(),
+                        model = %model(&req),
                         "{}",
                         tr!(
                             "{upstream} 重试 {retried} 次后仍返回 {status}，交给客户端处理",
@@ -207,7 +233,7 @@ impl Transport {
             retried_500 |= status == 500;
             tracing::warn!(
                 kind = LOG_KIND_RETRY,
-                model = %model(),
+                model = %model(&req),
                 status,
                 "{}",
                 tr!(
@@ -232,6 +258,8 @@ impl Transport {
         let attempts = self.retry.attempts + 1;
         let upstream = VERTEX;
         for attempt in 1..=attempts {
+            // 区域切换按“从发到这个区域起”算首字，记下每次发出的时刻
+            crate::metrics::note(|i| i.upstream_sent = Some(Instant::now()));
             let request = self
                 .client
                 .post(&req.url)

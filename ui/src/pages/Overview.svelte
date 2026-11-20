@@ -290,8 +290,20 @@
         {/each}
       </div>
       <p class="note faint">
-        {t("overview.tierNote")}<span class="mono">{status.gemini_region}</span>
+        {t("overview.tierNote")}<span class="mono">{status.gemini_region}</span>{#if status.gemini_region_switch?.enabled}{t(
+            "overview.regionSwitchOn",
+          )}{/if}
       </p>
+      {#each status.gemini_region_switch?.models ?? [] as m (m.model)}
+        <p class="note switched">
+          {t(m.settled ? "overview.regionSettled" : "overview.regionSwitched", {
+            model: m.model,
+            region: m.region,
+            home: status.gemini_region_switch.home,
+            minutes: Math.max(1, Math.ceil(m.reset_in_ms / 60_000)),
+          })}
+        </p>
+      {/each}
       <p class="note own">
         <button class="more" onclick={() => go("models")}>
           {ownTiers ? t("overview.ownTiers", { n: ownTiers }) : t("overview.setPerModel")}<ChevronRight size={15} />
@@ -598,6 +610,12 @@
 
   .note.own {
     margin-top: -4px;
+  }
+
+  /* 区域切换中的模型：一行一个，紧跟在“区域：…”下面 */
+  .note.switched {
+    margin-top: -4px;
+    color: var(--warn);
   }
 
   /* 运行状况 */

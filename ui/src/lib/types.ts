@@ -16,6 +16,8 @@ export interface Status {
   gemini_tier: Tier;
   /** 按模型单独设的档位（键为上游模型 ID），没列出的跟随 gemini_tier */
   gemini_model_tiers: Record<string, Tier>;
+  /** 区域切换：models 只列离开过平时区域的模型 */
+  gemini_region_switch: { enabled: boolean; home: string; models: ModelRegion[] };
   google_token: string;
   project_id?: string;
   listen: string;
@@ -24,6 +26,30 @@ export interface Status {
   models: { claude: number; gemini: number; maas: number };
   config_path: string | null;
   server: ServerInfo;
+}
+
+/** 某个模型的区域切换状态（SPEC §9a） */
+export interface ModelRegion {
+  model: string;
+  region: string;
+  away_ms: number;
+  /** 离重置回平时区域还有多久 */
+  reset_in_ms: number;
+  recorded_region: string | null;
+  recorded_first_byte_ms: number | null;
+  recorded_tokens_per_second: number | null;
+  /** 已回到记录的区域并停在那里 */
+  settled: boolean;
+  /** 这个模型没有的区域（404） */
+  missing: string[];
+}
+
+export interface RegionSwitchSettings {
+  enabled: boolean;
+  regions: string[];
+  slow_first_byte_seconds: number;
+  slow_tokens_per_second: number;
+  reset_minutes: number;
 }
 
 export interface Settings {
@@ -54,6 +80,8 @@ export interface Settings {
     openai_api_version: string;
     /** OpenAI 格式的 Gemini 请求：auto 需要档位时转原生 / always 总是转 / never 从不转 */
     openai_native: "auto" | "always" | "never";
+    /** 区域切换；平时区域就是上面的 region */
+    region_switch: RegionSwitchSettings;
   };
   maas: { region: string; api_version: string };
   openai: { default_max_tokens: number };
@@ -88,6 +116,8 @@ export interface RequestRecord {
   backend: string | null;
   tier: Tier | null;
   stream: boolean;
+  /** 实际发往的区域（Gemini；换过区域时是最后一个） */
+  region: string | null;
   status: number;
   duration_ms: number;
   /** 首字耗时：收到请求到发出第一段内容（流式含排队、重试、思考；非流式约等于总耗时）；没发出内容时为 null */

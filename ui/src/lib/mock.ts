@@ -39,6 +39,13 @@ const settings: Settings = {
     flex_unsupported_models: ["gemini-4-carbon", "gemini-4-neon", "gemini-4-hydrogen", "gemini-4-argon"],
     openai_api_version: "v1beta1",
     openai_native: "auto",
+    region_switch: {
+      enabled: true,
+      regions: ["global", "us", "eu"],
+      slow_first_byte_seconds: 60,
+      slow_tokens_per_second: 20,
+      reset_minutes: 30,
+    },
   },
   maas: { region: "", api_version: "v1" },
   openai: { default_max_tokens: 8192 },
@@ -104,6 +111,7 @@ function request(i: number, ts = Date.now()) {
     backend: s.backend ?? null,
     tier: s.backend === "gemini" ? (settings.gemini.model_tiers[s.model ?? ""] ?? settings.gemini.tier) : null,
     stream: s.stream ?? false,
+    region: s.backend === "gemini" ? (s.model === "gemini-4-argon" ? "us" : settings.gemini.region || settings.google.region) : null,
     status: s.status ?? 200,
     duration_ms: s.status ? 1 : 400 + ((i * 937) % 9000),
     first_byte_ms: null,
@@ -175,6 +183,26 @@ function status(): Status {
     gemini_region: settings.gemini.region || settings.google.region,
     gemini_tier: settings.gemini.tier,
     gemini_model_tiers: { ...settings.gemini.model_tiers },
+    gemini_region_switch: {
+      enabled: settings.gemini.region_switch.enabled,
+      home: settings.gemini.region || settings.google.region,
+      // 示例：argon 在 global 被限流，换到了 us
+      models: settings.gemini.region_switch.enabled
+        ? [
+            {
+              model: "gemini-4-argon",
+              region: "us",
+              away_ms: 6 * 60_000,
+              reset_in_ms: (settings.gemini.region_switch.reset_minutes - 6) * 60_000,
+              recorded_region: null,
+              recorded_first_byte_ms: null,
+              recorded_tokens_per_second: null,
+              settled: false,
+              missing: [],
+            },
+          ]
+        : [],
+    },
     google_token: "ok",
     project_id: "my-project-123",
     listen: `${settings.server.host}:${settings.server.port}`,

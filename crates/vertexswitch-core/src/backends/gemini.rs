@@ -37,6 +37,23 @@ pub fn tier_plan(
     action: &str,
     override_tier: Option<&str>,
 ) -> Option<TierPlan> {
+    tier_plan_in(
+        settings,
+        model,
+        action,
+        override_tier,
+        settings.gemini_region(),
+    )
+}
+
+/// 同 [`tier_plan`]，发往指定区域（区域切换后不一定是平时区域；Flex 只支持 global）。
+pub fn tier_plan_in(
+    settings: &Settings,
+    model: &str,
+    action: &str,
+    override_tier: Option<&str>,
+    region: &str,
+) -> Option<TierPlan> {
     if !GENERATE_ACTIONS.contains(&action) {
         return None;
     }
@@ -47,7 +64,7 @@ pub fn tier_plan(
     Some(plan_tier(
         tier,
         model,
-        settings.gemini_region(),
+        region,
         &TierOptions {
             shared_only: g.shared_only,
             flex_timeout: g.flex_server_timeout,

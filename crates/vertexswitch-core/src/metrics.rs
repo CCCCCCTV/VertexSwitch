@@ -10,7 +10,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::task::{Context, Poll};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::{
     body::Body,
@@ -24,8 +24,10 @@ use regex::bytes::Regex;
 use serde::Serialize;
 
 use crate::app::SharedState;
+use crate::config::RegionSwitchSettings;
 use crate::errors::{Protocol, ProxyError, protocol_for_path};
 use crate::logs::{Ring, now_ms};
+use crate::regions::{RegionSwitch, Sample};
 use crate::tr;
 
 /// 处理函数填写的请求信息。
@@ -35,6 +37,39 @@ pub struct RequestInfo {
     pub backend: Option<&'static str>,
     pub tier: Option<&'static str>,
     pub stream: bool,
+    /// 最后一次发往的区域（Gemini）
+    pub region: Option<String>,
+    /// 最后一次发往上游的时刻（换区域、重试都会更新）
+    pub upstream_sent: Option<Instant>,
+    /// 开了区域切换时：请求成功结束后把表现交给它
+    pub region_probe: Option<RegionProbe>,
+}
+
+/// 请求结束后把在这个区域的表现交给区域切换（只看成功的流式请求）。
+#[derive(Debug, Clone)]
+pub struct RegionProbe {
+    pub switch: Arc<RegionSwitch>,
+    pub settings: RegionSwitchSettings,
+    pub home: String,
+    pub model: String,
+}
+
+impl RegionProbe {
+    fn observe(
+        &self,
+        region: &str,
+        sent: Instant,
+        first_byte: Instant,
+        output_tokens: Option<u64>,
+    ) {
+        let sample = Sample::new(
+            first_byte.saturating_duration_since(sent).as_millis() as u64,
+            output_tokens,
+            first_byte.elapsed(),
+        );
+        self.switch
+            .observe(&self.settings, &self.home, &self.model, region, sample);
+    }
 }
 
 tokio::task_local! {
@@ -57,6 +92,8 @@ pub struct RequestRecord {
     pub backend: Option<&'static str>,
     pub tier: Option<&'static str>,
     pub stream: bool,
+    /// 实际发往的区域（Gemini；换过区域时是最后一个）
+    pub region: Option<String>,
     pub status: u16,
     pub duration_ms: u64,
     /// 首字耗时：从收到请求到发出第一段响应体。流式请求里包括排队、重试和模型思考；
@@ -327,6 +364,18 @@ impl Pending {
         } else {
             outcome
         };
+        if outcome == "ok"
+            && info.stream
+            && let (Some(probe), Some(region), Some(sent), Some(first_byte_ms)) = (
+                &info.region_probe,
+                &info.region,
+                info.upstream_sent,
+                self.first_byte_ms,
+            )
+        {
+            let first_byte = self.started + Duration::from_millis(first_byte_ms);
+            probe.observe(region, sent, first_byte, output_tokens);
+        }
         self.metrics.finish(RequestRecord {
             seq: self.metrics.requests.next_seq(),
             ts_ms: now_ms(),
@@ -337,6 +386,7 @@ impl Pending {
             backend: info.backend,
             tier: info.tier,
             stream: info.stream,
+            region: info.region,
             status: self.status,
             duration_ms: self.started.elapsed().as_millis() as u64,
             first_byte_ms: self.first_byte_ms,
@@ -484,6 +534,7 @@ mod tests {
             backend: Some("claude"),
             tier: None,
             stream: false,
+            region: None,
             status: 200,
             duration_ms: 1500,
             first_byte_ms: Some(1500),

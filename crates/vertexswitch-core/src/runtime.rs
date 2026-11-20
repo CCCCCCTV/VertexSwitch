@@ -9,6 +9,7 @@ use crate::auth::{ServiceAccountAuth, TokenSource};
 use crate::backends::vertex;
 use crate::config::Settings;
 use crate::errors::{ProxyError, ProxyResult};
+use crate::regions::RegionSwitch;
 use crate::registry::ModelRegistry;
 use crate::tr;
 use crate::transport::Transport;
@@ -17,6 +18,8 @@ pub struct Runtime {
     pub settings: Settings,
     pub tokens: Arc<TokenSource>,
     pub transport: Transport,
+    /// 区域切换的状态，跨配置快照共享
+    pub regions: Arc<RegionSwitch>,
     registry: Arc<ModelRegistry>,
 }
 
@@ -27,6 +30,7 @@ impl Runtime {
             settings,
             tokens: Arc::new(tokens),
             transport,
+            regions: Arc::default(),
             registry: Arc::new(registry),
         }
     }
@@ -57,10 +61,17 @@ impl Runtime {
         } else {
             Transport::new(settings.timeouts.clone(), settings.retry.clone())
         };
+        // 区域切换的配置或平时区域变了：各模型回到平时区域重新开始
+        if settings.gemini.region_switch != self.settings.gemini.region_switch
+            || settings.gemini_region() != self.settings.gemini_region()
+        {
+            self.regions.reset();
+        }
         Self {
             settings,
             tokens,
             transport,
+            regions: self.regions.clone(),
             registry: self.registry.clone(),
         }
     }
@@ -70,6 +81,7 @@ impl Runtime {
             settings: self.settings.clone(),
             tokens: self.tokens.clone(),
             transport: self.transport.clone(),
+            regions: self.regions.clone(),
             registry: Arc::new(registry),
         }
     }

@@ -88,6 +88,9 @@
   });
   const seconds = (v: number) => String(v < 10 ? +v.toFixed(2) : Math.round(v));
 
+  /** 轮换区域：逗号、空格或顿号分隔，去掉空的和重复的 */
+  const parseRegions = (text: string) => [...new Set(text.split(/[\s,，、]+/).filter(Boolean))];
+
   /** 只包含改动字段的合并补丁（RFC 7396）。数组整体替换。 */
   function diff(a: any, b: any): any {
     const out: any = {};
@@ -271,6 +274,38 @@
           <span>{t("settings.sharedOnly")}<small>{t("settings.sharedOnlyHint")}</small></span>
         </label>
       </div>
+      <label class="check">
+        <input type="checkbox" bind:checked={draft.gemini.region_switch.enabled} />
+        <span>{t("settings.regionSwitch")}<small>{t("settings.regionSwitchHint")}</small></span>
+      </label>
+      {#if draft.gemini.region_switch.enabled}
+        {@const rs = draft.gemini.region_switch}
+        <div class="two">
+          <label class="field">
+            <span>{t("settings.regionSwitchRegions")}</span>
+            <!-- 失焦或回车时才解析，打字过程中不改写输入框 -->
+            <input type="text" class="mono" value={rs.regions.join(", ")} spellcheck="false" autocomplete="off"
+              onchange={(e) => (rs.regions = parseRegions(e.currentTarget.value))}
+            />
+            <small>{t("settings.regionSwitchRegionsHint", { home: draft.gemini.region || draft.google.region })}</small>
+          </label>
+          <label class="field">
+            <span>{t("settings.regionSwitchReset")}</span>
+            <input type="number" min="1" step="1" bind:value={rs.reset_minutes} />
+            <small>{t("settings.regionSwitchResetHint")}</small>
+          </label>
+          <label class="field">
+            <span>{t("settings.regionSwitchFirstByte")}</span>
+            <input type="number" min="0" step="1" bind:value={rs.slow_first_byte_seconds} />
+            <small>{t("settings.regionSwitchFirstByteHint")}</small>
+          </label>
+          <label class="field">
+            <span>{t("settings.regionSwitchSpeed")}</span>
+            <input type="number" min="0" step="1" bind:value={rs.slow_tokens_per_second} />
+            <small>{t("settings.regionSwitchSpeedHint")}</small>
+          </label>
+        </div>
+      {/if}
     </section>
 
     <section class="panel">

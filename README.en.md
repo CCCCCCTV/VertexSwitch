@@ -25,6 +25,7 @@ The proxy core (`crates/vertexswitch-core`) implements:
 - Model lists: `/v1/models` (Anthropic / OpenAI format) and `/v1beta/models` (Gemini format)
 - Admin API `/admin/api/*`: status, config read/write (applied immediately), model table, logs and request records (with live SSE streams), metrics and test requests; config and model table files reload automatically
 - Automatic retries when upstream is busy (429 resource exhausted / rate limited, 503, Claude's 529 overloaded): up to 3 retries by default, waiting about 1, 2 and 4 s with random jitter and honouring `Retry-After`; under Settings → Proxy server you can turn it off, change the count, and set the wait as a number or a formula of the retry number `n` (e.g. `5`, `min(30, 3*n)`); stops as soon as the client disconnects
+- Automatic Gemini region switching (off by default; turn it on in Settings → Gemini): when a region returns 429 / 503 the request is resent to the next region right away; when streams are slow to start or slow to output, later requests move to another region, and back again if that one is slower. Tracked per model, returning to the usual region after a while
 - `/metrics`: Prometheus metrics
 - Desktop app (`src-tauri` + `ui`): stays in the tray (closing the window hides it; the tray menu switches the Gemini tier),
   with Overview / Requests / Logs / Models / Settings pages in Chinese or English; the proxy core runs in the same process
@@ -92,6 +93,13 @@ openai_native = "auto" # OpenAI-format Gemini requests that need a tier are conv
 
 [gemini.model_tiers]   # per upstream model, overrides the default tier (also editable on the Models page)
 "gemini-3.5-flash" = "flex"
+
+[gemini.region_switch] # switch regions automatically (off by default); the usual region is gemini.region above
+enabled = true
+regions = ["global", "us", "eu"]  # on 429 / 503 the request is resent to the next region right away
+slow_first_byte_seconds = 60      # a stream slower than this to its first output moves later requests; 0 = off
+slow_tokens_per_second = 20       # a stream outputting slower than this moves later requests; 0 = off
+reset_minutes = 30                # go back to the usual region this long after first leaving it
 
 [server]
 api_key = ""           # when set, clients must send this key

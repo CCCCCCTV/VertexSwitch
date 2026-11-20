@@ -42,6 +42,13 @@ pub async fn status(state: &SharedState) -> Value {
     )
     .into();
     info["gemini_model_tiers"] = json!(runtime.settings.gemini.model_tiers);
+    let switch = &runtime.settings.gemini.region_switch;
+    let home = runtime.settings.gemini_region();
+    info["gemini_region_switch"] = json!({
+        "enabled": switch.enabled,
+        "home": home,
+        "models": if switch.enabled { runtime.regions.snapshot(switch, home) } else { Vec::new() },
+    });
     info["uptime_secs"] = state.metrics.uptime_secs().into();
     info["in_flight"] = state.metrics.in_flight().into();
     info["models"] = json!({

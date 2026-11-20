@@ -12,6 +12,7 @@ pub mod frontends;
 pub mod i18n;
 pub mod logs;
 pub mod metrics;
+pub mod regions;
 pub mod registry;
 pub mod runtime;
 pub mod secrets;

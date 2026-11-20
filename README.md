@@ -25,6 +25,7 @@
 - 模型列表：`/v1/models`（Anthropic / OpenAI 格式）、`/v1beta/models`（Gemini 格式）
 - 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
 - 上游繁忙（429 资源耗尽 / 限流、503、Claude 的 529 过载）时自动重试：默认最多 3 次、依次约等 1、2、4 秒，带随机抖动、遵守 `Retry-After`；可在“设置 → 代理服务”关掉、改次数，等待时间可以写成数字或关于第几次重试 `n` 的算式（如 `5`、`min(30, 3*n)`）；客户端断开即停止
+- Gemini 自动切换区域（默认关，在“设置 → Gemini”打开）：某个区域返回 429 / 503 时这个请求立刻改发下一个区域；流式请求首字或出字太慢时，之后的请求换区域，换过去更慢就切回来；每个模型分开记，过一段时间回到平时区域
 - `/metrics`：Prometheus 指标
 - 桌面程序（`src-tauri` + `ui`）：托盘常驻（关窗口即隐藏，托盘菜单可切换 Gemini 档位）、
   概览 / 请求 / 日志 / 模型 / 设置五个页面（中文 / English），代理核心在同一进程内运行
@@ -92,6 +93,13 @@ openai_native = "auto" # OpenAI 格式的 Gemini 请求需要档位时转成原�
 
 [gemini.model_tiers]   # 按上游模型单独设档位，优先于默认档位（界面“模型”页也能改）
 "gemini-3.5-flash" = "flex"
+
+[gemini.region_switch] # 自动切换区域（默认关），平时区域就是上面的 gemini.region
+enabled = true
+regions = ["global", "us", "eu"]  # 429 / 503 时这个请求立刻改发下一个区域
+slow_first_byte_seconds = 60      # 流式请求首字超过这么久算慢，之后的请求换区域；0 = 不看
+slow_tokens_per_second = 20       # 流式请求出字低于这个速度算慢；0 = 不看
+reset_minutes = 30                # 第一次离开平时区域满这么久后回去
 
 [server]
 api_key = ""           # 非空时客户端须携带此 key

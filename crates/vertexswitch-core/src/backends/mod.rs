@@ -24,15 +24,17 @@ use bytes::Bytes;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 
+use crate::config::{RegionSwitchSettings, Settings};
 use crate::errors::{Protocol, ProxyError, ProxyResult};
-use crate::metrics;
+use crate::metrics::{self, RegionProbe};
+use crate::regions::{RegionSwitch, Trouble};
 use crate::registry::Backend;
 use crate::runtime::Runtime;
-use crate::tiers::{LOG_KIND_FALLBACK, Tier};
+use crate::tiers::{LOG_KIND_FALLBACK, Tier, TierPlan};
 use crate::tr;
 use crate::translate::StreamTranslate;
 use crate::translate::sse::SseParser;
-use crate::transport::{Transport, UpstreamRequest};
+use crate::transport::{Reroute, Transport, UpstreamRequest};
 
 /// 响应头：本次实际使用的 Gemini 服务档位。
 pub const TIER_HEADER: &str = "x-vertexswitch-tier";
@@ -101,8 +103,7 @@ pub async fn call(state: &Runtime, target: Target, mut body: Value) -> ProxyResu
         ("content-type".to_owned(), "application/json".to_owned()),
     ];
     let settings = &state.settings;
-    let mut plan = None;
-    let url = match &target {
+    let (response, plan) = match &target {
         Target::ClaudeMessages {
             model,
             stream,
@@ -110,12 +111,14 @@ pub async fn call(state: &Runtime, target: Target, mut body: Value) -> ProxyResu
         } => {
             add_beta(&mut headers, beta);
             claude::messages_body(&mut body, &settings.claude);
-            claude::messages_url(&claude_models(state)?, model, *stream)
+            let url = claude::messages_url(&claude_models(state)?, model, *stream);
+            (open_plain(state, url, headers, &body, *stream).await?, None)
         }
         Target::ClaudeCountTokens { model, beta } => {
             add_beta(&mut headers, beta);
             claude::count_tokens_body(&mut body, &settings.claude, model);
-            claude::count_tokens_url(&claude_models(state)?)
+            let url = claude::count_tokens_url(&claude_models(state)?);
+            (open_plain(state, url, headers, &body, false).await?, None)
         }
         Target::GeminiNative {
             model,
@@ -124,47 +127,48 @@ pub async fn call(state: &Runtime, target: Target, mut body: Value) -> ProxyResu
             tier_override,
         } => {
             gemini::prepare_body(&mut body);
-            plan = gemini::tier_plan(settings, model, action, tier_override.as_deref());
-            if let Some(plan) = &plan {
-                for warning in &plan.warnings {
-                    tracing::warn!(model = %model, kind = LOG_KIND_FALLBACK, "{warning}");
-                }
-                headers.extend(plan.headers.iter().map(|(k, v)| (k.to_string(), v.clone())));
-            }
-            let region = settings.gemini_region();
-            let base = vertex::publisher_models_url(
-                &state.vertex_base(region),
-                &state.project_id()?,
-                region,
-                "google",
-            );
-            if query.is_empty() {
-                format!("{base}/{model}:{action}")
-            } else {
-                format!("{base}/{model}:{action}?{query}")
-            }
-        }
-        Target::VertexOpenAi { backend, model, .. } => {
-            let (region, version, upstream_model) = if *backend == Backend::Gemini {
-                (
-                    settings.gemini_region(),
-                    &settings.gemini.openai_api_version,
-                    format!("google/{model}"),
-                )
-            } else {
-                (
-                    settings.maas_region(),
-                    &settings.maas.api_version,
-                    model.clone(),
-                )
+            let route = GeminiRoute {
+                settings,
+                project: state.project_id()?,
+                model,
+                kind: GeminiKind::Native {
+                    action,
+                    query,
+                    tier_override: tier_override.as_deref(),
+                },
+                headers,
+                body: json_bytes(&body),
+                stream,
             };
-            body["model"] = upstream_model.into();
-            vertex::openapi_chat_url(
+            open_gemini(state, &route).await?
+        }
+        Target::VertexOpenAi {
+            backend: Backend::Gemini,
+            model,
+            stream,
+        } => {
+            body["model"] = format!("google/{model}").into();
+            let route = GeminiRoute {
+                settings,
+                project: state.project_id()?,
+                model,
+                kind: GeminiKind::OpenAi,
+                headers,
+                body: json_bytes(&body),
+                stream: *stream,
+            };
+            open_gemini(state, &route).await?
+        }
+        Target::VertexOpenAi { model, stream, .. } => {
+            let region = settings.maas_region();
+            body["model"] = model.clone().into();
+            let url = vertex::openapi_chat_url(
                 &state.vertex_host(region),
-                version,
+                &settings.maas.api_version,
                 &state.project_id()?,
                 region,
-            )
+            );
+            (open_plain(state, url, headers, &body, *stream).await?, None)
         }
     };
     let tier = match (&plan, &target) {
@@ -174,19 +178,6 @@ pub async fn call(state: &Runtime, target: Target, mut body: Value) -> ProxyResu
         }
         _ => None,
     };
-    metrics::note(|i| i.tier = tier.map(Tier::as_str));
-
-    let mut request = UpstreamRequest::post_json(
-        url,
-        headers,
-        serde_json::to_vec(&body).expect("Value 可序列化").into(),
-        stream,
-    );
-    request.min_read_timeout = plan
-        .as_ref()
-        .and_then(|p| p.server_timeout)
-        .map(|s| Duration::from_secs(s) + gemini::TIMEOUT_MARGIN);
-    let response = state.transport.open(&request).await?;
     let status = response.status();
     if !status.is_success() {
         let raw = state.transport.read_body(response).await?;
@@ -199,6 +190,192 @@ pub async fn call(state: &Runtime, target: Target, mut body: Value) -> ProxyResu
         tier,
         traffic: gemini::TrafficCheck::new(plan, model),
     })
+}
+
+fn json_bytes(body: &Value) -> Bytes {
+    serde_json::to_vec(body).expect("Value 可序列化").into()
+}
+
+/// Claude 与 MaaS：地址固定，照常发（繁忙时原地等待重试）。
+async fn open_plain(
+    state: &Runtime,
+    url: String,
+    headers: Vec<(String, String)>,
+    body: &Value,
+    stream: bool,
+) -> ProxyResult<reqwest::Response> {
+    let request = UpstreamRequest::post_json(url, headers, json_bytes(body), stream);
+    state.transport.open_with(request, None).await
+}
+
+/// 发往 Gemini 的一个请求：按区域拼地址和档位头。开了区域切换时同一个请求可能换区域重发。
+struct GeminiRoute<'a> {
+    settings: &'a Settings,
+    project: String,
+    model: &'a str,
+    kind: GeminiKind<'a>,
+    headers: Vec<(String, String)>,
+    body: Bytes,
+    stream: bool,
+}
+
+enum GeminiKind<'a> {
+    /// 原生接口（唯一能带档位头的通道）
+    Native {
+        action: &'a str,
+        query: &'a str,
+        tier_override: Option<&'a str>,
+    },
+    /// OpenAI 兼容接口，一律按 Standard
+    OpenAi,
+}
+
+impl GeminiRoute<'_> {
+    /// 发往 `region` 的请求与档位方案；顺便在请求记录里记下区域和档位。
+    fn build(&self, region: &str) -> (UpstreamRequest, Option<TierPlan>) {
+        let api_base = self.settings.google.api_base_override.as_deref();
+        let mut headers = self.headers.clone();
+        let model = self.model;
+        let (url, plan) = match &self.kind {
+            GeminiKind::Native {
+                action,
+                query,
+                tier_override,
+            } => {
+                let plan =
+                    gemini::tier_plan_in(self.settings, model, action, *tier_override, region);
+                if let Some(plan) = &plan {
+                    for warning in &plan.warnings {
+                        tracing::warn!(model = %model, kind = LOG_KIND_FALLBACK, "{warning}");
+                    }
+                    headers.extend(plan.headers.iter().map(|(k, v)| (k.to_string(), v.clone())));
+                }
+                let base = vertex::publisher_models_url(
+                    &vertex::base_url(region, api_base),
+                    &self.project,
+                    region,
+                    "google",
+                );
+                let url = if query.is_empty() {
+                    format!("{base}/{model}:{action}")
+                } else {
+                    format!("{base}/{model}:{action}?{query}")
+                };
+                (url, plan)
+            }
+            GeminiKind::OpenAi => (
+                vertex::openapi_chat_url(
+                    &vertex::host(region, api_base),
+                    &self.settings.gemini.openai_api_version,
+                    &self.project,
+                    region,
+                ),
+                None,
+            ),
+        };
+        let tier = match (&plan, &self.kind) {
+            (Some(plan), _) => Some(plan.effective),
+            (None, GeminiKind::OpenAi) => Some(Tier::Standard),
+            (None, GeminiKind::Native { .. }) => None,
+        };
+        metrics::note(|i| {
+            i.region = Some(region.to_owned());
+            i.tier = tier.map(Tier::as_str);
+        });
+        let mut request = UpstreamRequest::post_json(url, headers, self.body.clone(), self.stream);
+        request.min_read_timeout = plan
+            .as_ref()
+            .and_then(|p| p.server_timeout)
+            .map(|s| Duration::from_secs(s) + gemini::TIMEOUT_MARGIN);
+        (request, plan)
+    }
+}
+
+/// 发 Gemini 请求：没开区域切换时发往平时区域；开了时发往这个模型的当前区域，出问题时换区域重发，
+/// 流式请求成功后把表现交给区域切换（SPEC §9a）。返回响应与最后用的档位方案。
+async fn open_gemini(
+    state: &Runtime,
+    route: &GeminiRoute<'_>,
+) -> ProxyResult<(reqwest::Response, Option<TierPlan>)> {
+    let home = route.settings.gemini_region();
+    let cfg = &route.settings.gemini.region_switch;
+    if !cfg.enabled {
+        let (request, plan) = route.build(home);
+        return Ok((state.transport.open_with(request, None).await?, plan));
+    }
+    let region = state.regions.region_for(cfg, home, route.model);
+    let (request, plan) = route.build(&region);
+    let mut hop = RegionHop {
+        route,
+        switch: &state.regions,
+        cfg,
+        home,
+        tried: vec![region.clone()],
+        region,
+        plan,
+    };
+    let response = state.transport.open_with(request, Some(&mut hop)).await?;
+    if route.stream {
+        metrics::note(|i| {
+            i.region_probe = Some(RegionProbe {
+                switch: state.regions.clone(),
+                settings: cfg.clone(),
+                home: home.to_owned(),
+                model: route.model.to_owned(),
+            });
+        });
+    }
+    Ok((response, hop.plan))
+}
+
+/// 一个请求的换区域重发：429 / 503 / 404 时问区域切换下一站；这一轮都试过了就交还给繁忙重试。
+struct RegionHop<'a> {
+    route: &'a GeminiRoute<'a>,
+    switch: &'a RegionSwitch,
+    cfg: &'a RegionSwitchSettings,
+    home: &'a str,
+    /// 这个请求当前发往的区域
+    region: String,
+    plan: Option<TierPlan>,
+    /// 这一轮试过的区域
+    tried: Vec<String>,
+}
+
+impl Reroute for RegionHop<'_> {
+    fn reroute(&mut self, status: u16) -> Option<UpstreamRequest> {
+        let trouble = match status {
+            429 | 503 => Trouble::Busy(status),
+            404 => Trouble::Missing,
+            _ => return None,
+        };
+        let model = self.route.model;
+        let Some(next) = self.switch.on_trouble(
+            self.cfg,
+            self.home,
+            model,
+            &self.region,
+            trouble,
+            &self.tried,
+        ) else {
+            // 这一轮都试过了：交还给繁忙重试，等过之后从当前区域重新来一轮
+            self.tried = vec![self.region.clone()];
+            return None;
+        };
+        let from = &self.region;
+        tracing::info!(
+            model = %model,
+            "{}",
+            tr!(
+                "{model} 在 {from} 返回 {status}，这个请求改发 {next}",
+                "{model} returned {status} in {from}; resending this request to {next}"
+            )
+        );
+        self.tried.push(next.clone());
+        let (request, plan) = self.route.build(&next);
+        self.region = next;
+        self.plan = plan;
+        Some(request)
+    }
 }
 
 fn add_beta(headers: &mut Vec<(String, String)>, beta: &Option<String>) {

@@ -226,9 +226,38 @@ pub struct GeminiSettings {
     /// OpenAI 格式的 Gemini 请求怎么发：auto（需要档位头时转成原生格式，否则走兼容接口）/
     /// always（总是转成原生格式）/ never（总是走兼容接口，档位不生效）
     pub openai_native: String,
+    /// 区域切换：429 / 太慢时自动换区域（SPEC §9a）；平时区域就是上面的 region
+    pub region_switch: RegionSwitchSettings,
 }
 
 pub const OPENAI_NATIVE_MODES: &[&str] = &["auto", "always", "never"];
+
+/// 区域切换（SPEC §9a）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RegionSwitchSettings {
+    pub enabled: bool,
+    /// 轮换顺序；平时区域不在其中时排在最前
+    pub regions: Vec<String>,
+    /// 流式请求从发到这个区域起，超过这么多秒才出第一段内容算慢；0 = 不看
+    pub slow_first_byte_seconds: f64,
+    /// 流式请求出字速度低于这么多 token/秒算慢；0 = 不看
+    pub slow_tokens_per_second: f64,
+    /// 离开平时区域满这么多分钟后回到平时区域，记录清空
+    pub reset_minutes: f64,
+}
+
+impl Default for RegionSwitchSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            regions: vec!["global".into(), "us".into(), "eu".into()],
+            slow_first_byte_seconds: 60.0,
+            slow_tokens_per_second: 20.0,
+            reset_minutes: 30.0,
+        }
+    }
+}
 
 impl GeminiSettings {
     /// 把内置的不支持 Flex 名单并进来，旧配置文件里存的名单不会因为出了新模型而过时。
@@ -255,6 +284,7 @@ impl Default for GeminiSettings {
                 .collect(),
             openai_api_version: "v1beta1".into(),
             openai_native: "auto".into(),
+            region_switch: RegionSwitchSettings::default(),
         }
     }
 }
@@ -338,6 +368,31 @@ impl Settings {
                 "gemini.openai_native 只能是 auto / always / never，不是 {:?}",
                 "gemini.openai_native must be auto / always / never, not {:?}",
                 g.openai_native
+            ));
+        }
+        let rs = &g.region_switch;
+        if rs.regions.is_empty() || rs.regions.iter().any(|r| r.trim().is_empty()) {
+            return Err(tr!(
+                "gemini.region_switch.regions 至少要有一个区域，且不能有空的",
+                "gemini.region_switch.regions needs at least one region and no empty entries"
+            ));
+        }
+        for (name, value) in [
+            ("slow_first_byte_seconds", rs.slow_first_byte_seconds),
+            ("slow_tokens_per_second", rs.slow_tokens_per_second),
+        ] {
+            if !(value.is_finite() && value >= 0.0) {
+                return Err(tr!(
+                    "gemini.region_switch.{name} 要是不小于 0 的数（0 表示不看），不是 {value}",
+                    "gemini.region_switch.{name} must be a number of at least 0 (0 turns it off), not {value}"
+                ));
+            }
+        }
+        if !(rs.reset_minutes.is_finite() && rs.reset_minutes > 0.0) {
+            return Err(tr!(
+                "gemini.region_switch.reset_minutes 要大于 0，不是 {}",
+                "gemini.region_switch.reset_minutes must be greater than 0, not {}",
+                rs.reset_minutes
             ));
         }
         if let Err(e) = crate::wait_formula::WaitFormula::parse(&self.retry.busy_wait) {

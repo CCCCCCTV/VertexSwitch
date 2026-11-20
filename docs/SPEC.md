@@ -31,6 +31,9 @@
 | gemini | flex_unsupported_models | `["gemini-4-carbon", "gemini-4-neon", "gemini-4-hydrogen", "gemini-4-argon"]` | 另外不支持 Flex 的模型；Gemini 4 起一律不发 Flex，内置的已知名单读配置时也并进这份名单 |
 | gemini | openai_api_version | `v1beta1` | Gemini 的 OpenAI 兼容接口版本 |
 | gemini | openai_native | `auto` | OpenAI 格式的 Gemini 请求：auto 需要档位头时转原生（§13）/ always 总是转 / never 总走兼容接口（档位不生效） |
+| gemini.region_switch | enabled / regions | `false` / `["global", "us", "eu"]` | 区域切换，见 §9a；平时区域就是 gemini.region；regions 至少一个、不能有空的 |
+| gemini.region_switch | slow_first_byte_seconds / slow_tokens_per_second | 60 / 20 | 流式请求算慢的界线，0 = 不看这一项；须 ≥ 0 |
+| gemini.region_switch | reset_minutes | 30 | 第一次离开平时区域满这么久后回去；须 > 0 |
 | maas | region / api_version | `""` / `v1` | |
 | openai | default_max_tokens | 8192 | OpenAI→Claude 时客户端没给 max_tokens 的默认值 |
 
@@ -173,6 +176,25 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - trafficType 核对（只在真的发了 Shared-Request-Type 头时）：flex 期望 `ON_DEMAND_FLEX`，priority 期望 `ON_DEMAND_PRIORITY`；未开 shared_only 时 `PROVISIONED_THROUGHPUT` 视为正常（先用预配吞吐量是文档行为）；其他值告警。Priority 降级为 `ON_DEMAND` 是文档描述的正常现象，但仍告警以便用户知道按什么计费。
 - trafficType 从字节流里用正则 `"trafficType"\s*:\s*"([A-Z_]+)"` 找第一个，要能跨分块匹配。
 
+## 9a. 区域切换（Gemini，`gemini.region_switch`，默认关）
+
+某个区域 429 或太慢时自动换区域（`regions.rs`；接入在 `backends::call`，换区域重发通过 `transport::Reroute`）。全部用假上游测试（`tests/region_switch.rs` 与 `regions` 的单元测试），**未用真实 Vertex 验证过切换本身**。
+
+- 范围：所有发往 Gemini 的请求（原生接口、OpenAI 兼容接口、OpenAI / Claude 格式翻译成原生的），含 countTokens。Claude、MaaS 不切换。**每个模型分开记**当前区域。
+- 平时区域就是 `gemini.region`（为空时 `google.region`）。轮换顺序是 `regions`（默认 `global → us → eu`，去掉空的和重复的）；平时区域不在其中时排在最前。“下一个区域”是顺序里当前区域之后（循环）第一个没跳过的。
+- 区域会影响档位：每次换区域都按新区域重新算档位方案（§9），所以 Flex 请求离开 global 时按 Standard 发（照常记 `tier_fallback` 告警），回到 global 后又用 Flex。
+- **429 / 503（繁忙）**：这个请求立刻改发下一个区域，不等待、不算繁忙重试；之前因为慢记下过一个区域时，改回那个区域。一个请求的一轮里每个区域只试一次；一圈都繁忙时交还给繁忙重试（§4，按等待算式等、原地重发），之后从当前区域再来一圈。繁忙重试关掉时只试一圈。
+- **404**：不是平时区域的区域返回 404，当作这个区域没有这个模型：改发下一个区域，并在重置前跳过它；平时区域的 404 照常交给客户端。
+- **太慢**（只看成功的流式请求，非流式的首字就是整个生成时间、不好判断）：首字从**最后一次发往该区域**算起（`slow_first_byte_seconds`，默认 60，0 = 不看）；出字速度 = 输出 token ÷（结束 − 首字），输出不少于 50 token 且出字时间不少于 1 秒时才算（`slow_tokens_per_second`，默认 20，0 = 不看）。本次照常完成，之后的请求换区域：
+  - 记下这个区域和它的表现（没有记录，或比记录的好时），换下一个没因慢试过的区域；
+  - 换过去的区域也慢、而且在这次慢的那一项上比记录的差（首字更长 / 速度更低）→ 回到记录的区域并停在那里；
+  - 一圈都慢过 → 停在记录里最好的那个；
+  - 停留中不再因慢切换；记录的区域自己 429 时记录作废，按顺序换下一个。
+- 只有出问题的就是这个模型当前的区域时才改共享状态；并发的旧请求晚到的结果只影响它自己（例如自己改发别处），不会把区域来回拨。
+- **重置**：第一次离开平时区域满 `reset_minutes`（默认 30）分钟后，下一个请求回到平时区域，记录、停留、404 名单全部清空。改了 `region_switch` 配置或平时区域时立即全部清空。
+- 日志：之后的请求换区域时记 WARN（`kind = region_switch`，带 `model`、`from`、`to`），写明原因（繁忙 / 404 / 首字 x 秒 / 出字 y token/秒 / 比记录的还慢）；重置回平时区域记 INFO（同一 kind）；单个请求改发别处记 INFO。
+- 请求记录多一个 `region`（最后发往的区域）；管理接口 `status` 多一个 `gemini_region_switch: {enabled, home, models: [{model, region, away_ms, reset_in_ms, recorded_region, recorded_first_byte_ms, recorded_tokens_per_second, settled, missing}]}`，只列离开过平时区域的模型。
+
 ## 10. OpenAI → Claude 转换
 
 请求：
@@ -203,7 +225,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 
 - 命令行模式输出 UTF-8（实测：Windows 重定向时默认 ANSI 代码页导致中文乱码）
 - 档位降级、trafficType 不符、配额耗尽、上游断流 → WARNING
-- 管理接口的日志条目：`seq, ts_ms, level, target, message, fields`；`fields` 是事件附带的字段（字符串表）。档位告警带 `model`（上游 ID）与 `kind`：`tier_fallback`（不支持该档位，请求前改用 Standard；含 OpenAI 入口 `openai_native = never` 时带不了档位头）或 `tier_mismatch`（trafficType 不符）；上游繁忙重试的日志见 §4（`upstream_retry` / `upstream_retry_ok`）
+- 管理接口的日志条目：`seq, ts_ms, level, target, message, fields`；`fields` 是事件附带的字段（字符串表）。档位告警带 `model`（上游 ID）与 `kind`：`tier_fallback`（不支持该档位，请求前改用 Standard；含 OpenAI 入口 `openai_native = never` 时带不了档位头）或 `tier_mismatch`（trafficType 不符）；上游繁忙重试的日志见 §4（`upstream_retry` / `upstream_retry_ok`），区域切换见 §9a（`region_switch`）
 - 日志、代理自己产生的错误信息按界面语言写中文或英文（配置目录的 `language` 文件，`zh` / `en`，由外壳在界面切换语言时写入，启动时读取；没有该文件时用中文）。上游的错误原样透传
 - 桌面程序同时把日志写进配置目录的 `logs\vertexswitch.log`（超过 5 MB 轮换，留一份 `.log.1`），panic 也记录
 - 不记录请求/响应正文（含真实对话）
@@ -237,7 +259,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 
 热加载：每 2 秒检查配置文件与用户模型表的修改时间；内容变化则重新加载，内容有误时保留当前配置并告警。
 
-请求记录（每条）：`seq, ts_ms, method, path, protocol, model(上游 ID), backend, tier, stream, status, duration_ms, first_byte_ms, input_tokens, output_tokens, outcome, error`。
+请求记录（每条）：`seq, ts_ms, method, path, protocol, model(上游 ID), backend, tier, stream, region, status, duration_ms, first_byte_ms, input_tokens, output_tokens, outcome, error`。
 - `first_byte_ms`（首字耗时）：从收到请求到发出第一段非空响应体的毫秒数。流式请求里包括排队、繁忙重试和模型思考，之后才是出字时间；非流式约等于 `duration_ms`；没发出任何内容（出错、客户端提前断开）时为 null。
 - 在**响应体结束时**落定：`ok`；`error`（状态码 ≥ 400）；`stream_error`（流中由代理补发了错误事件；所有入口与翻译路径的流内错误都由 `ProxyError::stream_event` 生成、以空行开头，记录据此识别）；`cancelled`（响应体未读完就被丢弃，如客户端断开）。
 - 用量从响应字节流里取各协议字段的最后一次出现值：Anthropic `input_tokens`(+缓存读写) / `output_tokens`；Gemini `promptTokenCount` / `candidatesTokenCount`(+`thoughtsTokenCount`)；OpenAI `prompt_tokens` / `completion_tokens`。OpenAI→Claude 的流式请求只有客户端开了 `stream_options.include_usage` 才有用量。
