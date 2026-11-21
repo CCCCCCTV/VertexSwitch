@@ -26,6 +26,7 @@
 - 管理接口 `/admin/api/*`：状态、配置读写（立即生效）、模型表、日志与请求记录（含 SSE 实时流）、指标、测试请求；配置与模型表文件热加载
 - 上游繁忙（429 资源耗尽 / 限流、503、Claude 的 529 过载）时自动重试：默认最多 3 次、依次约等 1、2、4 秒，带随机抖动、遵守 `Retry-After`；可在“设置 → 代理服务”关掉、改次数，等待时间可以写成数字或关于第几次重试 `n` 的算式（如 `5`、`min(30, 3*n)`）；客户端断开即停止
 - Gemini 自动切换区域（默认关，在“设置 → Gemini”打开）：某个区域返回 429 / 503 时这个请求立刻改发下一个区域；流式请求首字或出字太慢时，之后的请求换区域，换过去更慢就切回来；每个模型分开记，过一段时间回到平时区域
+- 备用凭证（在“设置 → Google Cloud”添加）：平时一直用第一个凭证；它取不到 token、没有权限（401 / 403）、用不了某个模型（404，如项目没开通 Claude），或者 429 在所有区域都试过了，这个请求就改用下一个凭证，之后的请求也跟着换；每个模型分开记，过一段时间回到第一个凭证
 - `/metrics`：Prometheus 指标
 - 桌面程序（`src-tauri` + `ui`）：托盘常驻（关窗口即隐藏，托盘菜单可切换 Gemini 档位）、
   概览 / 请求 / 日志 / 模型 / 设置五个页面（中文 / English），代理核心在同一进程内运行
@@ -83,6 +84,11 @@ cargo run --release -p vertexswitch-core -- --port 8788  # 桌面程序同时在
 credentials_file = 'C:\path\to\service-account.json'
 project_id = ""        # 留空则从密钥文件读取
 region = "global"      # global / us / eu / 具体区域
+credential_reset_minutes = 30  # 换到备用凭证后，满这么久回到上面这个凭证
+
+[[google.backup_credentials]]  # 备用凭证（可写多个），上面的凭证一直 429 或出错时按顺序换用
+credentials_file = 'C:\path\to\another-project.json'
+project_id = ""
 
 [gemini]
 region = ""            # 留空则沿用 google.region；Flex 只支持 global

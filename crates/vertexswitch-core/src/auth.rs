@@ -249,6 +249,14 @@ impl TokenSource {
         }
     }
 
+    /// 上次取 token 失败的原因（成功后清空）。
+    pub fn last_error(&self) -> Option<String> {
+        match self {
+            Self::Static { .. } => None,
+            Self::ServiceAccount(auth) => auth.last_error(),
+        }
+    }
+
     /// 后台循环：先取一次，然后按间隔刷新。异常只记录。
     pub async fn run_background_refresh(&self, interval: Duration) {
         let Self::ServiceAccount(auth) = self else {

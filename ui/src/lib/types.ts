@@ -18,6 +18,12 @@ export interface Status {
   gemini_model_tiers: Record<string, Tier>;
   /** 区域切换：models 只列离开过平时区域的模型 */
   gemini_region_switch: { enabled: boolean; home: string; models: ModelRegion[] };
+  /** 凭证（SPEC §9b）：list 第一个是主凭证；models 只列离开过第一个凭证的模型 */
+  credentials: {
+    list: CredentialInfo[];
+    reset_minutes: number;
+    models: ModelCredential[];
+  };
   google_token: string;
   project_id?: string;
   listen: string;
@@ -44,6 +50,30 @@ export interface ModelRegion {
   missing: string[];
 }
 
+/** 一个凭证；凭证号从 1 数。项目要等这个凭证取过 token 才知道 */
+export interface CredentialInfo {
+  credential: number;
+  file: string | null;
+  project: string | null;
+  /** 上次取 token 失败的原因 */
+  error: string | null;
+}
+
+/** 某个模型在用的备用凭证 */
+export interface ModelCredential {
+  model: string;
+  credential: number;
+  away_ms: number;
+  reset_in_ms: number;
+  /** 取不到 token、重置前跳过的凭证号 */
+  broken: number[];
+}
+
+export interface BackupCredential {
+  credentials_file: string;
+  project_id: string;
+}
+
 export interface RegionSwitchSettings {
   enabled: boolean;
   regions: string[];
@@ -59,6 +89,10 @@ export interface Settings {
     project_id: string;
     region: string;
     token_refresh_minutes: number;
+    /** 第一次离开第一个凭证满这么多分钟回到它 */
+    credential_reset_minutes: number;
+    /** 备用凭证，按顺序换用 */
+    backup_credentials: BackupCredential[];
   };
   timeouts: { connect: number; read: number; stream_idle: number; write: number; pool: number };
   retry: {
@@ -116,8 +150,10 @@ export interface RequestRecord {
   backend: string | null;
   tier: Tier | null;
   stream: boolean;
-  /** 实际发往的区域（Gemini；换过区域时是最后一个） */
+  /** 实际发往的区域（换过区域时是最后一个） */
   region: string | null;
+  /** 实际用的凭证号（从 1 数；换过凭证时是最后一个） */
+  credential: number | null;
   status: number;
   duration_ms: number;
   /** 首字耗时：收到请求到发出第一段内容（流式含排队、重试、思考；非流式约等于总耗时）；没发出内容时为 null */

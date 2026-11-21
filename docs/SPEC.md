@@ -18,6 +18,8 @@
 | google | project_id | `""` | 为空时从密钥文件读 |
 | google | region | `global` | Claude 默认区域，也是其他后端的兜底区域 |
 | google | token_refresh_minutes | 50 | |
+| google | backup_credentials | `[]` | 备用凭证，每个 `{credentials_file, project_id}`（project_id 为空时从密钥文件读）；按顺序换用，见 §9b。credentials_file 不能为空 |
+| google | credential_reset_minutes | 30 | 第一次离开第一个凭证满这么久后回到它；须 > 0 |
 | timeouts | connect / read / stream_idle / write / pool | 10 / 600 / 900 / 60 / 10 秒 | read=非流式整体等待；stream_idle=流式两段数据间最长空闲 |
 | retry | attempts / backoff_seconds / quota_hang_seconds | 2 / 0.4 / 20 | 连接错误重试，见 §4 |
 | retry | busy / busy_attempts / busy_wait | `true` / 3 / `"2^(n-1)"` | 上游繁忙重试，见 §4；界面“设置 → 代理服务”可开关、改次数（1–9999，核心按最多 9999 次算）和等待算式 |
@@ -44,6 +46,7 @@
 - 剩余有效期少于 5 分钟就刷新；并发请求只让一个去刷新（加锁、双重检查）。
 - 后台每 50 分钟刷新一次；启动时刷新失败只记日志，不退出。按需获取时失败 → 返回 500，信息包含原因（如"未配置服务账号密钥文件"）。
 - 项目 ID：配置优先，否则用密钥文件里的 `project_id`。项目 ID 要在取过 token（读过密钥文件）之后再读。
+- 备用凭证（§9b）各有自己的 token 缓存与项目 ID，按需取 token（后台定时刷新只管第一个凭证）。改配置时，没变的凭证沿用原 token 来源。
 - **不要读取或打印密钥内容**；日志里不能出现 token。
 
 ## 3. Vertex 主机与路径
@@ -195,6 +198,22 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 - 日志：之后的请求换区域时记 WARN（`kind = region_switch`，带 `model`、`from`、`to`），写明原因（繁忙 / 404 / 首字 x 秒 / 出字 y token/秒 / 比记录的还慢）；重置回平时区域记 INFO（同一 kind）；单个请求改发别处记 INFO。
 - 请求记录多一个 `region`（最后发往的区域）；管理接口 `status` 多一个 `gemini_region_switch: {enabled, home, models: [{model, region, away_ms, reset_in_ms, recorded_region, recorded_first_byte_ms, recorded_tokens_per_second, settled, missing}]}`，只列离开过平时区域的模型。
 
+## 9b. 换凭证（`google.backup_credentials`，配了才有）
+
+当前凭证一直 429 或出错时自动换下一个凭证（`credentials.rs`；接入在 `backends::call` 的 `Failover`，和区域切换共用 `transport::Reroute`）。全部用假上游测试（`tests/credentials.rs` 与 `credentials` 的单元测试），**未用真实的多个项目验证过**。
+
+- 凭证从 1 数：1 是 `google.credentials_file`（+ `google.project_id`），之后依次是 `backup_credentials`。所有请求（Gemini、Claude、MaaS）都参与，**每个模型分开记**当前用哪个凭证。
+- 平时一直用凭证 1，不轮流分摊：Vertex 的隐式缓存按项目各算各的，同一对话留在一个项目里缓存才能持续命中。
+- 什么时候换（这个请求立刻改用下一个凭证重发，不等待；出问题的就是这个模型当前的凭证时，之后的请求也跟着换）：
+  - 取 token 失败（密钥文件读不了、无效、换 token 被拒）：换下一个，这个凭证在重置前一直跳过；
+  - 401 / 403：换下一个；
+  - 404：不在平时区域时先按区域切换换区域（§9a）；在平时区域（或没有可换的区域）时当作这个项目用不了这个模型（如没开通 Claude），换下一个；
+  - 429 / 503：先换区域（开了区域切换时），这个凭证的所有区域都繁忙才换凭证；新凭证从这个模型当前的区域开始，区域重新试一轮。区域 × 凭证一圈都繁忙时交还给繁忙重试（§4），等过之后从当前位置再来一圈。
+- 一个请求的一轮里每个凭证只用一次；都换不了时把最后一个上游响应交给客户端（只有一个凭证时行为和以前一样）。都取不到 token 时返回最后的取 token 错误（500）。
+- **重置**：第一次离开凭证 1 满 `credential_reset_minutes`（默认 30）分钟后回到凭证 1，跳过名单清空。凭证配置或重置间隔改了时立即全部清空。
+- 日志：之后的请求换凭证时记 WARN（`kind = credential_switch`，带 `model`、`from`、`to` 凭证号），写明原因；回到凭证 1 记 INFO（同一 kind）；单个请求改用别的凭证记 INFO。
+- 请求记录多一个 `credential`（最后用的凭证号）；管理接口 `status` 多一个 `credentials: {list: [{credential, file(只给文件名), project, error}], reset_minutes, models: [{model, credential, away_ms, reset_in_ms, broken}]}`，models 只列离开过凭证 1 的模型。
+
 ## 10. OpenAI → Claude 转换
 
 请求：
@@ -225,7 +244,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 
 - 命令行模式输出 UTF-8（实测：Windows 重定向时默认 ANSI 代码页导致中文乱码）
 - 档位降级、trafficType 不符、配额耗尽、上游断流 → WARNING
-- 管理接口的日志条目：`seq, ts_ms, level, target, message, fields`；`fields` 是事件附带的字段（字符串表）。档位告警带 `model`（上游 ID）与 `kind`：`tier_fallback`（不支持该档位，请求前改用 Standard；含 OpenAI 入口 `openai_native = never` 时带不了档位头）或 `tier_mismatch`（trafficType 不符）；上游繁忙重试的日志见 §4（`upstream_retry` / `upstream_retry_ok`），区域切换见 §9a（`region_switch`）
+- 管理接口的日志条目：`seq, ts_ms, level, target, message, fields`；`fields` 是事件附带的字段（字符串表）。档位告警带 `model`（上游 ID）与 `kind`：`tier_fallback`（不支持该档位，请求前改用 Standard；含 OpenAI 入口 `openai_native = never` 时带不了档位头）或 `tier_mismatch`（trafficType 不符）；上游繁忙重试的日志见 §4（`upstream_retry` / `upstream_retry_ok`），区域切换见 §9a（`region_switch`），换凭证见 §9b（`credential_switch`）
 - 日志、代理自己产生的错误信息按界面语言写中文或英文（配置目录的 `language` 文件，`zh` / `en`，由外壳在界面切换语言时写入，启动时读取；没有该文件时用中文）。上游的错误原样透传
 - 桌面程序同时把日志写进配置目录的 `logs\vertexswitch.log`（超过 5 MB 轮换，留一份 `.log.1`），panic 也记录
 - 不记录请求/响应正文（含真实对话）
@@ -259,7 +278,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 
 热加载：每 2 秒检查配置文件与用户模型表的修改时间；内容变化则重新加载，内容有误时保留当前配置并告警。
 
-请求记录（每条）：`seq, ts_ms, method, path, protocol, model(上游 ID), backend, tier, stream, region, status, duration_ms, first_byte_ms, input_tokens, output_tokens, outcome, error`。
+请求记录（每条）：`seq, ts_ms, method, path, protocol, model(上游 ID), backend, tier, stream, region, credential, status, duration_ms, first_byte_ms, input_tokens, output_tokens, outcome, error`。
 - `first_byte_ms`（首字耗时）：从收到请求到发出第一段非空响应体的毫秒数。流式请求里包括排队、繁忙重试和模型思考，之后才是出字时间；非流式约等于 `duration_ms`；没发出任何内容（出错、客户端提前断开）时为 null。
 - 在**响应体结束时**落定：`ok`；`error`（状态码 ≥ 400）；`stream_error`（流中由代理补发了错误事件；所有入口与翻译路径的流内错误都由 `ProxyError::stream_event` 生成、以空行开头，记录据此识别）；`cancelled`（响应体未读完就被丢弃，如客户端断开）。
 - 用量从响应字节流里取各协议字段的最后一次出现值：Anthropic `input_tokens`(+缓存读写) / `output_tokens`；Gemini `promptTokenCount` / `candidatesTokenCount`(+`thoughtsTokenCount`)；OpenAI `prompt_tokens` / `completion_tokens`。OpenAI→Claude 的流式请求只有客户端开了 `stream_options.include_usage` 才有用量。

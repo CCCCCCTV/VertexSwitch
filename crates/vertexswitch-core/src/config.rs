@@ -119,9 +119,23 @@ pub struct GoogleSettings {
     /// global / us / eu / 具体区域（如 us-east5）
     pub region: String,
     pub token_refresh_minutes: u64,
+    /// 换到备用凭证后，第一次离开第一个凭证满这么多分钟回到它（SPEC §9b）
+    pub credential_reset_minutes: f64,
     /// 仅供测试：把所有 Vertex 请求发到这个地址（替代按区域选择的主机）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_base_override: Option<String>,
+    /// 备用凭证：上面那个（第一个凭证）一直 429 或出错时按顺序换用（SPEC §9b）
+    pub backup_credentials: Vec<BackupCredential>,
+}
+
+/// 一个备用凭证。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct BackupCredential {
+    /// 服务账号 JSON 路径
+    pub credentials_file: String,
+    /// 为空时从密钥文件读取
+    pub project_id: String,
 }
 
 impl Default for GoogleSettings {
@@ -131,7 +145,9 @@ impl Default for GoogleSettings {
             project_id: String::new(),
             region: "global".into(),
             token_refresh_minutes: 50,
+            credential_reset_minutes: 30.0,
             api_base_override: None,
+            backup_credentials: Vec::new(),
         }
     }
 }
@@ -370,6 +386,24 @@ impl Settings {
                 g.openai_native
             ));
         }
+        let google = &self.google;
+        if google
+            .backup_credentials
+            .iter()
+            .any(|c| c.credentials_file.trim().is_empty())
+        {
+            return Err(tr!(
+                "google.backup_credentials 里每个备用凭证都要填密钥文件（credentials_file）",
+                "Every entry in google.backup_credentials needs a key file (credentials_file)"
+            ));
+        }
+        if !(google.credential_reset_minutes.is_finite() && google.credential_reset_minutes > 0.0) {
+            return Err(tr!(
+                "google.credential_reset_minutes 要大于 0，不是 {}",
+                "google.credential_reset_minutes must be greater than 0, not {}",
+                google.credential_reset_minutes
+            ));
+        }
         let rs = &g.region_switch;
         if rs.regions.is_empty() || rs.regions.iter().any(|r| r.trim().is_empty()) {
             return Err(tr!(
@@ -489,6 +523,37 @@ mod tests {
         s.google.region = "us".into();
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path).unwrap(), s);
+    }
+
+    #[test]
+    fn backup_credentials_roundtrip_and_validation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let mut s = Settings::default();
+        s.google.backup_credentials = vec![
+            BackupCredential {
+                credentials_file: r"C:\keys\b.json".into(),
+                project_id: String::new(),
+            },
+            BackupCredential {
+                credentials_file: r"C:\keys\c.json".into(),
+                project_id: "proj-c".into(),
+            },
+        ];
+        s.google.credential_reset_minutes = 15.0;
+        s.gemini.region_switch.enabled = true;
+        s.save(&path).unwrap();
+        assert_eq!(Settings::load(&path).unwrap(), s);
+
+        s.google.backup_credentials[0].credentials_file = "  ".into();
+        assert!(s.validate().unwrap_err().contains("credentials_file"));
+        s.google.backup_credentials.clear();
+        s.google.credential_reset_minutes = 0.0;
+        assert!(
+            s.validate()
+                .unwrap_err()
+                .contains("credential_reset_minutes")
+        );
     }
 
     #[test]

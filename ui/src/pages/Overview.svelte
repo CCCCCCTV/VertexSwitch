@@ -60,6 +60,34 @@
     return "";
   });
 
+  // 备用凭证：平时显示有几个；有模型正在用备用凭证时换成提醒色，悬停看明细
+  const backupNote = $derived.by(() => {
+    const creds = status?.credentials;
+    if (!creds || creds.list.length < 2) return null;
+    const name = (n: number) => {
+      const c = creds.list[n - 1];
+      return t("overview.credentialName", { n, project: c?.project ?? c?.file ?? "?" });
+    };
+    const inUse = creds.models.filter((m) => m.credential > 1);
+    if (inUse.length) {
+      const lines = inUse.map((m) =>
+        t("overview.backupInUseLine", {
+          model: m.model,
+          credential: name(m.credential),
+          minutes: Math.max(1, Math.ceil(m.reset_in_ms / 60_000)),
+        }),
+      );
+      return { tone: "warn", text: t("overview.backupInUse", { n: inUse.length }), title: lines.join("\n") };
+    }
+    const failing = creds.list.filter((c) => c.error);
+    const lines = creds.list.slice(1).map((c) => name(c.credential) + (c.error ? ` — ${c.error}` : ""));
+    return {
+      tone: failing.length ? "warn" : "",
+      text: t("overview.backups", { n: creds.list.length - 1 }),
+      title: lines.join("\n"),
+    };
+  });
+
   // 运行状况：最近 30 分钟的失败请求、档位降级告警与“上游繁忙、重试后成功”
   const attention = $derived.by(() => {
     const since = Date.now() - 30 * 60_000;
@@ -191,6 +219,9 @@
         <span class="pill">{t("overview.googleOk")} · <span class="mono">{status.project_id}</span></span>
       {:else}
         <span class="pill bad" title={status.google_token}>{t("overview.googleFailed")}</span>
+      {/if}
+      {#if backupNote}
+        <span class="pill {backupNote.tone}" title={backupNote.title}>{backupNote.text}</span>
       {/if}
       <span class="pill">{t("overview.uptime", { d: uptime(status.uptime_secs) })}</span>
     </div>

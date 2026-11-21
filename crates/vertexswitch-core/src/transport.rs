@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use futures_util::Stream;
+use futures_util::future::BoxFuture;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::config::{RetrySettings, TimeoutSettings};
@@ -89,11 +90,11 @@ fn model_in_url(url: &str) -> String {
         .unwrap_or_default()
 }
 
-/// 上游返回非 2xx 时换个地方立刻重发（区域切换，见 `regions`）。
+/// 上游返回非 2xx 时换个地方立刻重发（区域切换、换凭证，见 `backends`）。
 pub trait Reroute: Send {
-    /// 当前请求收到了 `status`：要马上改发别处时返回新的请求，否则 None（照常处理）。
+    /// 当前请求收到了 `status`：要马上改发别处时返回新的请求，否则 None（照常处理）。换凭证要取 token，所以是异步的。
     /// 必须保证一直重复下去终会返回 None（例如一圈区域都试过之后）。
-    fn reroute(&mut self, status: u16) -> Option<UpstreamRequest>;
+    fn reroute(&mut self, status: u16) -> BoxFuture<'_, Option<UpstreamRequest>>;
 }
 
 /// 一次上游请求（都发往 Vertex AI）。
@@ -192,7 +193,8 @@ impl Transport {
             let response = self.send(&req, &headers).await?;
             let status = response.status().as_u16();
             if !response.status().is_success()
-                && let Some(next) = reroute.as_deref_mut().and_then(|r| r.reroute(status))
+                && let Some(r) = reroute.as_deref_mut()
+                && let Some(next) = r.reroute(status).await
             {
                 let _ = tokio::time::timeout(Duration::from_secs(5), response.bytes()).await;
                 req = next;

@@ -37,8 +37,10 @@ pub struct RequestInfo {
     pub backend: Option<&'static str>,
     pub tier: Option<&'static str>,
     pub stream: bool,
-    /// 最后一次发往的区域（Gemini）
+    /// 最后一次发往的区域
     pub region: Option<String>,
+    /// 最后一次用的凭证（从 1 数，1 是第一个凭证）
+    pub credential: Option<usize>,
     /// 最后一次发往上游的时刻（换区域、重试都会更新）
     pub upstream_sent: Option<Instant>,
     /// 开了区域切换时：请求成功结束后把表现交给它
@@ -92,8 +94,10 @@ pub struct RequestRecord {
     pub backend: Option<&'static str>,
     pub tier: Option<&'static str>,
     pub stream: bool,
-    /// 实际发往的区域（Gemini；换过区域时是最后一个）
+    /// 实际发往的区域（换过区域时是最后一个）
     pub region: Option<String>,
+    /// 实际用的凭证（从 1 数；换过凭证时是最后一个）
+    pub credential: Option<usize>,
     pub status: u16,
     pub duration_ms: u64,
     /// 首字耗时：从收到请求到发出第一段响应体。流式请求里包括排队、重试和模型思考；
@@ -387,6 +391,7 @@ impl Pending {
             tier: info.tier,
             stream: info.stream,
             region: info.region,
+            credential: info.credential,
             status: self.status,
             duration_ms: self.started.elapsed().as_millis() as u64,
             first_byte_ms: self.first_byte_ms,
@@ -535,6 +540,7 @@ mod tests {
             tier: None,
             stream: false,
             region: None,
+            credential: None,
             status: 200,
             duration_ms: 1500,
             first_byte_ms: Some(1500),

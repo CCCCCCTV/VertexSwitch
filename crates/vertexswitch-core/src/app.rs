@@ -85,6 +85,13 @@ impl AppState {
         self
     }
 
+    /// 测试用：换上固定的备用凭证。
+    pub fn with_backup_tokens(self, backups: Vec<TokenSource>) -> Self {
+        let runtime = self.runtime().with_backups(backups);
+        self.set_runtime(runtime);
+        self
+    }
+
     pub fn with_paths(mut self, config: Option<PathBuf>, models: Option<PathBuf>) -> Self {
         self.config_path = config;
         self.models_path = models;

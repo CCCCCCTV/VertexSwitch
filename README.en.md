@@ -26,6 +26,7 @@ The proxy core (`crates/vertexswitch-core`) implements:
 - Admin API `/admin/api/*`: status, config read/write (applied immediately), model table, logs and request records (with live SSE streams), metrics and test requests; config and model table files reload automatically
 - Automatic retries when upstream is busy (429 resource exhausted / rate limited, 503, Claude's 529 overloaded): up to 3 retries by default, waiting about 1, 2 and 4 s with random jitter and honouring `Retry-After`; under Settings → Proxy server you can turn it off, change the count, and set the wait as a number or a formula of the retry number `n` (e.g. `5`, `min(30, 3*n)`); stops as soon as the client disconnects
 - Automatic Gemini region switching (off by default; turn it on in Settings → Gemini): when a region returns 429 / 503 the request is resent to the next region right away; when streams are slow to start or slow to output, later requests move to another region, and back again if that one is slower. Tracked per model, returning to the usual region after a while
+- Backup credentials (add them in Settings → Google Cloud): the first credential is used normally; when it can't get a token, isn't allowed (401 / 403), can't use a model (404, e.g. Claude not enabled in that project), or hits 429 in every region, the request is resent with the next credential and later requests follow. Tracked per model, returning to the first credential after a while
 - `/metrics`: Prometheus metrics
 - Desktop app (`src-tauri` + `ui`): stays in the tray (closing the window hides it; the tray menu switches the Gemini tier),
   with Overview / Requests / Logs / Models / Settings pages in Chinese or English; the proxy core runs in the same process
@@ -83,6 +84,11 @@ The config file is `%APPDATA%\VertexSwitch\config.toml` (defaults are used when 
 credentials_file = 'C:\path\to\service-account.json'
 project_id = ""        # empty: read it from the key file
 region = "global"      # global / us / eu / a specific region
+credential_reset_minutes = 30  # after switching to a backup, go back to the credential above this long later
+
+[[google.backup_credentials]]  # backup credentials (any number), used in order when the one above keeps hitting 429 or failing
+credentials_file = 'C:\path\to\another-project.json'
+project_id = ""
 
 [gemini]
 region = ""            # empty: same as google.region; Flex only works on global

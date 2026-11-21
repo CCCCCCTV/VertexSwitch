@@ -49,6 +49,7 @@ pub async fn status(state: &SharedState) -> Value {
         "home": home,
         "models": if switch.enabled { runtime.regions.snapshot(switch, home) } else { Vec::new() },
     });
+    info["credentials"] = credentials_info(&runtime);
     info["uptime_secs"] = state.metrics.uptime_secs().into();
     info["in_flight"] = state.metrics.in_flight().into();
     info["models"] = json!({
@@ -62,6 +63,46 @@ pub async fn status(state: &SharedState) -> Value {
         .map(|p| p.display().to_string())
         .into();
     info
+}
+
+/// 各凭证与换凭证的状态（SPEC §9b）。凭证号从 1 数；只给密钥文件名，不给完整路径。
+fn credentials_info(runtime: &crate::runtime::Runtime) -> Value {
+    let google = &runtime.settings.google;
+    let count = runtime.credential_count();
+    let file_name = |path: &str| {
+        std::path::Path::new(path.trim())
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+    };
+    let list: Vec<Value> = (0..count)
+        .map(|i| {
+            let (file, project) = if i == 0 {
+                (
+                    file_name(&google.credentials_file),
+                    runtime.project_id().unwrap_or_default(),
+                )
+            } else {
+                (
+                    google
+                        .backup_credentials
+                        .get(i - 1)
+                        .and_then(|b| file_name(&b.credentials_file)),
+                    runtime.credential(i).project_id(),
+                )
+            };
+            json!({
+                "credential": i + 1,
+                "file": file,
+                "project": (!project.is_empty()).then_some(project),
+                "error": runtime.credential(i).last_error(),
+            })
+        })
+        .collect();
+    json!({
+        "list": list,
+        "reset_minutes": google.credential_reset_minutes,
+        "models": runtime.credentials.snapshot(count, google.credential_reset_minutes),
+    })
 }
 
 pub fn settings(state: &SharedState) -> Settings {

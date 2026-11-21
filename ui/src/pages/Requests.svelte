@@ -62,6 +62,9 @@
             <td class="tier-col nowrap">
               {#if r.tier}<span class="pill accent">{r.tier}</span>{:else}<span class="faint">—</span>{/if}{#if r.region}<span
                   class="region mono faint">{r.region}</span
+                >{/if}{#if r.credential && r.credential > 1}<span
+                  class="region faint"
+                  title={t("requests.credentialHint", { n: r.credential })}>{t("requests.credential", { n: r.credential })}</span
                 >{/if}
             </td>
             <td>

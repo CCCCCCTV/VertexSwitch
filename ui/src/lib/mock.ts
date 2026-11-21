@@ -19,6 +19,8 @@ const settings: Settings = {
     project_id: "",
     region: "global",
     token_refresh_minutes: 50,
+    credential_reset_minutes: 30,
+    backup_credentials: [{ credentials_file: "C:\\Users\\me\\keys\\backup-project.json", project_id: "" }],
   },
   timeouts: { connect: 10, read: 600, stream_idle: 900, write: 60, pool: 10 },
   retry: {
@@ -112,6 +114,7 @@ function request(i: number, ts = Date.now()) {
     tier: s.backend === "gemini" ? (settings.gemini.model_tiers[s.model ?? ""] ?? settings.gemini.tier) : null,
     stream: s.stream ?? false,
     region: s.backend === "gemini" ? (s.model === "gemini-4-argon" ? "us" : settings.gemini.region || settings.google.region) : null,
+    credential: s.backend ? (s.model === "claude-sonnet-4-6" ? 2 : 1) : null,
     status: s.status ?? 200,
     duration_ms: s.status ? 1 : 400 + ((i * 937) % 9000),
     first_byte_ms: null,
@@ -199,6 +202,30 @@ function status(): Status {
               recorded_tokens_per_second: null,
               settled: false,
               missing: [],
+            },
+          ]
+        : [],
+    },
+    // 示例：第一个项目没开通 Claude，Claude 请求换到了备用凭证
+    credentials: {
+      list: [
+        { credential: 1, file: "service-account.json", project: "my-project-123", error: null },
+        ...settings.google.backup_credentials.map((b, i) => ({
+          credential: i + 2,
+          file: b.credentials_file.split(/[\\/]/).pop() ?? null,
+          project: b.project_id || "backup-project-456",
+          error: null,
+        })),
+      ],
+      reset_minutes: settings.google.credential_reset_minutes,
+      models: settings.google.backup_credentials.length
+        ? [
+            {
+              model: "claude-sonnet-4-6",
+              credential: 2,
+              away_ms: 4 * 60_000,
+              reset_in_ms: (settings.google.credential_reset_minutes - 4) * 60_000,
+              broken: [],
             },
           ]
         : [],

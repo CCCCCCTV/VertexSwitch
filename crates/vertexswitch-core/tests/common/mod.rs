@@ -54,6 +54,13 @@ pub async fn start_on(mut settings: Settings, upstream: MockServer) -> Harness {
     launch(settings, upstream).await
 }
 
+/// 带备用凭证启动：第一个凭证是 tok / proj，备用凭证依次给出；Vertex 指向假上游。
+pub async fn start_with_backups(mut settings: Settings, backups: Vec<TokenSource>) -> Harness {
+    let upstream = MockServer::start().await;
+    settings.google.api_base_override = Some(upstream.uri());
+    launch_with(settings, upstream, |s| s.with_backup_tokens(backups)).await
+}
+
 /// 上游地址由调用方在 `settings.google.api_base_override` 里指定（如故意坏掉的上游）。
 pub async fn start_with_override(settings: Settings) -> Harness {
     launch(settings, MockServer::start().await).await

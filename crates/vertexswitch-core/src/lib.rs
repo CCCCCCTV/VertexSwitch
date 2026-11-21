@@ -7,6 +7,7 @@ pub mod app;
 pub mod auth;
 pub mod backends;
 pub mod config;
+pub mod credentials;
 pub mod errors;
 pub mod frontends;
 pub mod i18n;

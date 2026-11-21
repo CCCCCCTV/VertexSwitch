@@ -21,13 +21,15 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
+use futures_util::future::BoxFuture;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
 
-use crate::config::{RegionSwitchSettings, Settings};
+use crate::config::Settings;
+use crate::credentials::Trouble as CredentialTrouble;
 use crate::errors::{Protocol, ProxyError, ProxyResult};
 use crate::metrics::{self, RegionProbe};
-use crate::regions::{RegionSwitch, Trouble};
+use crate::regions::Trouble as RegionTrouble;
 use crate::registry::Backend;
 use crate::runtime::Runtime;
 use crate::tiers::{LOG_KIND_FALLBACK, Tier, TierPlan};
@@ -85,7 +87,8 @@ impl Target {
     }
 }
 
-/// 发请求：先拿 token（项目 ID 可能要从密钥文件里读出来），再拼地址；上游返回非 2xx 时转成错误。
+/// 发请求：选凭证与区域、拿 token、拼地址；出问题时换区域 / 换凭证重发（SPEC §9a、§9b）；
+/// 上游最终返回非 2xx 时转成错误。
 pub async fn call(state: &Runtime, target: Target, mut body: Value) -> ProxyResult<Upstream> {
     let (model, backend, stream) = target.summary();
     let model = model.to_owned();
@@ -95,87 +98,57 @@ pub async fn call(state: &Runtime, target: Target, mut body: Value) -> ProxyResu
         i.backend = Some(backend.as_str());
         i.stream = stream;
     });
-    let mut headers = vec![
-        (
-            "authorization".to_owned(),
-            format!("Bearer {}", state.google_token().await?),
-        ),
-        ("content-type".to_owned(), "application/json".to_owned()),
-    ];
     let settings = &state.settings;
-    let (response, plan) = match &target {
-        Target::ClaudeMessages {
-            model,
-            stream,
-            beta,
-        } => {
-            add_beta(&mut headers, beta);
+    let kind = match &target {
+        Target::ClaudeMessages { beta, .. } => {
             claude::messages_body(&mut body, &settings.claude);
-            let url = claude::messages_url(&claude_models(state)?, model, *stream);
-            (open_plain(state, url, headers, &body, *stream).await?, None)
+            RouteKind::ClaudeMessages {
+                beta: beta.as_deref(),
+            }
         }
         Target::ClaudeCountTokens { model, beta } => {
-            add_beta(&mut headers, beta);
             claude::count_tokens_body(&mut body, &settings.claude, model);
-            let url = claude::count_tokens_url(&claude_models(state)?);
-            (open_plain(state, url, headers, &body, false).await?, None)
+            RouteKind::ClaudeCountTokens {
+                beta: beta.as_deref(),
+            }
         }
         Target::GeminiNative {
-            model,
             action,
             query,
             tier_override,
+            ..
         } => {
             gemini::prepare_body(&mut body);
-            let route = GeminiRoute {
-                settings,
-                project: state.project_id()?,
-                model,
-                kind: GeminiKind::Native {
-                    action,
-                    query,
-                    tier_override: tier_override.as_deref(),
-                },
-                headers,
-                body: json_bytes(&body),
-                stream,
-            };
-            open_gemini(state, &route).await?
+            RouteKind::GeminiNative {
+                action,
+                query,
+                tier_override: tier_override.as_deref(),
+            }
         }
         Target::VertexOpenAi {
             backend: Backend::Gemini,
             model,
-            stream,
+            ..
         } => {
             body["model"] = format!("google/{model}").into();
-            let route = GeminiRoute {
-                settings,
-                project: state.project_id()?,
-                model,
-                kind: GeminiKind::OpenAi,
-                headers,
-                body: json_bytes(&body),
-                stream: *stream,
-            };
-            open_gemini(state, &route).await?
+            RouteKind::GeminiOpenAi
         }
-        Target::VertexOpenAi { model, stream, .. } => {
-            let region = settings.maas_region();
+        Target::VertexOpenAi { model, .. } => {
             body["model"] = model.clone().into();
-            let url = vertex::openapi_chat_url(
-                &state.vertex_host(region),
-                &settings.maas.api_version,
-                &state.project_id()?,
-                region,
-            );
-            (open_plain(state, url, headers, &body, *stream).await?, None)
+            RouteKind::Maas
         }
     };
-    let tier = match (&plan, &target) {
+    let route = Route {
+        settings,
+        model: &model,
+        kind,
+        body: json_bytes(&body),
+        stream,
+    };
+    let (response, plan) = open(state, &route).await?;
+    let tier = match (&plan, &route.kind) {
         (Some(plan), _) => Some(plan.effective),
-        (None, Target::VertexOpenAi { backend, .. }) if *backend == Backend::Gemini => {
-            Some(Tier::Standard)
-        }
+        (None, RouteKind::GeminiOpenAi) => Some(Tier::Standard),
         _ => None,
     };
     let status = response.status();
@@ -196,91 +169,138 @@ fn json_bytes(body: &Value) -> Bytes {
     serde_json::to_vec(body).expect("Value 可序列化").into()
 }
 
-/// Claude 与 MaaS：地址固定，照常发（繁忙时原地等待重试）。
-async fn open_plain(
-    state: &Runtime,
-    url: String,
-    headers: Vec<(String, String)>,
-    body: &Value,
-    stream: bool,
-) -> ProxyResult<reqwest::Response> {
-    let request = UpstreamRequest::post_json(url, headers, json_bytes(body), stream);
-    state.transport.open_with(request, None).await
+fn add_beta(headers: &mut Vec<(String, String)>, beta: Option<&str>) {
+    if let Some(beta) = beta {
+        headers.push(("anthropic-beta".to_owned(), beta.to_owned()));
+    }
 }
 
-/// 发往 Gemini 的一个请求：按区域拼地址和档位头。开了区域切换时同一个请求可能换区域重发。
-struct GeminiRoute<'a> {
+/// 一个请求要发往的上游：给定凭证和区域就能拼出请求。换区域、换凭证重发时用它重新拼。
+struct Route<'a> {
     settings: &'a Settings,
-    project: String,
     model: &'a str,
-    kind: GeminiKind<'a>,
-    headers: Vec<(String, String)>,
+    kind: RouteKind<'a>,
     body: Bytes,
     stream: bool,
 }
 
-enum GeminiKind<'a> {
-    /// 原生接口（唯一能带档位头的通道）
-    Native {
+enum RouteKind<'a> {
+    /// Vertex 上的 Claude：Messages
+    ClaudeMessages { beta: Option<&'a str> },
+    /// Vertex 上的 Claude：count_tokens
+    ClaudeCountTokens { beta: Option<&'a str> },
+    /// Gemini 原生接口（唯一能带档位头的通道）
+    GeminiNative {
         action: &'a str,
         query: &'a str,
         tier_override: Option<&'a str>,
     },
-    /// OpenAI 兼容接口，一律按 Standard
-    OpenAi,
+    /// Gemini 的 OpenAI 兼容接口，一律按 Standard
+    GeminiOpenAi,
+    /// MaaS 开放模型（OpenAI 兼容接口）
+    Maas,
 }
 
-impl GeminiRoute<'_> {
-    /// 发往 `region` 的请求与档位方案；顺便在请求记录里记下区域和档位。
-    fn build(&self, region: &str) -> (UpstreamRequest, Option<TierPlan>) {
+/// 这次用哪个凭证发：序号（从 0 数）、token、项目。
+struct Credential {
+    index: usize,
+    token: String,
+    project: String,
+}
+
+impl Route<'_> {
+    fn is_gemini(&self) -> bool {
+        matches!(
+            self.kind,
+            RouteKind::GeminiNative { .. } | RouteKind::GeminiOpenAi
+        )
+    }
+
+    /// 平时发往的区域：Claude 用默认区域，Gemini 用 Gemini 区域，MaaS 用 MaaS 区域。
+    fn home_region(&self) -> &str {
+        match self.kind {
+            RouteKind::ClaudeMessages { .. } | RouteKind::ClaudeCountTokens { .. } => {
+                &self.settings.google.region
+            }
+            RouteKind::Maas => self.settings.maas_region(),
+            RouteKind::GeminiNative { .. } | RouteKind::GeminiOpenAi => {
+                self.settings.gemini_region()
+            }
+        }
+    }
+
+    /// 只有 Gemini 参与区域切换。
+    fn switches_regions(&self) -> bool {
+        self.is_gemini() && self.settings.gemini.region_switch.enabled
+    }
+
+    /// 用凭证 `cred` 发往 `region` 的请求与档位方案；顺便在请求记录里记下区域、档位和凭证。
+    fn build(&self, cred: &Credential, region: &str) -> (UpstreamRequest, Option<TierPlan>) {
         let api_base = self.settings.google.api_base_override.as_deref();
-        let mut headers = self.headers.clone();
+        let mut headers = vec![
+            ("authorization".to_owned(), format!("Bearer {}", cred.token)),
+            ("content-type".to_owned(), "application/json".to_owned()),
+        ];
         let model = self.model;
-        let (url, plan) = match &self.kind {
-            GeminiKind::Native {
+        let publisher = |publisher: &str| {
+            vertex::publisher_models_url(
+                &vertex::base_url(region, api_base),
+                &cred.project,
+                region,
+                publisher,
+            )
+        };
+        let mut plan = None;
+        let url = match &self.kind {
+            RouteKind::ClaudeMessages { beta } => {
+                add_beta(&mut headers, *beta);
+                claude::messages_url(&publisher("anthropic"), model, self.stream)
+            }
+            RouteKind::ClaudeCountTokens { beta } => {
+                add_beta(&mut headers, *beta);
+                claude::count_tokens_url(&publisher("anthropic"))
+            }
+            RouteKind::GeminiNative {
                 action,
                 query,
                 tier_override,
             } => {
-                let plan =
-                    gemini::tier_plan_in(self.settings, model, action, *tier_override, region);
+                plan = gemini::tier_plan_in(self.settings, model, action, *tier_override, region);
                 if let Some(plan) = &plan {
                     for warning in &plan.warnings {
                         tracing::warn!(model = %model, kind = LOG_KIND_FALLBACK, "{warning}");
                     }
                     headers.extend(plan.headers.iter().map(|(k, v)| (k.to_string(), v.clone())));
                 }
-                let base = vertex::publisher_models_url(
-                    &vertex::base_url(region, api_base),
-                    &self.project,
-                    region,
-                    "google",
-                );
-                let url = if query.is_empty() {
+                let base = publisher("google");
+                if query.is_empty() {
                     format!("{base}/{model}:{action}")
                 } else {
                     format!("{base}/{model}:{action}?{query}")
-                };
-                (url, plan)
+                }
             }
-            GeminiKind::OpenAi => (
-                vertex::openapi_chat_url(
-                    &vertex::host(region, api_base),
-                    &self.settings.gemini.openai_api_version,
-                    &self.project,
-                    region,
-                ),
-                None,
+            RouteKind::GeminiOpenAi => vertex::openapi_chat_url(
+                &vertex::host(region, api_base),
+                &self.settings.gemini.openai_api_version,
+                &cred.project,
+                region,
+            ),
+            RouteKind::Maas => vertex::openapi_chat_url(
+                &vertex::host(region, api_base),
+                &self.settings.maas.api_version,
+                &cred.project,
+                region,
             ),
         };
         let tier = match (&plan, &self.kind) {
             (Some(plan), _) => Some(plan.effective),
-            (None, GeminiKind::OpenAi) => Some(Tier::Standard),
-            (None, GeminiKind::Native { .. }) => None,
+            (None, RouteKind::GeminiOpenAi) => Some(Tier::Standard),
+            _ => None,
         };
         metrics::note(|i| {
             i.region = Some(region.to_owned());
             i.tier = tier.map(Tier::as_str);
+            i.credential = Some(cred.index + 1);
         });
         let mut request = UpstreamRequest::post_json(url, headers, self.body.clone(), self.stream);
         request.min_read_timeout = plan
@@ -291,76 +311,126 @@ impl GeminiRoute<'_> {
     }
 }
 
-/// 发 Gemini 请求：没开区域切换时发往平时区域；开了时发往这个模型的当前区域，出问题时换区域重发，
-/// 流式请求成功后把表现交给区域切换（SPEC §9a）。返回响应与最后用的档位方案。
-async fn open_gemini(
+/// 发请求：从这个模型当前的凭证和区域开始，出问题时由 [`Failover`] 换区域 / 换凭证重发；
+/// Gemini 流式请求在开了区域切换时，成功后把表现交给区域切换。返回响应与最后用的档位方案。
+async fn open(
     state: &Runtime,
-    route: &GeminiRoute<'_>,
+    route: &Route<'_>,
 ) -> ProxyResult<(reqwest::Response, Option<TierPlan>)> {
-    let home = route.settings.gemini_region();
-    let cfg = &route.settings.gemini.region_switch;
-    if !cfg.enabled {
-        let (request, plan) = route.build(home);
-        return Ok((state.transport.open_with(request, None).await?, plan));
-    }
-    let region = state.regions.region_for(cfg, home, route.model);
-    let (request, plan) = route.build(&region);
-    let mut hop = RegionHop {
+    let settings = route.settings;
+    let model = route.model;
+    let first = state.credentials.current(
+        model,
+        state.credential_count(),
+        settings.google.credential_reset_minutes,
+    );
+    let mut tried_creds = Vec::new();
+    let cred = acquire(state, model, first, &mut tried_creds).await?;
+    let home = route.home_region();
+    let region_switch = &settings.gemini.region_switch;
+    let region = if route.switches_regions() {
+        state.regions.region_for(region_switch, home, model)
+    } else {
+        home.to_owned()
+    };
+    let (request, plan) = route.build(&cred, &region);
+    let mut failover = Failover {
         route,
-        switch: &state.regions,
-        cfg,
-        home,
-        tried: vec![region.clone()],
+        state,
+        cred,
+        tried_regions: vec![region.clone()],
         region,
         plan,
+        tried_creds,
     };
-    let response = state.transport.open_with(request, Some(&mut hop)).await?;
-    if route.stream {
+    let response = state
+        .transport
+        .open_with(request, Some(&mut failover))
+        .await?;
+    if route.stream && route.switches_regions() {
         metrics::note(|i| {
             i.region_probe = Some(RegionProbe {
                 switch: state.regions.clone(),
-                settings: cfg.clone(),
+                settings: region_switch.clone(),
                 home: home.to_owned(),
-                model: route.model.to_owned(),
+                model: model.to_owned(),
             });
         });
     }
-    Ok((response, hop.plan))
+    Ok((response, failover.plan))
 }
 
-/// 一个请求的换区域重发：429 / 503 / 404 时问区域切换下一站；这一轮都试过了就交还给繁忙重试。
-struct RegionHop<'a> {
-    route: &'a GeminiRoute<'a>,
-    switch: &'a RegionSwitch,
-    cfg: &'a RegionSwitchSettings,
-    home: &'a str,
+/// 从凭证 `start` 开始拿到一个能用的凭证（token 与项目）；拿不到就换下一个（取 token 失败的
+/// 在重置前跳过）。只有一个凭证、或都拿不到时返回最后的错误。
+async fn acquire(
+    state: &Runtime,
+    model: &str,
+    start: usize,
+    tried: &mut Vec<usize>,
+) -> ProxyResult<Credential> {
+    let mut index = start;
+    loop {
+        tried.push(index);
+        let result = match state.credential(index).get_token().await {
+            Ok(token) => state.credential_project(index).map(|project| Credential {
+                index,
+                token,
+                project,
+            }),
+            Err(e) => Err(ProxyError::new(500, e.0)),
+        };
+        let error = match result {
+            Ok(cred) => return Ok(cred),
+            Err(e) => e,
+        };
+        match state.credentials.on_trouble(
+            model,
+            index,
+            CredentialTrouble::TokenFailed,
+            tried,
+            state.credential_count(),
+            state.settings.google.credential_reset_minutes,
+            |i| state.credential_label(i),
+        ) {
+            Some(next) => index = next,
+            None => return Err(error),
+        }
+    }
+}
+
+/// 一个请求的换地方重发（SPEC §9a、§9b）：
+/// - 429 / 503：先换区域（开了区域切换时），这个凭证所有区域都繁忙再换凭证；区域 × 凭证一圈都繁忙
+///   就交还给繁忙重试，等过之后从当前位置再来一圈。
+/// - 401 / 403：换凭证。
+/// - 404：不在平时区域时先换区域；在平时区域（或没有可换的区域）时换凭证（这个项目用不了这个模型）。
+struct Failover<'a> {
+    route: &'a Route<'a>,
+    state: &'a Runtime,
+    cred: Credential,
     /// 这个请求当前发往的区域
     region: String,
     plan: Option<TierPlan>,
-    /// 这一轮试过的区域
-    tried: Vec<String>,
+    /// 当前凭证这一轮试过的区域
+    tried_regions: Vec<String>,
+    /// 这一轮试过的凭证
+    tried_creds: Vec<usize>,
 }
 
-impl Reroute for RegionHop<'_> {
-    fn reroute(&mut self, status: u16) -> Option<UpstreamRequest> {
-        let trouble = match status {
-            429 | 503 => Trouble::Busy(status),
-            404 => Trouble::Missing,
-            _ => return None,
-        };
+impl Failover<'_> {
+    /// 同一个凭证换下一个区域（只有 Gemini 且开了区域切换时）。
+    fn next_region(&mut self, trouble: RegionTrouble, status: u16) -> Option<UpstreamRequest> {
+        if !self.route.switches_regions() {
+            return None;
+        }
         let model = self.route.model;
-        let Some(next) = self.switch.on_trouble(
-            self.cfg,
-            self.home,
+        let next = self.state.regions.on_trouble(
+            &self.route.settings.gemini.region_switch,
+            self.route.home_region(),
             model,
             &self.region,
             trouble,
-            &self.tried,
-        ) else {
-            // 这一轮都试过了：交还给繁忙重试，等过之后从当前区域重新来一轮
-            self.tried = vec![self.region.clone()];
-            return None;
-        };
+            &self.tried_regions,
+        )?;
         let from = &self.region;
         tracing::info!(
             model = %model,
@@ -370,29 +440,114 @@ impl Reroute for RegionHop<'_> {
                 "{model} returned {status} in {from}; resending this request to {next}"
             )
         );
-        self.tried.push(next.clone());
-        let (request, plan) = self.route.build(&next);
+        self.tried_regions.push(next.clone());
+        let (request, plan) = self.route.build(&self.cred, &next);
         self.region = next;
+        self.plan = plan;
+        Some(request)
+    }
+
+    /// 换下一个凭证；取不到 token 的跳过。新凭证从这个模型当前的区域开始，区域重新试一轮。
+    async fn next_credential(
+        &mut self,
+        trouble: CredentialTrouble,
+        status: u16,
+    ) -> Option<UpstreamRequest> {
+        let state = self.state;
+        let count = state.credential_count();
+        if count <= 1 {
+            return None;
+        }
+        let model = self.route.model;
+        let reset = self.route.settings.google.credential_reset_minutes;
+        let (mut failed, mut trouble) = (self.cred.index, trouble);
+        let cred = loop {
+            let next = state.credentials.on_trouble(
+                model,
+                failed,
+                trouble,
+                &self.tried_creds,
+                count,
+                reset,
+                |i| state.credential_label(i),
+            )?;
+            self.tried_creds.push(next);
+            let token = state.credential(next).get_token().await;
+            match token.map(|token| (token, state.credential_project(next))) {
+                Ok((token, Ok(project))) => {
+                    break Credential {
+                        index: next,
+                        token,
+                        project,
+                    };
+                }
+                _ => (failed, trouble) = (next, CredentialTrouble::TokenFailed),
+            }
+        };
+        let (from, to) = (
+            state.credential_label(self.cred.index),
+            state.credential_label(cred.index),
+        );
+        tracing::info!(
+            model = %model,
+            "{}",
+            tr!(
+                "{model} 用{from}返回 {status}，这个请求改用{to}",
+                "{model} returned {status} with {from}; resending this request with {to}"
+            )
+        );
+        let home = self.route.home_region();
+        self.region = if self.route.switches_regions() {
+            state
+                .regions
+                .region_for(&self.route.settings.gemini.region_switch, home, model)
+        } else {
+            home.to_owned()
+        };
+        self.tried_regions = vec![self.region.clone()];
+        self.cred = cred;
+        let (request, plan) = self.route.build(&self.cred, &self.region);
         self.plan = plan;
         Some(request)
     }
 }
 
-fn add_beta(headers: &mut Vec<(String, String)>, beta: &Option<String>) {
-    if let Some(beta) = beta {
-        headers.push(("anthropic-beta".to_owned(), beta.clone()));
+impl Reroute for Failover<'_> {
+    fn reroute(&mut self, status: u16) -> BoxFuture<'_, Option<UpstreamRequest>> {
+        Box::pin(async move {
+            match status {
+                429 | 503 => {
+                    if let Some(request) = self.next_region(RegionTrouble::Busy(status), status) {
+                        return Some(request);
+                    }
+                    if let Some(request) = self
+                        .next_credential(CredentialTrouble::Busy(status), status)
+                        .await
+                    {
+                        return Some(request);
+                    }
+                    // 区域 × 凭证一圈都繁忙：交还给繁忙重试，等过之后从当前位置再来一圈
+                    self.tried_regions = vec![self.region.clone()];
+                    self.tried_creds = vec![self.cred.index];
+                    None
+                }
+                401 | 403 => {
+                    self.next_credential(CredentialTrouble::Denied(status), status)
+                        .await
+                }
+                404 => {
+                    if self.region != self.route.home_region()
+                        && let Some(request) = self.next_region(RegionTrouble::Missing, status)
+                    {
+                        return Some(request);
+                    }
+                    self.next_credential(CredentialTrouble::Missing, status)
+                        .await
+                }
+                _ => None,
+            }
+        })
     }
-}
-
-/// Claude 走默认区域（`google.region`）。
-fn claude_models(state: &Runtime) -> ProxyResult<String> {
-    let region = &state.settings.google.region;
-    Ok(vertex::publisher_models_url(
-        &state.vertex_base(region),
-        &state.project_id()?,
-        region,
-        "anthropic",
-    ))
 }
 
 /// 上游的成功回复（状态码已确认是 2xx，正文还没读）。

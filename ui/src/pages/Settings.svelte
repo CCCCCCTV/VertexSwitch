@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Trash2 } from "@lucide/svelte";
+  import { Plus, Trash2 } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { i18n, setLangPref, t, type LangPref } from "../lib/i18n.svelte";
   import { refreshStatus } from "../lib/live.svelte";
@@ -167,6 +167,17 @@
     if (path && draft) draft.google.credentials_file = path;
   }
 
+  async function pickBackupKey(i: number) {
+    const path = await api.pickKeyFile();
+    if (path && draft?.google.backup_credentials[i]) draft.google.backup_credentials[i].credentials_file = path;
+  }
+
+  /** 添加备用凭证：直接选密钥文件，选了才加一行 */
+  async function addBackup() {
+    const path = await api.pickKeyFile();
+    if (path && draft) draft.google.backup_credentials.push({ credentials_file: path, project_id: "" });
+  }
+
   // 开机自启与配置文件无关，切换后立即生效
   async function toggleAutostart(enabled: boolean) {
     systemMessage = null;
@@ -237,6 +248,35 @@
           <small>{t("settings.defaultRegionHint")}</small>
         </label>
       </div>
+      <div class="field">
+        <span>{t("settings.backupCredentials")}</span>
+        {#each draft.google.backup_credentials as cred, i (i)}
+          <div class="backup">
+            <span class="backup-no" title={t("settings.credentialNo", { n: i + 2 })}>{i + 2}</span>
+            <input type="text" class="backup-file" bind:value={cred.credentials_file} aria-label={t("settings.credentialNo", { n: i + 2 })}
+              placeholder={t("settings.backupKeyPlaceholder")}
+            />
+            <input type="text" class="backup-project" bind:value={cred.project_id} aria-label={t("settings.projectId")}
+              placeholder={t("settings.projectIdPlaceholder")}
+            />
+            <button onclick={() => pickBackupKey(i)}>{t("settings.browse")}</button>
+            <button class="icon" aria-label={t("settings.removeBackup", { n: i + 2 })} title={t("settings.removeBackup", { n: i + 2 })}
+              onclick={() => draft?.google.backup_credentials.splice(i, 1)}><Trash2 size={15} /></button
+            >
+          </div>
+        {/each}
+        <div><button onclick={addBackup}><Plus size={15} />{t("settings.addBackup")}</button></div>
+        <small>{t("settings.backupCredentialsHint")}</small>
+      </div>
+      {#if draft.google.backup_credentials.length}
+        <div class="two">
+          <label class="field">
+            <span>{t("settings.credentialReset")}</span>
+            <input type="number" min="1" step="1" bind:value={draft.google.credential_reset_minutes} />
+            <small>{t("settings.credentialResetHint")}</small>
+          </label>
+        </div>
+      {/if}
     </section>
 
     <section class="panel">
@@ -722,6 +762,44 @@
   .with-btn {
     display: flex;
     gap: 8px;
+  }
+
+  /* 备用凭证：一行一个，序号 + 密钥文件 + 项目 ID + 选择 + 删除 */
+  .backup {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .backup-no {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    color: var(--text-2);
+    background: var(--hover);
+  }
+
+  .backup-file {
+    flex: 2;
+    min-width: 0;
+  }
+
+  .backup-project {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .backup .icon {
+    flex: none;
+    width: 36px;
+    padding: 0;
+    display: grid;
+    place-items: center;
   }
 
   .wait-error {
