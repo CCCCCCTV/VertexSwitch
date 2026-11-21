@@ -348,6 +348,33 @@ export const mockApi: Api = {
     }),
   onWindowMoved: () => () => {},
   pickKeyFile: () => delay("C:\\Users\\me\\keys\\service-account.json"),
+  // 预览：用网页的拖放事件。浏览器只给文件名，拼成示例目录下的路径
+  onFileDrag: (cb) => {
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => Boolean(e.dataTransfer?.types.includes("Files"));
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (depth++ === 0) cb({ type: "enter", paths: null });
+    };
+    const over = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+    const leave = (e: DragEvent) => {
+      if (hasFiles(e) && --depth === 0) cb({ type: "leave" });
+    };
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      cb({ type: "drop", paths: [...(e.dataTransfer?.files ?? [])].map((f) => `C:\\Users\\me\\keys\\${f.name}`) });
+    };
+    const events = { dragenter: enter, dragover: over, dragleave: leave, drop } as const;
+    for (const [name, fn] of Object.entries(events)) window.addEventListener(name, fn as EventListener);
+    return () => {
+      for (const [name, fn] of Object.entries(events)) window.removeEventListener(name, fn as EventListener);
+    };
+  },
   // 预览：用浏览器的文件选择框，图片只留在内存里
   chooseBackgroundImage: () =>
     new Promise((resolve) => {

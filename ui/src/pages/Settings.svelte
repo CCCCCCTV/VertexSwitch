@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Plus, Trash2 } from "@lucide/svelte";
+  import { FileKey, Plus, Trash2 } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { i18n, setLangPref, t, type LangPref } from "../lib/i18n.svelte";
   import { refreshStatus } from "../lib/live.svelte";
@@ -126,9 +126,22 @@
     void load();
     void api.appInfo().then((i) => (info = i));
     void api.getAutostart().then((a) => (autostart = a.enabled)).catch(() => (autostart = null));
-    return api.onSettingsChanged(() => {
+    const stopSettings = api.onSettingsChanged(() => {
       if (!dirty) void load();
     });
+    const stopDrag = api.onFileDrag((e) => {
+      if (e.type === "enter") {
+        drag = { paths: e.paths };
+        cloudPanel?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      } else {
+        drag = null;
+        if (e.type === "drop") addDropped(e.paths);
+      }
+    });
+    return () => {
+      stopSettings();
+      stopDrag();
+    };
   });
 
   async function save() {
@@ -139,6 +152,7 @@
       original = result.settings;
       draft = structuredClone(result.settings);
       dropFields = result.settings.claude.drop_body_fields.join(", ");
+      dropNote = null;
       if (result.restart_error) {
         message = { tone: "bad", text: t("settings.savedBut", { error: result.restart_error }) };
       } else if (result.restart_required) {
@@ -160,6 +174,7 @@
       dropFields = original.claude.drop_body_fields.join(", ");
     }
     message = null;
+    dropNote = null;
   }
 
   async function pickKey() {
@@ -176,6 +191,52 @@
   async function addBackup() {
     const path = await api.pickKeyFile();
     if (path && draft) draft.google.backup_credentials.push({ credentials_file: path, project_id: "" });
+  }
+
+  // 把密钥文件拖进窗口：提示层盖在 Google Cloud 板块上，松开就加进列表（拖到窗口哪里都行）。
+  // 上面的密钥文件还空着时先填它；不是 .json 的、已经在列表里的不加
+  let drag = $state<{ paths: string[] | null } | null>(null);
+  let dropNote = $state<{ tone: "ok" | "warn"; text: string } | null>(null);
+  let cloudPanel = $state<HTMLElement>();
+  const isKeyFile = (p: string) => /\.json$/i.test(p.trim());
+  const samePath = (a: string, b: string) => {
+    const norm = (p: string) => p.trim().replace(/\//g, "\\").toLowerCase();
+    return norm(a) === norm(b);
+  };
+  /** 拖着的文件里有几个 .json；浏览器预览拿不到文件名时为 null */
+  const dragKeys = $derived(drag?.paths ? drag.paths.filter(isKeyFile).length : null);
+  const dragText = $derived.by(() => {
+    if (!drag || !draft) return "";
+    if (dragKeys === 0) return t("settings.dropNotJson");
+    const many = dragKeys !== null && dragKeys > 1;
+    if (!draft.google.credentials_file.trim()) return t(many ? "settings.dropAsPrimaryAndBackups" : "settings.dropAsPrimary");
+    return many ? t("settings.dropAsBackups", { n: dragKeys }) : t("settings.dropAsBackup");
+  });
+
+  function addDropped(paths: string[]) {
+    if (!draft) return;
+    const g = draft.google;
+    const keys = paths.filter(isKeyFile);
+    const known = [g.credentials_file, ...g.backup_credentials.map((b) => b.credentials_file)].filter((p) => p.trim());
+    const fresh: string[] = [];
+    for (const p of keys) if (![...known, ...fresh].some((k) => samePath(k, p))) fresh.push(p);
+    let primary = false;
+    let backups = 0;
+    for (const p of fresh) {
+      if (!g.credentials_file.trim()) {
+        g.credentials_file = p;
+        primary = true;
+      } else {
+        g.backup_credentials.push({ credentials_file: p, project_id: "" });
+        backups++;
+      }
+    }
+    const parts: string[] = [];
+    if (primary) parts.push(t(backups ? "settings.droppedPrimaryAndBackups" : "settings.droppedPrimary", { n: backups }));
+    else if (backups) parts.push(t("settings.droppedBackups", { n: backups }));
+    if (paths.length > keys.length) parts.push(t("settings.droppedNotJson", { n: paths.length - keys.length }));
+    if (keys.length > fresh.length) parts.push(t("settings.droppedDuplicate", { n: keys.length - fresh.length }));
+    dropNote = parts.length ? { tone: fresh.length ? "ok" : "warn", text: parts.join(t("settings.noteSep")) } : null;
   }
 
   // 开机自启与配置文件无关，切换后立即生效
@@ -227,7 +288,7 @@
 
 {#if draft}
   <div class="sections">
-    <section class="panel">
+    <section class="panel cloud" bind:this={cloudPanel}>
       <h2>Google Cloud</h2>
       <label class="field">
         <span>{t("settings.keyFile")}</span>
@@ -265,7 +326,14 @@
             >
           </div>
         {/each}
-        <div><button onclick={addBackup}><Plus size={15} />{t("settings.addBackup")}</button></div>
+        <div class="add-row">
+          <button onclick={addBackup}><Plus size={15} />{t("settings.addBackup")}</button>
+          {#if dropNote}
+            <span class="msg {dropNote.tone}" role="status">{dropNote.text}</span>
+          {:else}
+            <small>{t("settings.dropHint")}</small>
+          {/if}
+        </div>
         <small>{t("settings.backupCredentialsHint")}</small>
       </div>
       {#if draft.google.backup_credentials.length}
@@ -275,6 +343,12 @@
             <input type="number" min="1" step="1" bind:value={draft.google.credential_reset_minutes} />
             <small>{t("settings.credentialResetHint")}</small>
           </label>
+        </div>
+      {/if}
+      {#if drag}
+        <div class="drop-layer" class:bad={dragKeys === 0} role="status">
+          <FileKey size={28} strokeWidth={1.5} />
+          <span>{dragText}</span>
         </div>
       {/if}
     </section>
@@ -719,6 +793,48 @@
 
   .msg.bad {
     color: var(--bad);
+  }
+
+  .msg.warn {
+    color: var(--warn);
+  }
+
+  /* 拖密钥文件进窗口时盖在 Google Cloud 板块上，写明松开后会怎样；板块在视野外时滚过来，避开吸顶栏 */
+  .cloud {
+    position: relative;
+    scroll-margin-top: 64px;
+  }
+
+  .drop-layer {
+    position: absolute;
+    inset: -1px;
+    z-index: 1;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 8px;
+    padding: 16px;
+    border: 1px dashed var(--accent);
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+    color: var(--on-accent-soft);
+    font-size: 15px;
+    font-weight: 600;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .drop-layer.bad {
+    border-color: var(--warn);
+    background: var(--warn-soft);
+    color: var(--warn);
+  }
+
+  .add-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    align-items: center;
   }
 
   .sections {

@@ -21,6 +21,15 @@ import type {
 import { mockApi } from "./mock";
 import { t, type Lang } from "./i18n.svelte";
 
+/**
+ * 从系统拖进窗口的文件。enter 时的 paths 在浏览器预览里拿不到（为 null），
+ * 桌面程序里是完整路径；drop 时都有路径。
+ */
+export type FileDrag =
+  | { type: "enter"; paths: string[] | null }
+  | { type: "drop"; paths: string[] }
+  | { type: "leave" };
+
 export interface Api {
   readonly preview: boolean;
   status(): Promise<Status>;
@@ -59,6 +68,8 @@ export interface Api {
   /** 窗口移动或改变大小（窗口后方取色要跟着重取） */
   onWindowMoved(cb: () => void): () => void;
   pickKeyFile(): Promise<string | null>;
+  /** 订阅拖进窗口的文件；返回取消函数 */
+  onFileDrag(cb: (e: FileDrag) => void): () => void;
   /** 选一张图片设为窗口背景（复制到配置目录）；取消选择时返回 false */
   chooseBackgroundImage(): Promise<boolean>;
   /** 当前背景图片；没有设置时为 null */
@@ -76,6 +87,7 @@ async function tauriApi(): Promise<Api> {
   const { listen } = await import("@tauri-apps/api/event");
   const { open } = await import("@tauri-apps/plugin-dialog");
   const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const { getCurrentWebview } = await import("@tauri-apps/api/webview");
 
   // listen 是异步注册的；返回同步的取消函数
   const subscribe = <T>(event: string, cb: (payload: T) => void) => {
@@ -123,6 +135,15 @@ async function tauriApi(): Promise<Api> {
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
       return typeof picked === "string" ? picked : null;
+    },
+    // 窗口接管了系统拖放（网页本身收不到拖进来的文件），由 Tauri 给出完整路径
+    onFileDrag: (cb) => {
+      const pending = getCurrentWebview().onDragDropEvent(({ payload: p }) => {
+        if (p.type === "enter") cb({ type: "enter", paths: p.paths });
+        else if (p.type === "drop") cb({ type: "drop", paths: p.paths });
+        else if (p.type === "leave") cb({ type: "leave" });
+      });
+      return () => void pending.then((unlisten) => unlisten());
     },
     chooseBackgroundImage: async () => {
       const picked = await open({
