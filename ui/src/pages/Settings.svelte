@@ -3,7 +3,7 @@
   import { FileKey, Plus, Trash2 } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { i18n, setLangPref, t, type LangPref } from "../lib/i18n.svelte";
-  import { refreshStatus } from "../lib/live.svelte";
+  import { live, refreshStatus } from "../lib/live.svelte";
   import {
     BACKDROPS,
     LIVE_INTERVALS,
@@ -20,7 +20,7 @@
     setTint,
     theme,
   } from "../lib/theme.svelte";
-  import { TIERS } from "../lib/format";
+  import { TIERS, tokenProblem } from "../lib/format";
   import { checkUpdate, setAutoCheck, update } from "../lib/update.svelte";
   import type { AppInfo, Backdrop, Settings } from "../lib/types";
 
@@ -193,6 +193,31 @@
     if (path && draft) draft.google.backup_credentials.push({ credentials_file: path, project_id: "" });
   }
 
+  // 每个凭证此刻的状态（来自核心，每 5 秒刷新）：取不到 token、正被哪些模型使用、正常。
+  // 只给已保存、没改动的那一行显示；只有一个凭证又没出错时不显示
+  function credentialState(index: number): { tone: "ok" | "warn" | "bad"; text: string; title?: string } | null {
+    const creds = live.status?.credentials;
+    if (!creds || !original || !draft) return null;
+    const file = (s: Settings) =>
+      index === 0 ? s.google.credentials_file : s.google.backup_credentials[index - 1]?.credentials_file;
+    if (file(draft) !== file(original)) return null;
+    const info = creds.list[index];
+    if (!info) return null;
+    if (info.error) {
+      return { tone: "bad", text: t("settings.credDown", { reason: tokenProblem(info.error) }), title: info.error };
+    }
+    if (creds.list.length < 2) return null;
+    const users = creds.models.filter((m) => m.credential === index + 1);
+    if (users.length) {
+      const minutes = Math.max(1, Math.ceil(Math.min(...users.map((m) => m.reset_in_ms)) / 60_000));
+      return {
+        tone: "warn",
+        text: t("settings.credInUse", { models: users.map((m) => m.model).join(t("settings.listSep")), minutes }),
+      };
+    }
+    return { tone: "ok", text: t("settings.credOk") };
+  }
+
   // 把密钥文件拖进窗口：提示层盖在 Google Cloud 板块上，松开就加进列表（拖到窗口哪里都行）。
   // 上面的密钥文件还空着时先填它；不是 .json 的、已经在列表里的不加
   let drag = $state<{ paths: string[] | null } | null>(null);
@@ -297,6 +322,9 @@
           />
           <button onclick={pickKey}>{t("settings.browse")}</button>
         </div>
+        {#if credentialState(0)}{@const s = credentialState(0)!}
+          <small class="cred-state {s.tone}" title={s.title}><i></i>{s.text}</small>
+        {/if}
       </label>
       <div class="two">
         <label class="field">
@@ -325,6 +353,9 @@
               onclick={() => draft?.google.backup_credentials.splice(i, 1)}><Trash2 size={15} /></button
             >
           </div>
+          {#if credentialState(i + 1)}{@const s = credentialState(i + 1)!}
+            <small class="cred-state backup-state {s.tone}" title={s.title}><i></i>{s.text}</small>
+          {/if}
         {/each}
         <div class="add-row">
           <button onclick={addBackup}><Plus size={15} />{t("settings.addBackup")}</button>
@@ -908,6 +939,40 @@
   .backup-project {
     flex: 1;
     min-width: 0;
+  }
+
+  /* 凭证状态：一个状态色圆点 + 一行字；取不到 token 时字也用红色，悬停看完整错误 */
+  .cred-state {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+    color: var(--text-2);
+  }
+
+  .cred-state i {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--ok);
+  }
+
+  .cred-state.warn i {
+    background: var(--warn);
+  }
+
+  .cred-state.bad {
+    color: var(--bad);
+  }
+
+  .cred-state.bad i {
+    background: var(--bad);
+  }
+
+  /* 备用凭证那一行的状态对齐到密钥文件输入框下面 */
+  .backup-state {
+    margin: -3px 0 10px 30px;
   }
 
   .backup .icon {

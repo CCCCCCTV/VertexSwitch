@@ -29,6 +29,32 @@ export function tokens(n: number | null | undefined): string {
   return n.toLocaleString("en-US");
 }
 
+/**
+ * 取不到 token 的原因写短一点：去掉“获取 Google access token 失败：”开头（标题已经说了），
+ * Google 的 JSON 错误体只留说明，例如 `HTTP 400 · Invalid grant: account not found`。
+ */
+export function tokenProblem(error: string): string {
+  const text = error.replace(/^(获取 Google access token 失败：|Couldn't get a Google access token: )/, "");
+  const http = /^HTTP (\d{3})[^{]*(\{.*\})\s*$/s.exec(text);
+  if (http) {
+    try {
+      const body = JSON.parse(http[2]);
+      const what = body.error_description || body.error;
+      if (typeof what === "string" && what) return `HTTP ${http[1]} · ${what}`;
+    } catch {
+      // 错误体被截断或不是 JSON：原样显示
+    }
+  }
+  return text;
+}
+
+/** 凭证的名字：“凭证 2（项目）”；还不知道项目时只写“凭证 2”。 */
+export function credentialName(c: { credential: number; project: string | null }): string {
+  return c.project
+    ? t("overview.credentialName", { n: c.credential, project: c.project })
+    : t("settings.credentialNo", { n: c.credential });
+}
+
 /** 档位名在两种语言里一样，说明文字见词典 tier.<id>.hint */
 export const TIERS = ["standard", "flex", "priority"] as const satisfies readonly Tier[];
 export const TIER_LABEL: Record<Tier, string> = { standard: "Standard", flex: "Flex", priority: "Priority" };

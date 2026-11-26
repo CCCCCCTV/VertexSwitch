@@ -18,7 +18,7 @@
   } from "@lucide/svelte";
   import { api, errorText } from "../lib/api";
   import { live, refreshStatus } from "../lib/live.svelte";
-  import { TIERS, TIER_LABEL, duration, time, tokens, uptime } from "../lib/format";
+  import { TIERS, TIER_LABEL, credentialName, duration, time, tokenProblem, tokens, uptime } from "../lib/format";
   import { t } from "../lib/i18n.svelte";
   import type { Metrics, Models, TestResult, Tier } from "../lib/types";
   import Timeline from "../components/Timeline.svelte";
@@ -86,6 +86,20 @@
       text: t("overview.backups", { n: creds.list.length - 1 }),
       title: lines.join("\n"),
     };
+  });
+
+  // 运行状况里一直持续的问题：取不到 token 的凭证（后台每个凭证都会提前取 token，坏了不用等请求用到）。
+  // 排在最前，点了去设置换掉或删掉；所有凭证都取不到时是红色，否则请求还能用别的凭证，是黄色
+  const credentialIssues = $derived.by(() => {
+    const list = status?.credentials?.list ?? [];
+    const failing = list.filter((c) => c.error);
+    const tone: "bad" | "warn" = failing.length === list.length ? "bad" : "warn";
+    return failing.map((c) => ({
+      tone,
+      title: list.length > 1 ? t("overview.credentialDown", { name: credentialName(c) }) : t("overview.tokenDown"),
+      detail: tokenProblem(c.error ?? ""),
+      full: c.error ?? "",
+    }));
   });
 
   // 运行状况：最近 30 分钟的失败请求、档位降级告警与“上游繁忙、重试后成功”
@@ -347,15 +361,26 @@
     <section class="panel span-4">
       <!-- 标题固定为中性的“运行状况”；有失败或降级时图标换成告警色三角，平时是脉搏 -->
       <div class="panel-head">
-        {#if attention.length}<span class="head-warn"><TriangleAlert size={16} /></span>{:else}<HeartPulse
-            size={16}
-          />{/if}<h2>{t("overview.health")}</h2>
+        {#if attention.length || credentialIssues.length}<span class="head-warn"><TriangleAlert size={16} /></span
+          >{:else}<HeartPulse size={16} />{/if}<h2>{t("overview.health")}</h2>
         <button class="more end" onclick={() => go("requests")}
           >{t("overview.allRequests")}<ChevronRight size={15} /></button
         >
       </div>
-      {#if attention.length}
+      {#if attention.length || credentialIssues.length}
         <ul class="issues">
+          {#each credentialIssues as it}
+            <li class={it.tone}>
+              {#if it.tone === "bad"}<OctagonX size={16} />{:else}<TriangleAlert size={16} />{/if}
+              <div>
+                <b>{it.title}</b>
+                <small title={it.full}>{it.detail}</small>
+              </div>
+              <button class="more go" onclick={() => go("settings")}
+                >{t("overview.toSettings")}<ChevronRight size={14} /></button
+              >
+            </li>
+          {/each}
           {#each attention as it}
             <li class={it.tone}>
               {#if it.tone === "bad"}<OctagonX size={16} />{:else}<TriangleAlert size={16} />{/if}
@@ -707,6 +732,18 @@
 
   .issues time {
     font-size: 12px;
+  }
+
+  /* 持续的问题没有时间，行尾放“去设置” */
+  .issues .go {
+    height: 22px;
+    margin: -2px -6px 0 0;
+    padding: 0 4px 0 8px;
+    font-size: 12px;
+  }
+
+  .issues .go :global(svg) {
+    margin-top: 0;
   }
 
   /* 健康时：居中一枚柔和的盾牌，下面三项基准数据 */

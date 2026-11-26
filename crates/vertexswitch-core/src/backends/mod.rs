@@ -360,6 +360,33 @@ async fn open(
     Ok((response, failover.plan))
 }
 
+/// 凭证用不了：`message` 是交给客户端的完整错误（500），`reason` 是写进换凭证日志的具体原因。
+struct Unusable {
+    message: String,
+    reason: String,
+}
+
+/// 取凭证 `index` 的 token 与项目。
+async fn credential_at(state: &Runtime, index: usize) -> Result<Credential, Unusable> {
+    let token = state
+        .credential(index)
+        .get_token()
+        .await
+        .map_err(|e| Unusable {
+            reason: e.reason().to_owned(),
+            message: e.0,
+        })?;
+    let project = state.credential_project(index).map_err(|e| Unusable {
+        reason: e.message.clone(),
+        message: e.message,
+    })?;
+    Ok(Credential {
+        index,
+        token,
+        project,
+    })
+}
+
 /// 从凭证 `start` 开始拿到一个能用的凭证（token 与项目）；拿不到就换下一个（取 token 失败的
 /// 在重置前跳过）。只有一个凭证、或都拿不到时返回最后的错误。
 async fn acquire(
@@ -371,29 +398,21 @@ async fn acquire(
     let mut index = start;
     loop {
         tried.push(index);
-        let result = match state.credential(index).get_token().await {
-            Ok(token) => state.credential_project(index).map(|project| Credential {
-                index,
-                token,
-                project,
-            }),
-            Err(e) => Err(ProxyError::new(500, e.0)),
-        };
-        let error = match result {
+        let Unusable { message, reason } = match credential_at(state, index).await {
             Ok(cred) => return Ok(cred),
             Err(e) => e,
         };
         match state.credentials.on_trouble(
             model,
             index,
-            CredentialTrouble::TokenFailed,
+            CredentialTrouble::TokenFailed(reason),
             tried,
             state.credential_count(),
             state.settings.google.credential_reset_minutes,
             |i| state.credential_label(i),
         ) {
             Some(next) => index = next,
-            None => return Err(error),
+            None => return Err(ProxyError::new(500, message)),
         }
     }
 }
@@ -472,16 +491,11 @@ impl Failover<'_> {
                 |i| state.credential_label(i),
             )?;
             self.tried_creds.push(next);
-            let token = state.credential(next).get_token().await;
-            match token.map(|token| (token, state.credential_project(next))) {
-                Ok((token, Ok(project))) => {
-                    break Credential {
-                        index: next,
-                        token,
-                        project,
-                    };
+            match credential_at(state, next).await {
+                Ok(cred) => break cred,
+                Err(Unusable { reason, .. }) => {
+                    (failed, trouble) = (next, CredentialTrouble::TokenFailed(reason))
                 }
-                _ => (failed, trouble) = (next, CredentialTrouble::TokenFailed),
             }
         };
         let (from, to) = (

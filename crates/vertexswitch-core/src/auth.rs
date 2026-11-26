@@ -25,6 +25,21 @@ const EARLY_REFRESH: Duration = Duration::from_secs(5 * 60);
 #[error("{0}")]
 pub struct AuthError(pub String);
 
+impl AuthError {
+    /// 具体原因：去掉开头的“获取 Google access token 失败：”，给已经说了“取 token 失败”的地方用
+    /// （例如换凭证的日志），只留 `HTTP 400 … invalid_grant …`、连接错误、读不了密钥文件这些。
+    pub fn reason(&self) -> &str {
+        const PREFIXES: [&str; 2] = [
+            "获取 Google access token 失败：",
+            "Couldn't get a Google access token: ",
+        ];
+        PREFIXES
+            .iter()
+            .find_map(|prefix| self.0.strip_prefix(prefix))
+            .unwrap_or(&self.0)
+    }
+}
+
 #[derive(Deserialize)]
 struct ServiceAccountKey {
     client_email: String,
@@ -61,6 +76,14 @@ struct Loaded {
 struct State {
     loaded: Option<Loaded>,
     token: Option<(String, Instant)>,
+}
+
+/// 手上的 token 离过期还早，可以直接用。
+fn usable(state: &State) -> bool {
+    state
+        .token
+        .as_ref()
+        .is_some_and(|(_, expiry)| expiry.saturating_duration_since(Instant::now()) > EARLY_REFRESH)
 }
 
 /// 用服务账号密钥文件获取 token。
@@ -129,8 +152,8 @@ impl ServiceAccountAuth {
 
     pub async fn get_token(&self) -> Result<String, AuthError> {
         let mut state = self.state.lock().await;
-        if let Some((token, expiry)) = &state.token
-            && expiry.saturating_duration_since(Instant::now()) > EARLY_REFRESH
+        if usable(&state)
+            && let Some((token, _)) = &state.token
         {
             return Ok(token.clone());
         }
@@ -156,7 +179,11 @@ impl ServiceAccountAuth {
                     )
                 );
             }
-            Err(e) => *self.last_error.write().expect("锁未中毒") = Some(e.0.clone()),
+            // 后台提前刷新失败、手上的 token 还能用时不算取不到（请求照常用旧 token，到时再取）
+            Err(e) if !usable(state) => {
+                *self.last_error.write().expect("锁未中毒") = Some(e.0.clone());
+            }
+            Err(_) => {}
         }
         result
     }
@@ -249,7 +276,7 @@ impl TokenSource {
         }
     }
 
-    /// 上次取 token 失败的原因（成功后清空）。
+    /// 取不到能用的 token 的原因（成功后清空）。后台提前刷新失败、旧 token 还能用时不算。
     pub fn last_error(&self) -> Option<String> {
         match self {
             Self::Static { .. } => None,
@@ -257,14 +284,15 @@ impl TokenSource {
         }
     }
 
-    /// 后台循环：先取一次，然后按间隔刷新。异常只记录。
-    pub async fn run_background_refresh(&self, interval: Duration) {
+    /// 后台循环：先取一次，然后按间隔刷新。异常只记录，日志前面加上 `label()`（有多个凭证时
+    /// 写明是哪一个，例如“凭证 2（proj）：”）。
+    pub async fn run_background_refresh(&self, interval: Duration, label: impl Fn() -> String) {
         let Self::ServiceAccount(auth) = self else {
             return;
         };
         loop {
             if let Err(e) = auth.refresh().await {
-                tracing::warn!("{e}");
+                tracing::warn!("{}{e}", label());
             }
             tokio::time::sleep(interval).await;
         }

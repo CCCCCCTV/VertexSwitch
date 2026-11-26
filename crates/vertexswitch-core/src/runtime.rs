@@ -14,6 +14,16 @@ use crate::errors::{ProxyError, ProxyResult};
 use crate::regions::RegionSwitch;
 use crate::registry::ModelRegistry;
 use crate::tr;
+
+/// 凭证在日志和界面里的名字：“凭证 2（项目）”，不知道项目时只写“凭证 2”。`index` 从 0 数。
+pub fn credential_name(index: usize, project: &str) -> String {
+    let n = index + 1;
+    if project.is_empty() {
+        tr!("凭证 {n}", "credential {n}")
+    } else {
+        tr!("凭证 {n}（{project}）", "credential {n} ({project})")
+    }
+}
 use crate::transport::Transport;
 
 pub struct Runtime {
@@ -189,12 +199,12 @@ impl Runtime {
         } else {
             self.credential(index).project_id()
         };
-        let n = index + 1;
-        if project.is_empty() {
-            tr!("凭证 {n}", "credential {n}")
-        } else {
-            tr!("凭证 {n}（{project}）", "credential {n} ({project})")
-        }
+        credential_name(index, &project)
+    }
+
+    /// 凭证（token 来源）和另一个快照是同一批：没变就不用重启后台刷新。
+    pub fn same_credentials(&self, other: &Runtime) -> bool {
+        Arc::ptr_eq(&self.tokens, &other.tokens) && Arc::ptr_eq(&self.backups, &other.backups)
     }
 
     pub async fn google_token(&self) -> ProxyResult<String> {

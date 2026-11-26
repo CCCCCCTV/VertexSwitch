@@ -20,7 +20,7 @@ use crate::tr;
 pub const LOG_KIND_SWITCH: &str = "credential_switch";
 
 /// 凭证出了什么问题。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Trouble {
     /// 429 / 503，而且所有区域都试过了
     Busy(u16),
@@ -28,12 +28,12 @@ pub enum Trouble {
     Denied(u16),
     /// 平时区域 404（这个项目用不了这个模型）
     Missing,
-    /// 取 token 失败（密钥文件读不了、无效、换 token 被拒）
-    TokenFailed,
+    /// 取 token 失败（密钥文件读不了、无效、换 token 被拒），带具体原因写进日志
+    TokenFailed(String),
 }
 
 impl Trouble {
-    fn describe(self) -> String {
+    fn describe(&self) -> String {
         match self {
             Trouble::Busy(status) => tr!(
                 "在所有区域都返回 {status}（繁忙）",
@@ -44,9 +44,21 @@ impl Trouble {
                 "returned {status} (not allowed)"
             ),
             Trouble::Missing => tr!("用不了这个模型（404）", "can't use this model (404)"),
-            Trouble::TokenFailed => tr!("取 token 失败", "couldn't get a token"),
+            Trouble::TokenFailed(reason) => tr!(
+                "取 token 失败（{reason}）",
+                "couldn't get a token ({reason})"
+            ),
         }
     }
+}
+
+/// 之后的请求换凭证时写的日志。
+fn switch_message(model: &str, from: &str, to: &str, trouble: &Trouble) -> String {
+    let why = trouble.describe();
+    tr!(
+        "{model} 用{from}时{why}，之后的请求改用{to}",
+        "{model} with {from} {why}; later requests use {to}"
+    )
 }
 
 #[derive(Debug, Clone, Default)]
@@ -172,7 +184,7 @@ impl CredentialSwitch {
             return None;
         }
         self.with_state(model, count, reset_minutes, now, |s| {
-            if trouble == Trouble::TokenFailed && !s.broken.contains(&failed) {
+            if matches!(trouble, Trouble::TokenFailed(_)) && !s.broken.contains(&failed) {
                 s.broken.push(failed);
             }
             let next = (1..count)
@@ -181,18 +193,13 @@ impl CredentialSwitch {
             if s.current == failed {
                 s.current = next;
                 s.since.get_or_insert(now);
-                let (from, to) = (label(failed), label(next));
-                let why = trouble.describe();
                 tracing::warn!(
                     kind = LOG_KIND_SWITCH,
                     model = %model,
                     from = failed + 1,
                     to = next + 1,
                     "{}",
-                    tr!(
-                        "{model} 用{from}时{why}，之后的请求改用{to}",
-                        "{model} with {from} {why}; later requests use {to}"
-                    )
+                    switch_message(model, &label(failed), &label(next), &trouble)
                 );
             }
             Some(next)
@@ -283,11 +290,27 @@ mod tests {
         let t = Instant::now();
         // 凭证 2 取不到 token：这个请求接着换凭证 3
         assert_eq!(trouble(&sw, 0, Trouble::Denied(403), &[0], t), Some(1));
-        assert_eq!(trouble(&sw, 1, Trouble::TokenFailed, &[0, 1], t), Some(2));
+        assert_eq!(
+            trouble(&sw, 1, Trouble::TokenFailed("HTTP 400".into()), &[0, 1], t),
+            Some(2)
+        );
         // 之后凭证 3 繁忙：跳过坏掉的凭证 2，回到凭证 1
         assert_eq!(trouble(&sw, 2, Trouble::Busy(429), &[2], t), Some(0));
         let snap = sw.snapshot(3, RESET);
         assert_eq!(snap[0].broken, [2]);
+    }
+
+    #[test]
+    fn token_failure_log_says_why() {
+        let reason = r#"HTTP 400 Bad Request {"error":"invalid_grant","error_description":"Invalid grant: account not found"}"#;
+        let message = switch_message(
+            M,
+            "凭证 2（proj-b）",
+            "凭证 3（proj-c）",
+            &Trouble::TokenFailed(reason.into()),
+        );
+        assert!(message.contains(reason), "{message}");
+        assert!(message.contains("凭证 2（proj-b）") && message.contains("凭证 3（proj-c）"));
     }
 
     #[test]

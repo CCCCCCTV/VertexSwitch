@@ -44,9 +44,9 @@
 - 依据：https://developers.google.com/identity/protocols/oauth2/service-account#httprest
 - 用密钥文件里的 `private_key` 以 RS256 签 JWT（`iss`=client_email，`scope`=`https://www.googleapis.com/auth/cloud-platform`，`aud`=token_uri，`iat`/`exp` 相差 3600 秒），POST 到 `token_uri`，`grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer`。
 - 剩余有效期少于 5 分钟就刷新；并发请求只让一个去刷新（加锁、双重检查）。
-- 后台每 50 分钟刷新一次；启动时刷新失败只记日志，不退出。按需获取时失败 → 返回 500，信息包含原因（如"未配置服务账号密钥文件"）。
+- 后台每 50 分钟刷新一次（每个凭证各自刷新，有备用凭证时日志前写明是哪个：“凭证 2（项目）：…”）；启动时刷新失败只记日志，不退出。后台提前刷新失败、手上的 token 还能用时，请求照常用旧 token，也不算取不到（不记 `error`）。按需获取时失败 → 返回 500，信息包含原因（如"未配置服务账号密钥文件"）。
 - 项目 ID：配置优先，否则用密钥文件里的 `project_id`。项目 ID 要在取过 token（读过密钥文件）之后再读。
-- 备用凭证（§9b）各有自己的 token 缓存与项目 ID，按需取 token（后台定时刷新只管第一个凭证）。改配置时，没变的凭证沿用原 token 来源。
+- 备用凭证（§9b）各有自己的 token 缓存与项目 ID，和第一个凭证一样在后台提前取 token、定时刷新：换过去时不用现取，取不到的（密钥被删、项目停用）不等用到就能在状态里看到。改配置时，没变的凭证沿用原 token 来源；任何一个凭证变了都重启后台刷新。
 - **不要读取或打印密钥内容**；日志里不能出现 token。
 
 ## 3. Vertex 主机与路径
@@ -211,8 +211,9 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
   - 429 / 503：先换区域（开了区域切换时），这个凭证的所有区域都繁忙才换凭证；新凭证从这个模型当前的区域开始，区域重新试一轮。区域 × 凭证一圈都繁忙时交还给繁忙重试（§4），等过之后从当前位置再来一圈。
 - 一个请求的一轮里每个凭证只用一次；都换不了时把最后一个上游响应交给客户端（只有一个凭证时行为和以前一样）。都取不到 token 时返回最后的取 token 错误（500）。
 - **重置**：第一次离开凭证 1 满 `credential_reset_minutes`（默认 30）分钟后回到凭证 1，跳过名单清空。凭证配置或重置间隔改了时立即全部清空。
-- 日志：之后的请求换凭证时记 WARN（`kind = credential_switch`，带 `model`、`from`、`to` 凭证号），写明原因；回到凭证 1 记 INFO（同一 kind）；单个请求改用别的凭证记 INFO。
-- 请求记录多一个 `credential`（最后用的凭证号）；管理接口 `status` 多一个 `credentials: {list: [{credential, file(只给文件名), project, error}], reset_minutes, models: [{model, credential, away_ms, reset_in_ms, broken}]}`，models 只列离开过凭证 1 的模型。
+- 日志：之后的请求换凭证时记 WARN（`kind = credential_switch`，带 `model`、`from`、`to` 凭证号），写明原因；取 token 失败时带上具体原因（如 `HTTP 400 … invalid_grant …`、连接错误、读不了密钥文件），去掉“获取 Google access token 失败”这类重复的开头；回到凭证 1 记 INFO（同一 kind）；单个请求改用别的凭证记 INFO。
+- 请求记录多一个 `credential`（最后用的凭证号）；管理接口 `status` 多一个 `credentials: {list: [{credential, file(只给文件名), project, error}], reset_minutes, models: [{model, credential, away_ms, reset_in_ms, broken}]}`，models 只列离开过凭证 1 的模型；`error` 是取不到能用的 token 的原因（取到后清空）。
+- 界面：概览的运行状况把 `error` 不为空的凭证列在最前（所有凭证都取不到时红色，否则黄色），行尾“去设置”；设置 → Google Cloud 每个已保存的凭证下面一行状态：取不到 token（原因，Google 的 JSON 错误只留 `error_description`）、哪些模型正在用（几分钟后回到凭证 1）、正常。只有一个凭证又没出错时不显示。
 
 ## 10. OpenAI → Claude 转换
 
@@ -272,7 +273,7 @@ Rust 实测时 Priority 请求一次被上游降级为 `ON_DEMAND`（文档所�
 | POST | `test` | `{"model", "prompt"?, "max_tokens"?=32}` 经 OpenAI 入口在进程内发一个最小请求，返回 `ok / status / latency_ms / reply / error`；**会真实调用上游** |
 
 配置修改：
-- 认证信息（`credentials_file`、`project_id`）不变时沿用原 token 来源与缓存的 token，否则新建并重启后台刷新；超时 / 重试不变时沿用连接池。
+- 认证信息（`credentials_file`、`project_id`）不变时沿用原 token 来源与缓存的 token，否则新建并重启后台刷新（备用凭证同样，任何一个变了都重启）；超时 / 重试不变时沿用连接池。
 - `server.host` / `server.port` 变化时返回 `restart_required: true`，由外壳重启监听。不论改动来自界面、管理接口还是手改配置文件（热加载），核心都会发一次“监听地址变了”通知（`AppState::listen_changed`），外壳收到后重启监听；只改别的设置不通知。
 - 每个请求开始时取一份运行时快照（配置、token 来源、传输、模型表），改配置不影响进行中的请求。
 

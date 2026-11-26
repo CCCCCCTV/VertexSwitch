@@ -135,6 +135,7 @@ const tokenRefreshed = () =>
 
 // #empty=1：刚启动、还没有任何请求的样子（检查空状态用）
 const emptyPreview = new URLSearchParams(location.hash.slice(1)).get("empty") === "1";
+const brokenCredential = new URLSearchParams(location.hash.slice(1)).get("cred") === "broken";
 if (!emptyPreview) for (let i = 0; i < 14; i++) request(i, Date.now() - (14 - i) * 47_000);
 
 // 开头几条日志等第一次读取时再写：那时预览参数 #lang 已生效
@@ -206,7 +207,8 @@ function status(): Status {
           ]
         : [],
     },
-    // 示例：第一个项目没开通 Claude，Claude 请求换到了备用凭证
+    // 示例：第一个项目没开通 Claude，Claude 请求换到了备用凭证。
+    // #cred=broken：凭证 2 取不到 token（服务账号被删了）
     credentials: {
       list: [
         { credential: 1, file: "service-account.json", project: "my-project-123", error: null },
@@ -214,11 +216,14 @@ function status(): Status {
           credential: i + 2,
           file: b.credentials_file.split(/[\\/]/).pop() ?? null,
           project: b.project_id || "backup-project-456",
-          error: null,
+          error:
+            brokenCredential && i === 0
+              ? '获取 Google access token 失败：HTTP 400 Bad Request {"error":"invalid_grant","error_description":"Invalid grant: account not found"}'
+              : null,
         })),
       ],
       reset_minutes: settings.google.credential_reset_minutes,
-      models: settings.google.backup_credentials.length
+      models: settings.google.backup_credentials.length && !brokenCredential
         ? [
             {
               model: "claude-sonnet-4-6",

@@ -27,7 +27,7 @@ use crate::frontends;
 use crate::logs::LogHub;
 use crate::metrics::{Metrics, record_requests};
 use crate::registry::ModelRegistry;
-use crate::runtime::Runtime;
+use crate::runtime::{Runtime, credential_name};
 use crate::tr;
 
 /// 挂在路由上的应用状态（不使用全局变量）。
@@ -113,7 +113,7 @@ impl AppState {
         let restart_required = settings.server.host != old.settings.server.host
             || settings.server.port != old.settings.server.port;
         let new = old.with_settings(settings);
-        let tokens_changed = !Arc::ptr_eq(&new.tokens, &old.tokens);
+        let tokens_changed = !new.same_credentials(&old);
         self.set_runtime(new);
         if tokens_changed {
             self.start_refresher();
@@ -161,13 +161,29 @@ impl AppState {
         Ok(self.apply_settings(settings))
     }
 
-    /// 启动（或重启）后台 token 刷新。
+    /// 启动（或重启）后台 token 刷新。备用凭证也一样提前取好：换过去时不用现取，
+    /// 取不到 token 的（密钥被删、项目停用）不等用到就能在界面上看到。
     pub fn start_refresher(self: &Arc<Self>) {
         let runtime = self.runtime();
         let interval =
             Duration::from_secs(runtime.settings.google.token_refresh_minutes.max(1) * 60);
-        let tokens = runtime.tokens.clone();
-        let handle = tokio::spawn(async move { tokens.run_background_refresh(interval).await });
+        let count = runtime.credential_count();
+        let sources: Vec<Arc<TokenSource>> =
+            (0..count).map(|i| runtime.credential(i).clone()).collect();
+        let handle = tokio::spawn(async move {
+            let refreshes = sources.iter().enumerate().map(|(i, source)| {
+                // 只有一个凭证时日志照旧，不写是哪一个
+                source.run_background_refresh(interval, move || {
+                    if count > 1 {
+                        let name = credential_name(i, &source.project_id());
+                        tr!("{name}：", "{name}: ")
+                    } else {
+                        String::new()
+                    }
+                })
+            });
+            futures_util::future::join_all(refreshes).await;
+        });
         if let Some(old) = self.refresher.lock().expect("锁未中毒").replace(handle) {
             old.abort();
         }

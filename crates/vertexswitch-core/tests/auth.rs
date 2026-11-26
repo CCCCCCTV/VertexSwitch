@@ -165,6 +165,61 @@ async fn token_endpoint_error_is_reported() {
     let err = auth.get_token().await.unwrap_err();
     assert!(err.0.contains("invalid_grant"), "{err}");
     assert!(auth.last_error().is_some());
+    // 换凭证的日志只要具体原因
+    assert!(err.reason().starts_with("HTTP 400"), "{}", err.reason());
+    assert!(err.reason().contains("invalid_grant"));
+}
+
+/// token 端点先发一个 `expires_in` 秒的 token，之后都返回 400。
+async fn token_then_invalid_grant(server: &MockServer, expires_in: u64) {
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(token_ok("first", expires_in))
+        .up_to_n_times(1)
+        .with_priority(1)
+        .mount(server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/token"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(json!({"error": "invalid_grant"})))
+        .mount(server)
+        .await;
+}
+
+#[tokio::test]
+async fn failed_early_refresh_with_a_usable_token_is_not_an_error() {
+    let server = MockServer::start().await;
+    let fx = fixture(&server).await;
+    token_then_invalid_grant(&server, 3600).await;
+    let auth = ServiceAccountAuth::new(Some(fx.key_file.clone()), "", reqwest::Client::new());
+    assert_eq!(auth.get_token().await.unwrap(), "first");
+    // 后台提前刷新失败，手上的 token 还能用：请求照常，界面上不报
+    assert!(auth.refresh().await.is_err());
+    assert_eq!(auth.last_error(), None);
+    assert_eq!(auth.get_token().await.unwrap(), "first");
+}
+
+#[tokio::test]
+async fn failed_refresh_of_an_expiring_token_is_an_error() {
+    let server = MockServer::start().await;
+    let fx = fixture(&server).await;
+    // 只剩 60 秒的 token 不算能用（提前 5 分钟刷新）
+    token_then_invalid_grant(&server, 60).await;
+    let auth = ServiceAccountAuth::new(Some(fx.key_file.clone()), "", reqwest::Client::new());
+    assert_eq!(auth.get_token().await.unwrap(), "first");
+    assert!(auth.refresh().await.is_err());
+    assert!(auth.last_error().unwrap().contains("invalid_grant"));
+}
+
+#[test]
+fn reason_keeps_errors_without_the_generic_prefix() {
+    let missing =
+        vertexswitch_core::auth::AuthError("无法读取服务账号密钥文件 a.json：找不到".into());
+    assert_eq!(missing.reason(), "无法读取服务账号密钥文件 a.json：找不到");
+    let english = vertexswitch_core::auth::AuthError(
+        "Couldn't get a Google access token: error sending request".into(),
+    );
+    assert_eq!(english.reason(), "error sending request");
 }
 
 #[tokio::test]

@@ -201,6 +201,31 @@ async fn broken_backup_is_skipped() {
 }
 
 #[tokio::test]
+async fn broken_backup_shows_up_before_any_request() {
+    let h = common::start_with_backups(common::settings(), vec![broken(), backup("c")]).await;
+    // 后台刷新也提前取备用凭证的 token：不用等请求换过去，状态里就能看到哪一个坏了
+    h.state.start_refresher();
+    let mut list = Value::Null;
+    for _ in 0..100 {
+        list = admin_json(&h, "/admin/api/status").await["credentials"]["list"].clone();
+        if !list[1]["error"].is_null() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        list[1]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no-such-key.json"),
+        "{list}"
+    );
+    assert!(list[0]["error"].is_null());
+    assert!(list[2]["error"].is_null());
+    assert!(h.upstream.received_requests().await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn only_credential_failing_still_reports_the_error() {
     let h = common::start_with_backups(common::settings(), vec![broken()]).await;
     project(&h, "proj", status(403), 0, status(403)).await;
